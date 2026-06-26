@@ -3,11 +3,11 @@ import { Server } from 'socket.io'
 
 // ============================================================
 // SocorroJá — Real-time rescue orchestration service
-// Handles: provider presence, service requests, live tracking
+// Handles: provider presence, service requests, live tracking,
+//          ratings, payment method, provider stats.
 // ============================================================
 
 const httpServer = createServer((req, res) => {
-  // simple health check
   if (req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ ok: true, providers: providers.size, activeServices: services.size }))
@@ -26,8 +26,14 @@ const io = new Server(httpServer, {
 
 // ----------------------- Types -----------------------
 type Role = 'client' | 'provider'
-
 type LatLng = { lat: number; lng: number }
+type ServiceType = 'reboque' | 'pneu' | 'bateria' | 'combustivel' | 'chaveiro' | 'pane'
+type PaymentMethod = 'pix' | 'card' | 'cash'
+type ServiceStatus =
+  | 'searching' | 'offered' | 'accepted' | 'arriving' | 'arrived'
+  | 'in_progress' | 'completed' | 'cancelled' | 'expired'
+
+type Rating = { stars: number; comment: string; at: number; from: string }
 
 type Provider = {
   id: string
@@ -36,13 +42,15 @@ type Provider = {
   vehicle: string
   plate: string
   rating: number
+  ratingSum: number
+  ratingCount: number
+  completedCount: number
+  earningsToday: number
   online: boolean
   position: LatLng
   destination?: LatLng | null
   currentServiceId?: string | null
 }
-
-type ServiceType = 'reboque' | 'pneu' | 'bateria' | 'combustivel' | 'chaveiro' | 'pane'
 
 type ServiceRequest = {
   id: string
@@ -57,25 +65,19 @@ type ServiceRequest = {
   price: number
   distanceKm: number
   etaMin: number
-  status: 'searching' | 'offered' | 'accepted' | 'arriving' | 'arrived' | 'in_progress' | 'completed' | 'cancelled' | 'expired'
+  status: ServiceStatus
+  paymentMethod: PaymentMethod
   providerId?: string | null
   createdAt: number
   acceptedAt?: number | null
   completedAt?: number | null
   timeline: TimelineEvent[]
+  rating?: Rating | null
 }
 
-type TimelineEvent = {
-  status: ServiceRequest['status']
-  label: string
-  at: number
-}
+type TimelineEvent = { status: ServiceStatus; label: string; at: number }
 
-type ServiceTypeMeta = {
-  label: string
-  basePrice: number
-  icon: string
-}
+type ServiceTypeMeta = { label: string; basePrice: number; icon: string }
 
 const SERVICE_TYPES: Record<ServiceType, ServiceTypeMeta> = {
   reboque: { label: 'Reboque / Guincho', basePrice: 180, icon: 'tow-truck' },
@@ -87,17 +89,12 @@ const SERVICE_TYPES: Record<ServiceType, ServiceTypeMeta> = {
 }
 
 // ----------------------- State -----------------------
-const providers = new Map<string, Provider>() // providerId -> Provider
+const providers = new Map<string, Provider>()
 const clients = new Map<string, { id: string; socketId: string }>()
-const services = new Map<string, ServiceRequest>() // serviceId -> request
+const services = new Map<string, ServiceRequest>()
 const socketToRole = new Map<string, { role: Role; id: string }>()
 
-// Simulated city map bounds (a virtual grid we move providers around)
-// We use lat/lng-ish coordinates on a small virtual city.
-const CITY = {
-  center: { lat: -23.5505, lng: -46.6333 }, // São Paulo-ish
-  span: 0.05, // ~5km
-}
+const CITY = { center: { lat: -23.5505, lng: -46.6333 }, span: 0.05 }
 
 // ----------------------- Helpers -----------------------
 const uid = (p = '') => p + Math.random().toString(36).slice(2, 10)
@@ -118,14 +115,13 @@ const calcPrice = (type: ServiceType, distanceKm: number) => {
   return Math.round(meta.basePrice + distanceKm * perKm)
 }
 
-const calcEta = (distanceKm: number) => Math.max(3, Math.round(distanceKm / 0.5)) // ~30km/h city
+const calcEta = (distanceKm: number) => Math.max(3, Math.round(distanceKm / 0.5))
 
-const pushTimeline = (svc: ServiceRequest, status: ServiceRequest['status'], label: string) => {
+const pushTimeline = (svc: ServiceRequest, status: ServiceStatus, label: string) => {
   svc.status = status
   svc.timeline.push({ status, label, at: Date.now() })
 }
 
-// Move a provider one step toward a target, return new position + arrived flag
 const stepToward = (from: LatLng, to: LatLng, stepKm: number): { pos: LatLng; arrived: boolean } => {
   const dist = haversineKm(from, to)
   if (dist <= stepKm) return { pos: { ...to }, arrived: true }
@@ -136,59 +132,47 @@ const stepToward = (from: LatLng, to: LatLng, stepKm: number): { pos: LatLng; ar
   }
 }
 
+const providerPublic = (p: Provider) => ({
+  id: p.id, name: p.name, vehicle: p.vehicle, rating: p.rating,
+  position: p.position, online: p.online, completedCount: p.completedCount,
+})
+
 const emitProvider = (p: Provider) => {
   io.to(p.socketId).emit('provider:state', {
-    id: p.id,
-    name: p.name,
-    vehicle: p.vehicle,
-    plate: p.plate,
-    rating: p.rating,
-    online: p.online,
-    position: p.position,
-    currentServiceId: p.currentServiceId,
-  })
-  io.emit('providers:nearby', Array.from(providers.values()).filter((x) => x.online).map((x) => ({
-    id: x.id, name: x.name, vehicle: x.vehicle, rating: x.rating, position: x.position, online: x.online,
-  })))
+    id: p.id, name: p.name, vehicle: p.vehicle, plate: p.plate,
+    rating: p.rating, online: p.online, position: p.position,
+    currentServiceId: p.currentServiceId, completedCount: p.completedCount,
+    earningsToday: p.earningsToday,
+  } as any)
+  io.emit('providers:nearby', Array.from(providers.values()).filter((x) => x.online).map(providerPublic))
 }
+
+const sanitizeService = (svc: ServiceRequest) => ({
+  id: svc.id, clientId: svc.clientId, clientName: svc.clientName,
+  type: svc.type, typeLabel: SERVICE_TYPES[svc.type].label, icon: SERVICE_TYPES[svc.type].icon,
+  description: svc.description, pickup: svc.pickup, pickupLabel: svc.pickupLabel,
+  destination: svc.destination, destinationLabel: svc.destinationLabel,
+  price: svc.price, distanceKm: svc.distanceKm, etaMin: svc.etaMin, status: svc.status,
+  paymentMethod: svc.paymentMethod,
+  providerId: svc.providerId,
+  provider: svc.providerId ? providers.get(svc.providerId) : null,
+  createdAt: svc.createdAt, acceptedAt: svc.acceptedAt, completedAt: svc.completedAt,
+  timeline: svc.timeline, rating: svc.rating || null,
+})
 
 const emitService = (svc: ServiceRequest) => {
   const payload = sanitizeService(svc)
-  // to client
   const client = clients.get(svc.clientId)
   if (client) io.to(client.socketId).emit('service:update', payload)
-  // to provider
   if (svc.providerId) {
     const p = providers.get(svc.providerId)
     if (p) io.to(p.socketId).emit('service:update', payload)
   }
-  // broadcast light status for map
-  io.emit('service:public', { id: svc.id, status: svc.status, clientId: svc.clientId, providerId: svc.providerId, pickup: svc.pickup, destination: svc.destination })
+  io.emit('service:public', {
+    id: svc.id, status: svc.status, clientId: svc.clientId, providerId: svc.providerId,
+    pickup: svc.pickup, destination: svc.destination,
+  })
 }
-
-const sanitizeService = (svc: ServiceRequest) => ({
-  id: svc.id,
-  clientId: svc.clientId,
-  clientName: svc.clientName,
-  type: svc.type,
-  typeLabel: SERVICE_TYPES[svc.type].label,
-  icon: SERVICE_TYPES[svc.type].icon,
-  description: svc.description,
-  pickup: svc.pickup,
-  pickupLabel: svc.pickupLabel,
-  destination: svc.destination,
-  destinationLabel: svc.destinationLabel,
-  price: svc.price,
-  distanceKm: svc.distanceKm,
-  etaMin: svc.etaMin,
-  status: svc.status,
-  providerId: svc.providerId,
-  provider: svc.providerId ? providers.get(svc.providerId) : null,
-  createdAt: svc.createdAt,
-  acceptedAt: svc.acceptedAt,
-  completedAt: svc.completedAt,
-  timeline: svc.timeline,
-})
 
 // ----------------------- Connection -----------------------
 io.on('connection', (socket) => {
@@ -199,22 +183,15 @@ io.on('connection', (socket) => {
     clients.set(id, { id, socketId: socket.id })
     socketToRole.set(socket.id, { role: 'client', id })
     socket.emit('client:registered', { id, name: data.name })
-    // send nearby providers immediately
-    socket.emit('providers:nearby', Array.from(providers.values()).filter((x) => x.online).map((x) => ({
-      id: x.id, name: x.name, vehicle: x.vehicle, rating: x.rating, position: x.position, online: x.online,
-    })))
+    socket.emit('providers:nearby', Array.from(providers.values()).filter((x) => x.online).map(providerPublic))
     console.log(`[client] registered ${id} (${data.name})`)
   })
 
   socket.on('provider:register', (data: { name: string; vehicle: string; plate: string }) => {
     const id = uid('prv_')
     const provider: Provider = {
-      id,
-      socketId: socket.id,
-      name: data.name,
-      vehicle: data.vehicle,
-      plate: data.plate,
-      rating: 4.8,
+      id, socketId: socket.id, name: data.name, vehicle: data.vehicle, plate: data.plate,
+      rating: 4.8, ratingSum: 48, ratingCount: 10, completedCount: 0, earningsToday: 0,
       online: true,
       position: {
         lat: CITY.center.lat + (Math.random() - 0.5) * CITY.span,
@@ -238,7 +215,6 @@ io.on('connection', (socket) => {
     emitProvider(p)
   })
 
-  // Client creates a service request
   socket.on('service:request', (data: {
     clientName: string
     type: ServiceType
@@ -247,6 +223,7 @@ io.on('connection', (socket) => {
     pickupLabel: string
     destination: LatLng
     destinationLabel: string
+    paymentMethod: PaymentMethod
   }) => {
     const role = socketToRole.get(socket.id)
     if (!role || role.role !== 'client') return
@@ -261,25 +238,21 @@ io.on('connection', (socket) => {
       clientName: data.clientName,
       type: data.type,
       description: data.description,
-      pickup: data.pickup,
-      pickupLabel: data.pickupLabel,
-      destination: data.destination,
-      destinationLabel: data.destinationLabel,
-      price,
-      distanceKm: Number(distanceKm.toFixed(2)),
-      etaMin,
+      pickup: data.pickup, pickupLabel: data.pickupLabel,
+      destination: data.destination, destinationLabel: data.destinationLabel,
+      price, distanceKm: Number(distanceKm.toFixed(2)), etaMin,
       status: 'searching',
+      paymentMethod: data.paymentMethod || 'pix',
       providerId: null,
       createdAt: Date.now(),
       timeline: [{ status: 'searching', label: 'Solicitação enviada — procurando prestador próximo', at: Date.now() }],
+      rating: null,
     }
     services.set(svc.id, svc)
     emitService(svc)
 
-    // Find nearest online provider without active service
     const candidates = Array.from(providers.values()).filter((p) => p.online && !p.currentServiceId)
     if (candidates.length === 0) {
-      // No provider available — let client know; after a short wait auto-expire
       setTimeout(() => {
         const s = services.get(svc.id)
         if (s && s.status === 'searching') {
@@ -297,9 +270,7 @@ io.on('connection', (socket) => {
     emitService(svc)
     emitProvider(chosen)
 
-    // Send the offer to provider; they have 12s to accept or it expires
-    const offer = sanitizeService(svc)
-    io.to(chosen.socketId).emit('service:offer', offer)
+    io.to(chosen.socketId).emit('service:offer', sanitizeService(svc))
 
     const expireTimer = setTimeout(() => {
       const s = services.get(svc.id)
@@ -307,7 +278,6 @@ io.on('connection', (socket) => {
         pushTimeline(s, 'expired', `${chosen.name} não respondeu a tempo — reofertando...`)
         chosen.currentServiceId = null
         emitProvider(chosen)
-        // re-offer to next nearest provider
         const next = Array.from(providers.values())
           .filter((p) => p.online && !p.currentServiceId && p.id !== chosen.id)
           .sort((a, b) => haversineKm(a.position, s.pickup) - haversineKm(b.position, s.pickup))[0]
@@ -324,11 +294,9 @@ io.on('connection', (socket) => {
         }
       }
     }, 12000)
-    // store for cleanup if accepted
     ;(svc as any)._expireTimer = expireTimer
   })
 
-  // Provider accepts an offer
   socket.on('service:accept', (data: { serviceId: string }) => {
     const role = socketToRole.get(socket.id)
     if (!role || role.role !== 'provider') return
@@ -336,7 +304,7 @@ io.on('connection', (socket) => {
     if (!svc || svc.providerId !== role.id || svc.status !== 'offered') return
     if ((svc as any)._expireTimer) clearTimeout((svc as any)._expireTimer)
     const p = providers.get(role.id)!
-    p.online = false // busy
+    p.online = false
     svc.acceptedAt = Date.now()
     pushTimeline(svc, 'accepted', `${p.name} aceitou a chamada e está a caminho`)
     p.destination = svc.pickup
@@ -344,7 +312,6 @@ io.on('connection', (socket) => {
     emitService(svc)
   })
 
-  // Provider rejects an offer (re-offer to next)
   socket.on('service:reject', (data: { serviceId: string }) => {
     const role = socketToRole.get(socket.id)
     if (!role || role.role !== 'provider') return
@@ -355,7 +322,6 @@ io.on('connection', (socket) => {
     p.currentServiceId = null
     emitProvider(p)
     pushTimeline(svc, 'searching', `${p.name} recusou — procurando outro prestador`)
-    // re-offer
     const next = Array.from(providers.values())
       .filter((x) => x.online && !x.currentServiceId && x.id !== p.id)
       .sort((a, b) => haversineKm(a.position, svc.pickup) - haversineKm(b.position, svc.pickup))[0]
@@ -372,7 +338,6 @@ io.on('connection', (socket) => {
     }
   })
 
-  // Provider manually arrived at pickup
   socket.on('service:arrived', (data: { serviceId: string }) => {
     const role = socketToRole.get(socket.id)
     if (!role || role.role !== 'provider') return
@@ -386,7 +351,6 @@ io.on('connection', (socket) => {
     emitService(svc)
   })
 
-  // Provider starts the service (begins trip to destination)
   socket.on('service:start', (data: { serviceId: string }) => {
     const role = socketToRole.get(socket.id)
     if (!role || role.role !== 'provider') return
@@ -399,7 +363,6 @@ io.on('connection', (socket) => {
     emitService(svc)
   })
 
-  // Provider completes the service
   socket.on('service:complete', (data: { serviceId: string }) => {
     const role = socketToRole.get(socket.id)
     if (!role || role.role !== 'provider') return
@@ -410,14 +373,39 @@ io.on('connection', (socket) => {
     p.destination = null
     p.currentServiceId = null
     p.online = true
+    p.completedCount += 1
+    p.earningsToday += svc.price
     svc.completedAt = Date.now()
-    pushTimeline(svc, 'completed', 'Serviço concluído com sucesso. Obrigado!')
+    pushTimeline(svc, 'completed', 'Serviço concluído com sucesso. Avalie o atendimento!')
     emitProvider(p)
     emitService(svc)
-    console.log(`[service] completed ${svc.id}`)
+    console.log(`[service] completed ${svc.id} — provider ${p.name} earned R$ ${svc.price}`)
   })
 
-  // Client cancels a service
+  // Client rates the provider after completion
+  socket.on('service:rate', (data: { serviceId: string; stars: number; comment: string }) => {
+    const role = socketToRole.get(socket.id)
+    if (!role || role.role !== 'client') return
+    const svc = services.get(data.serviceId)
+    if (!svc || svc.clientId !== role.id) return
+    if (svc.status !== 'completed') return
+    if (svc.rating) return // already rated
+    const stars = Math.max(1, Math.min(5, Math.round(data.stars)))
+    svc.rating = { stars, comment: (data.comment || '').slice(0, 240), at: Date.now(), from: svc.clientName }
+    // update provider rating (running average)
+    if (svc.providerId) {
+      const p = providers.get(svc.providerId)
+      if (p) {
+        p.ratingSum += stars
+        p.ratingCount += 1
+        p.rating = Number((p.ratingSum / p.ratingCount).toFixed(2))
+        emitProvider(p)
+      }
+    }
+    emitService(svc)
+    console.log(`[rating] service ${svc.id} rated ${stars}★ by ${svc.clientName}`)
+  })
+
   socket.on('service:cancel', (data: { serviceId: string }) => {
     const role = socketToRole.get(socket.id)
     if (!role || role.role !== 'client') return
@@ -435,6 +423,7 @@ io.on('connection', (socket) => {
       }
     }
     pushTimeline(svc, 'cancelled', 'Solicitação cancelada pelo cliente')
+    svc.completedAt = Date.now()
     emitService(svc)
   })
 
@@ -446,12 +435,9 @@ io.on('connection', (socket) => {
     } else if (role.role === 'provider') {
       const p = providers.get(role.id)
       if (p) {
-        // if in middle of service, mark provider offline but keep service record
         p.online = false
         providers.delete(role.id)
-        io.emit('providers:nearby', Array.from(providers.values()).filter((x) => x.online).map((x) => ({
-          id: x.id, name: x.name, vehicle: x.vehicle, rating: x.rating, position: x.position, online: x.online,
-        })))
+        io.emit('providers:nearby', Array.from(providers.values()).filter((x) => x.online).map(providerPublic))
       }
     }
     socketToRole.delete(socket.id)
@@ -460,26 +446,22 @@ io.on('connection', (socket) => {
 })
 
 // ----------------------- Movement simulation loop -----------------------
-// Every 1s, move each provider that has a destination toward it.
 setInterval(() => {
   for (const p of providers.values()) {
     if (!p.destination) continue
-    const stepKm = 0.18 // ~ moves decently for demo (about 180m/s)
+    const stepKm = 0.18
     const { pos, arrived } = stepToward(p.position, p.destination, stepKm)
     p.position = pos
     emitProvider(p)
-    // find the service this provider is on
     if (p.currentServiceId) {
       const svc = services.get(p.currentServiceId)
       if (svc) {
         if (arrived) {
-          // auto-advance states based on current status
           if (svc.status === 'accepted') {
             pushTimeline(svc, 'arriving', `${p.name} está próximo do local`)
             emitService(svc)
           }
         } else if (svc.status === 'accepted') {
-          // keep feeding arriving status occasionally
           pushTimeline(svc, 'arriving', `${p.name} está a caminho do local`)
           emitService(svc)
         }
@@ -488,11 +470,8 @@ setInterval(() => {
   }
 }, 1000)
 
-// Broadcast nearby providers periodically so clients see movement
 setInterval(() => {
-  io.emit('providers:nearby', Array.from(providers.values()).filter((x) => x.online).map((x) => ({
-    id: x.id, name: x.name, vehicle: x.vehicle, rating: x.rating, position: x.position, online: x.online,
-  })))
+  io.emit('providers:nearby', Array.from(providers.values()).filter((x) => x.online).map(providerPublic))
 }, 2000)
 
 const PORT = 3003

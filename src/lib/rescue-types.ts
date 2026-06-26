@@ -6,6 +6,8 @@ export type LatLng = { lat: number; lng: number }
 
 export type ServiceType = 'reboque' | 'pneu' | 'bateria' | 'combustivel' | 'chaveiro' | 'pane'
 
+export type PaymentMethod = 'pix' | 'card' | 'cash'
+
 export type ServiceStatus =
   | 'searching'
   | 'offered'
@@ -24,6 +26,7 @@ export type ProviderPublic = {
   rating: number
   position: LatLng
   online: boolean
+  completedCount: number
 }
 
 export type ProviderState = ProviderPublic & {
@@ -35,6 +38,13 @@ export type TimelineEvent = {
   status: ServiceStatus
   label: string
   at: number
+}
+
+export type Rating = {
+  stars: number
+  comment: string
+  at: number
+  from: string
 }
 
 export type ServiceData = {
@@ -53,12 +63,33 @@ export type ServiceData = {
   distanceKm: number
   etaMin: number
   status: ServiceStatus
+  paymentMethod: PaymentMethod
   providerId?: string | null
   provider: ProviderState | null
   createdAt: number
   acceptedAt?: number | null
   completedAt?: number | null
   timeline: TimelineEvent[]
+  rating?: Rating | null
+}
+
+// History record persisted in localStorage
+export type ServiceRecord = {
+  id: string
+  role: Role
+  type: ServiceType
+  typeLabel: string
+  icon: string
+  price: number
+  distanceKm: number
+  paymentMethod: PaymentMethod
+  pickupLabel: string
+  destinationLabel: string
+  counterpartName: string
+  status: ServiceStatus
+  createdAt: number
+  completedAt: number
+  rating?: { stars: number; comment: string } | null
 }
 
 export const SERVICE_TYPES: { id: ServiceType; label: string; desc: string; base: number; icon: string }[] = [
@@ -68,6 +99,12 @@ export const SERVICE_TYPES: { id: ServiceType; label: string; desc: string; base
   { id: 'combustivel', label: 'Combustível', desc: 'Pane seca', base: 60, icon: 'fuel' },
   { id: 'chaveiro', label: 'Chaveiro', desc: 'Trancou as chaves', base: 120, icon: 'key' },
   { id: 'pane', label: 'Pane Mecânica', desc: 'Outro problema', base: 110, icon: 'wrench' },
+]
+
+export const PAYMENT_METHODS: { id: PaymentMethod; label: string; desc: string; icon: string }[] = [
+  { id: 'pix', label: 'PIX', desc: 'Aprovação na hora', icon: 'zap' },
+  { id: 'card', label: 'Cartão', desc: 'Crédito ou débito', icon: 'credit-card' },
+  { id: 'cash', label: 'Dinheiro', desc: 'Na entrega', icon: 'wallet' },
 ]
 
 export const STATUS_LABELS: Record<ServiceStatus, { label: string; color: string }> = {

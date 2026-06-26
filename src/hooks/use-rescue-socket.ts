@@ -2,11 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { io, Socket } from 'socket.io-client'
-import {
-  ProviderState,
-  ProviderPublic,
-  ServiceData,
-} from '@/lib/rescue-types'
+import type { ProviderState, ProviderPublic, ServiceData, PaymentMethod } from '@/lib/rescue-types'
 
 type ClientState = {
   connected: boolean
@@ -14,7 +10,6 @@ type ClientState = {
   clientId: string | null
   nearby: ProviderPublic[]
   currentService: ServiceData | null
-  // offer received (client doesn't get offers, but for completeness)
 }
 
 type ProviderSession = {
@@ -82,6 +77,7 @@ export function useClientSocket() {
       pickupLabel: string
       destination: any
       destinationLabel: string
+      paymentMethod: PaymentMethod
     }) => {
       socketRef.current?.emit('service:request', payload)
     },
@@ -92,7 +88,19 @@ export function useClientSocket() {
     socketRef.current?.emit('service:cancel', { serviceId })
   }, [])
 
-  return { ...state, register, requestService, cancelService }
+  const rateService = useCallback(
+    (serviceId: string, stars: number, comment: string) => {
+      socketRef.current?.emit('service:rate', { serviceId, stars, comment })
+    },
+    []
+  )
+
+  // dismiss current service from view (after rating / for new request)
+  const clearCurrent = useCallback(() => {
+    setState((p) => ({ ...p, currentService: null }))
+  }, [])
+
+  return { ...state, register, requestService, cancelService, rateService, clearCurrent }
 }
 
 export function useProviderSocket() {
@@ -172,5 +180,9 @@ export function useProviderSocket() {
     socketRef.current?.emit('service:complete', { serviceId })
   }, [])
 
-  return { ...state, register, toggleOnline, accept, reject, arrived, start, complete }
+  const clearCurrent = useCallback(() => {
+    setState((p) => ({ ...p, currentService: null, offer: null }))
+  }, [])
+
+  return { ...state, register, toggleOnline, accept, reject, arrived, start, complete, clearCurrent }
 }

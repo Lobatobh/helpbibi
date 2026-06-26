@@ -19,9 +19,21 @@ import {
   Lock,
   Headphones,
   ChevronDown,
+  Quote,
+  CreditCard,
+  Battery,
+  Fuel,
+  Key,
+  Wrench,
+  CircleDot,
+  HelpCircle,
+  Plus,
+  Minus,
+  TrendingUp,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { ClientPanel } from '@/components/rescue/client-panel'
 import { ProviderPanel } from '@/components/rescue/provider-panel'
 
@@ -42,10 +54,11 @@ export default function Home() {
               <p className="text-[10px] text-slate-400">auto socorro por aplicativo</p>
             </div>
           </div>
-          <nav className="hidden items-center gap-6 text-sm text-slate-300 md:flex">
+          <nav className="hidden items-center gap-6 text-sm text-slate-300 lg:flex">
             <a href="#como-funciona" className="hover:text-white">Como funciona</a>
-            <a href="#para-clientes" className="hover:text-white">Para clientes</a>
-            <a href="#para-prestadores" className="hover:text-white">Para prestadores</a>
+            <a href="#precos" className="hover:text-white">Preços</a>
+            <a href="#depoimentos" className="hover:text-white">Depoimentos</a>
+            <a href="#faq" className="hover:text-white">FAQ</a>
             <a href="#demo" className="hover:text-white">Demo ao vivo</a>
           </nav>
           <Button
@@ -201,6 +214,80 @@ export default function Home() {
               { icon: Headphones, title: 'Suporte dedicado', desc: 'Central de ajuda para prestadores 24h.' },
             ]}
           />
+        </div>
+      </section>
+
+      {/* PREÇOS TRANSPARENTES */}
+      <section id="precos" className="mx-auto w-full max-w-7xl px-4 py-16 sm:px-6 lg:py-24">
+        <SectionHead
+          eyebrow="Tabela transparente"
+          title="Preços justos, sem surpresas"
+          subtitle="O valor é calculado antes de você confirmar. Veja a base por tipo de serviço — a tarifa final adiciona R$ 4,50 por km até o destino."
+        />
+        <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <PriceCard icon={Truck} name="Reboque / Guincho" base="R$ 180" desc="Veículo imobilizado, necessita guincho" featured />
+          <PriceCard icon={CircleDot} name="Troca de Pneu" base="R$ 90" desc="Furou ou rasgou no caminho" />
+          <PriceCard icon={Battery} name="Carga de Bateria" base="R$ 70" desc="Bateria arriou, não dá partida" />
+          <PriceCard icon={Fuel} name="Combustível" base="R$ 60" desc="Pane seca, combustível na hora" />
+          <PriceCard icon={Key} name="Chaveiro" base="R$ 120" desc="Trancou as chaves no carro" />
+          <PriceCard icon={Wrench} name="Pane Mecânica" base="R$ 110" desc="Outro problema mecânico" />
+        </div>
+        <div className="mx-auto mt-8 flex max-w-2xl items-center justify-center gap-6 rounded-2xl border border-slate-800 bg-slate-900/50 p-4 text-center text-xs text-slate-400">
+          <span className="flex items-center gap-1.5"><CreditCard className="h-3.5 w-3.5 text-amber-400" /> PIX, cartão ou dinheiro</span>
+          <span className="flex items-center gap-1.5"><Lock className="h-3.5 w-3.5 text-emerald-400" /> Pagamento protegido</span>
+          <span className="flex items-center gap-1.5"><TrendingUp className="h-3.5 w-3.5 text-sky-400" /> +R$ 4,50/km até destino</span>
+        </div>
+      </section>
+
+      {/* DEPOIMENTOS */}
+      <section id="depoimentos" className="border-y border-slate-800 bg-slate-900/30">
+        <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:py-24">
+          <SectionHead
+            eyebrow="Quem usa, aprova"
+            title="Motoristas e prestadores satisfeitos"
+            subtitle="Mais de 12 mil motoristas já foram socorridos. Veja o que dizem."
+          />
+          <div className="mt-10 grid gap-4 md:grid-cols-3">
+            <Testimonial
+              name="Ricardo Almeida"
+              role="Motorista · São Paulo"
+              initials="RA"
+              text="Furou o pneu na Marginal no horário de pico. Em 9 minutos o guincho chegou. Pagamento no PIX, sem dor de cabeça."
+              stars={5}
+            />
+            <Testimonial
+              name="Fernanda Souza"
+              role="Motorista · Guarulhos"
+              initials="FS"
+              text="Bateria arriou no estacionamento de casa. O app mostrou o prestador chegando no mapa em tempo real. Sensacional."
+              stars={5}
+            />
+            <Testimonial
+              name="Marcos Pereira"
+              role="Prestador · Guincho"
+              initials="MP"
+              text="Como prestador, consigo ver o valor e o destino antes de aceitar. Em 3 meses virei minha principal renda. Recomendo."
+              stars={5}
+              color="emerald"
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section id="faq" className="mx-auto w-full max-w-3xl px-4 py-16 sm:px-6 lg:py-24">
+        <SectionHead
+          eyebrow="Dúvidas frequentes"
+          title="Perguntas e respostas"
+          subtitle="Tudo o que você precisa saber antes de usar o SocorroJá."
+        />
+        <div className="mt-10 space-y-3">
+          <FaqItem q="Como o prestador mais próximo é escolhido?" a="Calculamos a distância em linha reta (haversine) entre cada prestador online e o local do atendimento. O mais próximo recebe a chamada primeiro; se não responder em 12 segundos, reofertamos automaticamente ao próximo." />
+          <FaqItem q="O preço é fixo ou varia?" a="O valor é calculado antes de você confirmar: tarifa base por tipo de serviço + R$ 4,50 por km até o destino. Você vê o valor total antes de solicitar. Sem surpresas." />
+          <FaqItem q="Quais formas de pagamento aceito?" a="PIX (aprovação na hora), cartão de crédito ou débito, e dinheiro na entrega. O pagamento só é liberado ao prestador após a conclusão do serviço." />
+          <FaqItem q="Posso cancelar uma solicitação?" a="Sim, a qualquer momento antes da conclusão. Se o prestador já estiver a caminho, o cancelamento é registrado no histórico mas sem cobrança." />
+          <FaqItem q="Como funcionam as avaliações?" a="Após concluir o serviço, o cliente avalia o prestador de 1 a 5 estrelas e pode deixar um comentário. A nota média fica visível para todos e ajuda a manter a qualidade." />
+          <FaqItem q="Como me torno prestador?" a="Basta se cadastrar no app como prestador com nome, veículo e placa. Receba chamadas próximas, aceite as que quiser, e ganhe por serviço concluído." />
         </div>
       </section>
 
@@ -510,6 +597,92 @@ function PhoneFrame({
           <div className="h-full pt-2">{children}</div>
         </div>
       </div>
+    </div>
+  )
+}
+
+function PriceCard({ icon: Icon, name, base, desc, featured }: { icon: any; name: string; base: string; desc: string; featured?: boolean }) {
+  return (
+    <div
+      className={`relative overflow-hidden rounded-2xl border p-5 transition hover:-translate-y-0.5 ${
+        featured
+          ? 'border-amber-500/50 bg-gradient-to-br from-amber-500/10 to-slate-900/40 shadow-lg shadow-amber-500/10'
+          : 'border-slate-800 bg-slate-900/40 hover:border-slate-700'
+      }`}
+    >
+      {featured && (
+        <span className="absolute right-3 top-3 rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-bold text-slate-950">
+          MAIS PEDIDO
+        </span>
+      )}
+      <div
+        className={`mb-3 inline-flex h-11 w-11 items-center justify-center rounded-xl ${
+          featured ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-800 text-slate-300'
+        }`}
+      >
+        <Icon className="h-5 w-5" />
+      </div>
+      <p className="text-sm font-bold text-white">{name}</p>
+      <p className="mt-2 text-2xl font-extrabold text-white">
+        {base}
+        <span className="ml-1 text-xs font-normal text-slate-500">base</span>
+      </p>
+      <p className="mt-1 text-xs text-slate-400">{desc}</p>
+    </div>
+  )
+}
+
+function Testimonial({
+  name, role, initials, text, stars, color = 'amber',
+}: {
+  name: string; role: string; initials: string; text: string; stars: number; color?: 'amber' | 'emerald'
+}) {
+  const grad = color === 'amber' ? 'from-amber-500 to-amber-700' : 'from-emerald-500 to-emerald-700'
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+      <Quote className="absolute -right-2 -top-2 h-16 w-16 text-slate-800/60" />
+      <div className="relative">
+        <div className="mb-3 flex gap-0.5">
+          {Array.from({ length: stars }).map((_, i) => (
+            <Star key={i} className="h-3.5 w-3.5 text-amber-400" fill="currentColor" />
+          ))}
+        </div>
+        <p className="text-sm leading-relaxed text-slate-200">&ldquo;{text}&rdquo;</p>
+        <div className="mt-4 flex items-center gap-3">
+          <Avatar className={`h-9 w-9 bg-gradient-to-br ${grad}`}>
+            <AvatarFallback className="bg-transparent text-xs font-bold text-white">{initials}</AvatarFallback>
+          </Avatar>
+          <div>
+            <p className="text-xs font-bold text-white">{name}</p>
+            <p className="text-[11px] text-slate-400">{role}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FaqItem({ q, a }: { q: string; a: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/40">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition hover:bg-slate-900/60"
+      >
+        <span className="flex items-center gap-2 text-sm font-semibold text-white">
+          <HelpCircle className="h-4 w-4 shrink-0 text-amber-400" />
+          {q}
+        </span>
+        <span className={`shrink-0 rounded-full bg-slate-800 p-1 text-slate-300 transition ${open ? 'rotate-180' : ''}`}>
+          {open ? <Minus className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+        </span>
+      </button>
+      {open && (
+        <div className="border-t border-slate-800 px-4 py-3 text-sm leading-relaxed text-slate-400">
+          {a}
+        </div>
+      )}
     </div>
   )
 }

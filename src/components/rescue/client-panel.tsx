@@ -1,24 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
-  Shield,
-  Phone,
-  Star,
-  MapPin,
-  Navigation,
-  X,
-  Truck,
-  Battery,
-  Fuel,
-  Key,
-  Wrench,
-  CircleDot,
-  Clock,
-  CheckCircle2,
-  Loader2,
-  AlertTriangle,
-  MessageCircle,
+  Shield, Phone, Star, MapPin, Navigation, X, Truck, Battery, Fuel, Key, Wrench,
+  CircleDot, Clock, CheckCircle2, Loader2, AlertTriangle, MessageCircle,
+  Zap, CreditCard, Wallet, History, Home, Send,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -26,22 +12,20 @@ import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { Separator } from '@/components/ui/separator'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { useClientSocket } from '@/hooks/use-rescue-socket'
-import { SERVICE_TYPES, STATUS_LABELS, type ServiceType, type LatLng } from '@/lib/rescue-types'
+import {
+  SERVICE_TYPES, PAYMENT_METHODS, STATUS_LABELS,
+  type ServiceType, type LatLng, type PaymentMethod, type ServiceData, type ServiceRecord,
+} from '@/lib/rescue-types'
+import { getHistoryForRole, addRecord, recordFromService, updateRecord } from '@/lib/rescue-history'
 import { RescueMap } from './rescue-map'
 
 const ICONS: Record<string, any> = {
-  'tow-truck': Truck,
-  tire: CircleDot,
-  battery: Battery,
-  fuel: Fuel,
-  key: Key,
-  wrench: Wrench,
+  'tow-truck': Truck, tire: CircleDot, battery: Battery, fuel: Fuel, key: Key, wrench: Wrench,
 }
+const PAY_ICONS: Record<string, any> = { zap: Zap, 'credit-card': CreditCard, wallet: Wallet }
 
-// Preset points (lat/lng near SP center, within CITY span)
 const PRESETS: { id: string; label: string; pos: LatLng }[] = [
   { id: 'paulista', label: 'Av. Paulista, 1578', pos: { lat: -23.5614, lng: -46.6559 } },
   { id: 'centro', label: 'Praça da Sé, Centro', pos: { lat: -23.5503, lng: -46.6334 } },
@@ -52,15 +36,40 @@ const PRESETS: { id: string; label: string; pos: LatLng }[] = [
 ]
 
 export function ClientPanel() {
-  const { connected, registered, nearby, currentService, register, requestService, cancelService } =
-    useClientSocket()
+  const {
+    connected, registered, nearby, currentService,
+    register, requestService, cancelService, rateService, clearCurrent,
+  } = useClientSocket()
 
   const [name, setName] = useState('')
-  const [step, setStep] = useState<'idle' | 'form'>('idle')
+  const [view, setView] = useState<'home' | 'form' | 'history'>('home')
   const [svcType, setSvcType] = useState<ServiceType>('reboque')
   const [description, setDescription] = useState('')
   const [pickupId, setPickupId] = useState('paulista')
   const [destId, setDestId] = useState('moema')
+  const [payment, setPayment] = useState<PaymentMethod>('pix')
+  const [history, setHistory] = useState<ServiceRecord[]>(() =>
+    typeof window !== 'undefined' ? getHistoryForRole('client') : []
+  )
+  const [ratedServices, setRatedServices] = useState<Set<string>>(new Set())
+  const recordedRef = useRef<Set<string>>(new Set())
+
+  const refreshHistory = () => setHistory(getHistoryForRole('client'))
+
+  // When a service reaches a terminal state, persist it to history once
+  useEffect(() => {
+    if (!currentService) return
+    const s = currentService
+    if (s.status !== 'completed' && s.status !== 'cancelled' && s.status !== 'expired') return
+    if (recordedRef.current.has(s.id)) return
+    recordedRef.current.add(s.id)
+    const rec = recordFromService(s, 'client')
+    if (rec) {
+      addRecord(rec)
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setHistory((prev) => (prev.some((r) => r.id === rec.id) ? prev : [rec, ...prev]))
+    }
+  }, [currentService?.status, currentService?.id])
 
   const handleRegister = () => {
     if (!name.trim()) return
@@ -78,17 +87,33 @@ export function ClientPanel() {
       pickupLabel: pickup.label,
       destination: dest.pos,
       destinationLabel: dest.label,
+      paymentMethod: payment,
     })
-    setStep('idle')
+    setView('home')
     setDescription('')
+  }
+
+  const handleRate = (svc: ServiceData, stars: number, comment: string) => {
+    rateService(svc.id, stars, comment)
+    setRatedServices((prev) => new Set(prev).add(svc.id))
+    updateRecord(svc.id, 'client', { rating: { stars, comment } })
+    refreshHistory()
+  }
+
+  const handleNewRequest = () => {
+    clearCurrent()
+    setView('form')
   }
 
   // -------- Render states --------
   if (!registered) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-400">
-          <Shield className="h-8 w-8" />
+        <div className="relative">
+          <div className="absolute -inset-3 animate-pulse rounded-3xl bg-amber-500/20 blur-xl" />
+          <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 shadow-lg shadow-amber-500/30">
+            <Shield className="h-8 w-8" />
+          </div>
         </div>
         <div>
           <h3 className="text-lg font-bold text-white">Sou Cliente</h3>
@@ -113,21 +138,21 @@ export function ClientPanel() {
           </Button>
         </div>
         <p className="text-xs text-slate-500">
-          {connected ? 'Conectado ao serviço' : 'Conectando...'}
+          {connected ? '✓ Conectado ao serviço' : 'Conectando...'}
         </p>
       </div>
     )
   }
 
   const svc = currentService
-  const status = svc?.status
+  const hasActive = svc && !['completed', 'cancelled', 'expired'].includes(svc.status)
 
   return (
     <div className="flex h-full flex-col bg-slate-950 text-white">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
         <div className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500 text-slate-950">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 shadow-md shadow-amber-500/20">
             <Shield className="h-5 w-5" />
           </div>
           <div>
@@ -142,7 +167,7 @@ export function ClientPanel() {
       </div>
 
       {/* Map area */}
-      <div className="relative h-[42%] min-h-[180px] p-3">
+      <div className="relative h-[38%] min-h-[170px] p-3">
         <RescueMap
           providers={nearby}
           pickup={svc?.pickup}
@@ -151,25 +176,41 @@ export function ClientPanel() {
           providerState={svc?.provider}
           height="h-full"
         />
-        <div className="absolute left-5 top-5 rounded-lg bg-slate-900/85 px-3 py-1.5 text-xs font-medium text-slate-300 backdrop-blur">
+        <div className="absolute left-5 top-5 flex items-center gap-1.5 rounded-lg bg-slate-900/85 px-3 py-1.5 text-xs font-medium text-slate-300 backdrop-blur">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
           {nearby.length} prestador(es) por perto
         </div>
       </div>
 
+      {/* Tab nav */}
+      <div className="flex gap-1 border-b border-slate-800 px-3 pt-1">
+        <TabBtn active={view === 'home' || view === 'form'} onClick={() => setView('home')} icon={Home} label="Início" />
+        <TabBtn active={view === 'history'} onClick={() => { setView('history'); refreshHistory() }} icon={History} label="Histórico" badge={history.length} />
+      </div>
+
       {/* Body */}
       <div className="flex-1 overflow-y-auto p-4">
-        {!svc && step === 'idle' && (
+        {view === 'history' && (
+          <HistoryView history={history} role="client" />
+        )}
+
+        {view === 'home' && !svc && (
           <div className="space-y-4">
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-              <p className="text-sm font-semibold text-white">Pronto para ajudar</p>
-              <p className="mt-1 text-xs text-slate-400">
+            <div className="rounded-xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-900/40 p-4">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/15 text-amber-400">
+                  <Shield className="h-4 w-4" />
+                </div>
+                <p className="text-sm font-semibold text-white">Pronto para ajudar</p>
+              </div>
+              <p className="mt-2 text-xs text-slate-400">
                 Toque abaixo para solicitar um serviço. O prestador mais próximo receberá a chamada
                 automaticamente.
               </p>
             </div>
             <Button
-              onClick={() => setStep('form')}
-              className="w-full bg-amber-500 py-6 text-base font-bold text-slate-950 hover:bg-amber-400"
+              onClick={() => setView('form')}
+              className="w-full bg-amber-500 py-6 text-base font-bold text-slate-950 shadow-lg shadow-amber-500/20 hover:bg-amber-400"
             >
               <Shield className="mr-2 h-5 w-5" />
               Solicitar socorro
@@ -181,17 +222,18 @@ export function ClientPanel() {
               </p>
               <div className="space-y-2">
                 {nearby.length === 0 && (
-                  <p className="rounded-lg border border-dashed border-slate-800 p-4 text-center text-xs text-slate-500">
-                    Aguardando prestadores entrarem no app...
-                  </p>
+                  <div className="rounded-lg border border-dashed border-slate-800 p-4 text-center">
+                    <Truck className="mx-auto mb-1 h-5 w-5 text-slate-600" />
+                    <p className="text-xs text-slate-500">Aguardando prestadores entrarem no app...</p>
+                  </div>
                 )}
                 {nearby.slice(0, 4).map((p) => (
                   <div
                     key={p.id}
-                    className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-900/60 p-2.5"
+                    className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-900/60 p-2.5 transition hover:border-slate-700"
                   >
-                    <Avatar className="h-8 w-8 bg-slate-700">
-                      <AvatarFallback className="bg-slate-700 text-xs text-white">
+                    <Avatar className="h-8 w-8 bg-gradient-to-br from-emerald-500 to-emerald-700">
+                      <AvatarFallback className="bg-transparent text-xs font-bold text-white">
                         {p.name.slice(0, 2).toUpperCase()}
                       </AvatarFallback>
                     </Avatar>
@@ -199,9 +241,12 @@ export function ClientPanel() {
                       <p className="text-xs font-semibold text-white">{p.name}</p>
                       <p className="text-[11px] text-slate-400">{p.vehicle}</p>
                     </div>
-                    <div className="flex items-center gap-1 text-amber-400">
-                      <Star className="h-3 w-3" fill="currentColor" />
-                      <span className="text-[11px] font-semibold">{p.rating.toFixed(1)}</span>
+                    <div className="flex flex-col items-end gap-0.5">
+                      <div className="flex items-center gap-1 text-amber-400">
+                        <Star className="h-3 w-3" fill="currentColor" />
+                        <span className="text-[11px] font-semibold">{p.rating.toFixed(1)}</span>
+                      </div>
+                      <span className="text-[9px] text-slate-500">{p.completedCount} serviços</span>
                     </div>
                   </div>
                 ))}
@@ -210,150 +255,193 @@ export function ClientPanel() {
           </div>
         )}
 
-        {!svc && step === 'form' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold">Nova solicitação</h3>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-slate-400 hover:text-white"
-                onClick={() => setStep('idle')}
-              >
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-
-            <div>
-              <Label className="mb-2 block text-xs font-semibold uppercase text-slate-400">
-                Tipo de serviço
-              </Label>
-              <div className="grid grid-cols-2 gap-2">
-                {SERVICE_TYPES.map((s) => {
-                  const Icon = ICONS[s.icon] || CircleDot
-                  const active = svcType === s.id
-                  return (
-                    <button
-                      key={s.id}
-                      onClick={() => setSvcType(s.id)}
-                      className={`flex flex-col items-start gap-1 rounded-lg border p-2.5 text-left transition ${
-                        active
-                          ? 'border-amber-500 bg-amber-500/10'
-                          : 'border-slate-800 bg-slate-900/60 hover:border-slate-700'
-                      }`}
-                    >
-                      <Icon className={`h-4 w-4 ${active ? 'text-amber-400' : 'text-slate-400'}`} />
-                      <span className="text-xs font-semibold text-white">{s.label}</span>
-                      <span className="text-[10px] text-slate-500">a partir de R$ {s.base}</span>
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-
-            <div>
-              <Label className="mb-1.5 block text-xs font-semibold uppercase text-slate-400">
-                Descreva o problema
-              </Label>
-              <Textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Ex: Carro parado no acostamento, não dá partida..."
-                className="border-slate-700 bg-slate-900 text-white placeholder:text-slate-500"
-                rows={2}
-              />
-            </div>
-
-            <div className="grid grid-cols-1 gap-2">
-              <div>
-                <Label className="mb-1.5 block text-xs font-semibold uppercase text-slate-400">
-                  <MapPin className="mr-1 inline h-3 w-3 text-amber-400" />
-                  Local do atendimento
-                </Label>
-                <select
-                  value={pickupId}
-                  onChange={(e) => setPickupId(e.target.value)}
-                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-amber-500"
-                >
-                  {PRESETS.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <Label className="mb-1.5 block text-xs font-semibold uppercase text-slate-400">
-                  <Navigation className="mr-1 inline h-3 w-3 text-sky-400" />
-                  Destino final (reboque)
-                </Label>
-                <select
-                  value={destId}
-                  onChange={(e) => setDestId(e.target.value)}
-                  className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-amber-500"
-                >
-                  {PRESETS.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <Button
-              onClick={handleSubmit}
-              disabled={pickupId === destId}
-              className="w-full bg-amber-500 py-5 text-sm font-bold text-slate-950 hover:bg-amber-400"
-            >
-              Confirmar e procurar prestador
-            </Button>
-            {pickupId === destId && (
-              <p className="text-center text-xs text-rose-400">Local e destino não podem ser iguais</p>
-            )}
-          </div>
+        {view === 'home' && svc && (
+          <ServiceTracker
+            svc={svc}
+            onCancel={() => cancelService(svc.id)}
+            onRate={(stars, comment) => handleRate(svc, stars, comment)}
+            rated={ratedServices.has(svc.id) || !!svc.rating}
+            onNewRequest={handleNewRequest}
+          />
         )}
 
-        {svc && (
-          <ServiceTracker svc={svc} onCancel={() => cancelService(svc.id)} clientName={name} />
+        {view === 'form' && !hasActive && (
+          <RequestForm
+            svcType={svcType} setSvcType={setSvcType}
+            description={description} setDescription={setDescription}
+            pickupId={pickupId} setPickupId={setPickupId}
+            destId={destId} setDestId={setDestId}
+            payment={payment} setPayment={setPayment}
+            onCancel={() => setView('home')}
+            onSubmit={handleSubmit}
+          />
+        )}
+        {view === 'form' && hasActive && (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-center text-xs text-amber-300">
+            Você já tem um serviço em andamento. Acompanhe na aba Início.
+          </div>
         )}
       </div>
     </div>
   )
 }
 
+function TabBtn({ active, onClick, icon: Icon, label, badge }: { active: boolean; onClick: () => void; icon: any; label: string; badge?: number }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 px-3 py-2.5 text-xs font-semibold transition ${
+        active ? 'border-amber-500 text-amber-400' : 'border-transparent text-slate-500 hover:text-slate-300'
+      }`}
+    >
+      <Icon className="h-3.5 w-3.5" />
+      {label}
+      {badge ? (
+        <span className="ml-0.5 rounded-full bg-slate-700 px-1.5 text-[10px] text-white">{badge}</span>
+      ) : null}
+    </button>
+  )
+}
+
+function RequestForm(props: any) {
+  const { svcType, setSvcType, description, setDescription, pickupId, setPickupId, destId, setDestId, payment, setPayment, onCancel, onSubmit } = props
+  const sameLoc = pickupId === destId
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-bold">Nova solicitação</h3>
+        <Button variant="ghost" size="sm" className="h-7 px-2 text-slate-400 hover:text-white" onClick={onCancel}>
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+
+      <div>
+        <Label className="mb-2 block text-xs font-semibold uppercase text-slate-400">Tipo de serviço</Label>
+        <div className="grid grid-cols-2 gap-2">
+          {SERVICE_TYPES.map((s) => {
+            const Icon = ICONS[s.icon] || CircleDot
+            const active = svcType === s.id
+            return (
+              <button
+                key={s.id}
+                onClick={() => setSvcType(s.id)}
+                className={`flex flex-col items-start gap-1 rounded-lg border p-2.5 text-left transition ${
+                  active ? 'border-amber-500 bg-amber-500/10 shadow-sm shadow-amber-500/10' : 'border-slate-800 bg-slate-900/60 hover:border-slate-700'
+                }`}
+              >
+                <Icon className={`h-4 w-4 ${active ? 'text-amber-400' : 'text-slate-400'}`} />
+                <span className="text-xs font-semibold text-white">{s.label}</span>
+                <span className="text-[10px] text-slate-500">a partir de R$ {s.base}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      <div>
+        <Label className="mb-1.5 block text-xs font-semibold uppercase text-slate-400">Descreva o problema</Label>
+        <Textarea
+          value={description}
+          onChange={(e) => setDescription(e.target.value)}
+          placeholder="Ex: Carro parado no acostamento, não dá partida..."
+          className="border-slate-700 bg-slate-900 text-white placeholder:text-slate-500"
+          rows={2}
+        />
+      </div>
+
+      <div>
+        <Label className="mb-1.5 block text-xs font-semibold uppercase text-slate-400">Forma de pagamento</Label>
+        <div className="grid grid-cols-3 gap-2">
+          {PAYMENT_METHODS.map((m) => {
+            const Icon = PAY_ICONS[m.icon]
+            const active = payment === m.id
+            return (
+              <button
+                key={m.id}
+                onClick={() => setPayment(m.id)}
+                className={`flex flex-col items-center gap-1 rounded-lg border p-2.5 transition ${
+                  active ? 'border-amber-500 bg-amber-500/10' : 'border-slate-800 bg-slate-900/60 hover:border-slate-700'
+                }`}
+              >
+                <Icon className={`h-4 w-4 ${active ? 'text-amber-400' : 'text-slate-400'}`} />
+                <span className="text-[11px] font-semibold text-white">{m.label}</span>
+                <span className="text-[9px] text-slate-500">{m.desc}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-2">
+        <div>
+          <Label className="mb-1.5 block text-xs font-semibold uppercase text-slate-400">
+            <MapPin className="mr-1 inline h-3 w-3 text-amber-400" />
+            Local do atendimento
+          </Label>
+          <select
+            value={pickupId}
+            onChange={(e) => setPickupId(e.target.value)}
+            className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-amber-500"
+          >
+            {PRESETS.map((p) => (<option key={p.id} value={p.id}>{p.label}</option>))}
+          </select>
+        </div>
+        <div>
+          <Label className="mb-1.5 block text-xs font-semibold uppercase text-slate-400">
+            <Navigation className="mr-1 inline h-3 w-3 text-sky-400" />
+            Destino final (reboque)
+          </Label>
+          <select
+            value={destId}
+            onChange={(e) => setDestId(e.target.value)}
+            className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-amber-500"
+          >
+            {PRESETS.map((p) => (<option key={p.id} value={p.id}>{p.label}</option>))}
+          </select>
+        </div>
+      </div>
+
+      <Button
+        onClick={onSubmit}
+        disabled={sameLoc}
+        className="w-full bg-amber-500 py-5 text-sm font-bold text-slate-950 shadow-lg shadow-amber-500/20 hover:bg-amber-400"
+      >
+        Confirmar e procurar prestador
+      </Button>
+      {sameLoc && <p className="text-center text-xs text-rose-400">Local e destino não podem ser iguais</p>}
+    </div>
+  )
+}
+
 function ServiceTracker({
-  svc,
-  onCancel,
-  clientName,
+  svc, onCancel, onRate, rated, onNewRequest,
 }: {
-  svc: any
+  svc: ServiceData
   onCancel: () => void
-  clientName: string
+  onRate: (stars: number, comment: string) => void
+  rated: boolean
+  onNewRequest: () => void
 }) {
   const status = svc.status
-  const statusMeta = STATUS_LABELS[status as keyof typeof STATUS_LABELS]
+  const statusMeta = STATUS_LABELS[status]
   const isFinal = status === 'completed' || status === 'cancelled' || status === 'expired'
   const isLive = !isFinal
+  const PayIcon = PAY_ICONS[PAYMENT_METHODS.find((m) => m.id === svc.paymentMethod)?.icon || 'zap']
 
   return (
     <div className="space-y-4">
       {/* Status banner */}
       <div
         className={`rounded-xl border p-3 ${
-          status === 'completed'
-            ? 'border-emerald-500/40 bg-emerald-500/10'
-            : status === 'cancelled' || status === 'expired'
-              ? 'border-rose-500/40 bg-rose-500/10'
-              : 'border-amber-500/40 bg-amber-500/10'
+          status === 'completed' ? 'border-emerald-500/40 bg-emerald-500/10'
+          : status === 'cancelled' || status === 'expired' ? 'border-rose-500/40 bg-rose-500/10'
+          : 'border-amber-500/40 bg-amber-500/10'
         }`}
       >
         <div className="flex items-center gap-2">
           {isLive && <Loader2 className="h-4 w-4 animate-spin text-amber-400" />}
           {status === 'completed' && <CheckCircle2 className="h-4 w-4 text-emerald-400" />}
-          {(status === 'cancelled' || status === 'expired') && (
-            <AlertTriangle className="h-4 w-4 text-rose-400" />
-          )}
+          {(status === 'cancelled' || status === 'expired') && <AlertTriangle className="h-4 w-4 text-rose-400" />}
           <p className="text-sm font-bold text-white">{statusMeta.label}</p>
         </div>
         <p className="mt-1 text-xs text-slate-400">
@@ -372,9 +460,7 @@ function ServiceTracker({
             </Avatar>
             <div className="flex-1">
               <p className="text-sm font-bold text-white">{svc.provider.name}</p>
-              <p className="text-xs text-slate-400">
-                {svc.provider.vehicle} · {svc.provider.plate}
-              </p>
+              <p className="text-xs text-slate-400">{svc.provider.vehicle} · {svc.provider.plate}</p>
             </div>
             <div className="flex flex-col items-end gap-1">
               <div className="flex items-center gap-1 text-amber-400">
@@ -383,18 +469,10 @@ function ServiceTracker({
               </div>
               {isLive && (
                 <div className="flex gap-1">
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    className="h-7 w-7 border-slate-700 bg-slate-800 text-emerald-400 hover:bg-slate-700"
-                  >
+                  <Button size="icon" variant="outline" className="h-7 w-7 border-slate-700 bg-slate-800 text-emerald-400 hover:bg-slate-700">
                     <Phone className="h-3.5 w-3.5" />
                   </Button>
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    className="h-7 w-7 border-slate-700 bg-slate-800 text-sky-400 hover:bg-slate-700"
-                  >
+                  <Button size="icon" variant="outline" className="h-7 w-7 border-slate-700 bg-slate-800 text-sky-400 hover:bg-slate-700">
                     <MessageCircle className="h-3.5 w-3.5" />
                   </Button>
                 </div>
@@ -421,7 +499,7 @@ function ServiceTracker({
         </div>
       )}
 
-      {/* Route */}
+      {/* Route + payment */}
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
         <div className="flex gap-3">
           <div className="flex flex-col items-center pt-1">
@@ -440,23 +518,26 @@ function ServiceTracker({
             </div>
           </div>
         </div>
+        <div className="mt-2 flex items-center justify-between border-t border-slate-800 pt-2 text-xs">
+          <span className="flex items-center gap-1.5 text-slate-400">
+            <PayIcon className="h-3.5 w-3.5 text-amber-400" />
+            {PAYMENT_METHODS.find((m) => m.id === svc.paymentMethod)?.label}
+          </span>
+          <span className="font-bold text-amber-400">R$ {svc.price}</span>
+        </div>
       </div>
 
       {/* Timeline */}
       <div>
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-          Acompanhamento
-        </p>
-        <ScrollArea className="max-h-40">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Acompanhamento</p>
+        <ScrollArea className="max-h-36">
           <div className="space-y-2 pr-2">
-            {svc.timeline.map((ev: any, i: number) => (
+            {svc.timeline.slice().reverse().map((ev, i) => (
               <div key={i} className="flex gap-2 text-xs">
-                <Clock className="mt-0.5 h-3 w-3 shrink-0 text-slate-500" />
+                <div className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-600" />
                 <div className="flex-1">
                   <p className="text-slate-300">{ev.label}</p>
-                  <p className="text-[10px] text-slate-600">
-                    {new Date(ev.at).toLocaleTimeString('pt-BR')}
-                  </p>
+                  <p className="text-[10px] text-slate-600">{new Date(ev.at).toLocaleTimeString('pt-BR')}</p>
                 </div>
               </div>
             ))}
@@ -464,22 +545,156 @@ function ServiceTracker({
         </ScrollArea>
       </div>
 
+      {/* Rating UI after completion */}
+      {status === 'completed' && (
+        <RatingCard svc={svc} rated={rated} onRate={onRate} />
+      )}
+
       {/* Actions */}
       {isLive && (
-        <Button
-          onClick={onCancel}
-          variant="outline"
-          className="w-full border-rose-500/40 text-rose-400 hover:bg-rose-500/10"
-        >
+        <Button onClick={onCancel} variant="outline" className="w-full border-rose-500/40 text-rose-400 hover:bg-rose-500/10">
           Cancelar solicitação
         </Button>
       )}
-      {isFinal && (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-center">
-          <p className="text-sm font-bold text-white">Valor final: R$ {svc.price}</p>
-          <p className="mt-1 text-xs text-slate-400">Pagamento na entrega · PIX ou cartão</p>
-        </div>
+      {isFinal && !hasRated(svc, rated) && status !== 'completed' && (
+        <Button onClick={onNewRequest} className="w-full bg-amber-500 py-5 text-sm font-bold text-slate-950 hover:bg-amber-400">
+          <Shield className="mr-2 h-4 w-4" /> Nova solicitação
+        </Button>
       )}
+      {isFinal && (status !== 'completed' || hasRated(svc, rated)) && (
+        <Button onClick={onNewRequest} className="w-full bg-amber-500 py-5 text-sm font-bold text-slate-950 hover:bg-amber-400">
+          <Shield className="mr-2 h-4 w-4" /> Nova solicitação
+        </Button>
+      )}
+    </div>
+  )
+}
+
+function hasRated(svc: ServiceData, rated: boolean) {
+  return rated || !!svc.rating
+}
+
+function RatingCard({ svc, rated, onRate }: { svc: ServiceData; rated: boolean; onRate: (s: number, c: string) => void }) {
+  const [stars, setStars] = useState(5)
+  const [hover, setHover] = useState(0)
+  const [comment, setComment] = useState('')
+
+  if (svc.rating || rated) {
+    const r = svc.rating
+    return (
+      <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-center">
+        <CheckCircle2 className="mx-auto mb-1 h-6 w-6 text-emerald-400" />
+        <p className="text-sm font-bold text-white">Obrigado pela avaliação!</p>
+        {r && (
+          <div className="mt-1 flex items-center justify-center gap-1">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Star key={i} className={`h-4 w-4 ${i < r.stars ? 'text-amber-400' : 'text-slate-700'}`} fill="currentColor" />
+            ))}
+          </div>
+        )}
+        {r?.comment && <p className="mt-1 text-xs italic text-slate-400">"{r.comment}"</p>}
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-xl border border-amber-500/40 bg-gradient-to-b from-amber-500/10 to-transparent p-4">
+      <p className="text-sm font-bold text-white">Avalie o atendimento</p>
+      <p className="mt-0.5 text-xs text-slate-400">Sua avaliação ajuda outros motoristas.</p>
+      <div className="mt-3 flex justify-center gap-1">
+        {Array.from({ length: 5 }).map((_, i) => {
+          const val = i + 1
+          const active = val <= (hover || stars)
+          return (
+            <button
+              key={i}
+              onMouseEnter={() => setHover(val)}
+              onMouseLeave={() => setHover(0)}
+              onClick={() => setStars(val)}
+              className="transition-transform hover:scale-110"
+            >
+              <Star className={`h-7 w-7 ${active ? 'text-amber-400' : 'text-slate-700'}`} fill={active ? 'currentColor' : 'none'} />
+            </button>
+          )
+        })}
+      </div>
+      <Textarea
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+        placeholder="Comentário (opcional)..."
+        className="mt-3 border-slate-700 bg-slate-900 text-white placeholder:text-slate-500"
+        rows={2}
+      />
+      <Button onClick={() => onRate(stars, comment.trim())} className="mt-2 w-full bg-amber-500 py-4 text-sm font-bold text-slate-950 hover:bg-amber-400">
+        <Send className="mr-1.5 h-4 w-4" /> Enviar avaliação
+      </Button>
+    </div>
+  )
+}
+
+function HistoryView({ history, role }: { history: ServiceRecord[]; role: 'client' | 'provider' }) {
+  if (history.length === 0) {
+    return (
+      <div className="rounded-xl border border-dashed border-slate-800 p-8 text-center">
+        <History className="mx-auto mb-2 h-8 w-8 text-slate-600" />
+        <p className="text-sm font-semibold text-slate-300">Nenhum serviço no histórico</p>
+        <p className="mt-1 text-xs text-slate-500">
+          {role === 'client' ? 'Solicite um socorro para começar.' : 'Aceite uma chamada para começar.'}
+        </p>
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-2">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {history.length} serviço(s) registrado(s)
+      </p>
+      {history.map((r) => {
+        const Icon = ICONS[r.icon] || CircleDot
+        const PayIcon = PAY_ICONS[PAYMENT_METHODS.find((m) => m.id === r.paymentMethod)?.icon || 'zap']
+        return (
+          <div key={r.id} className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-800 text-slate-300">
+                  <Icon className="h-3.5 w-3.5" />
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-white">{r.typeLabel}</p>
+                  <p className="text-[10px] text-slate-500">
+                    {role === 'client' ? 'Prestador' : 'Cliente'}: {r.counterpartName}
+                  </p>
+                </div>
+              </div>
+              <span className="text-sm font-bold text-amber-400">R$ {r.price}</span>
+            </div>
+            <div className="mt-2 flex items-center gap-3 text-[10px] text-slate-500">
+              <span className="flex items-center gap-0.5">
+                <MapPin className="h-3 w-3" /> {r.pickupLabel.split(',')[0]}
+              </span>
+              <span className="flex items-center gap-0.5">
+                <PayIcon className="h-3 w-3" />
+                {PAYMENT_METHODS.find((m) => m.id === r.paymentMethod)?.label}
+              </span>
+              <span className="flex items-center gap-0.5">
+                <Clock className="h-3 w-3" />
+                {new Date(r.completedAt).toLocaleDateString('pt-BR')}
+              </span>
+            </div>
+            {r.rating && (
+              <div className="mt-2 flex items-center gap-1 border-t border-slate-800 pt-2">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Star key={i} className={`h-3 w-3 ${i < r.rating!.stars ? 'text-amber-400' : 'text-slate-700'}`} fill="currentColor" />
+                ))}
+                {r.rating.comment && <span className="ml-1 text-[10px] italic text-slate-400">"{r.rating.comment}"</span>}
+              </div>
+            )}
+            {r.status === 'cancelled' && (
+              <Badge variant="outline" className="mt-2 border-rose-500/40 text-rose-400">Cancelado</Badge>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }
