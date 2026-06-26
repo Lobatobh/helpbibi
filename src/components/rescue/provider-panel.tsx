@@ -35,7 +35,7 @@ const PAY_ICONS: Record<string, any> = { zap: Power, 'credit-card': Wallet, wall
 export function ProviderPanel() {
   const {
     connected, registered, state, offer, currentService, messages, newMessage, offerTaken,
-    register, toggleOnline, accept, reject, arrived, start, complete,
+    register, toggleOnline, accept, reject, arrived, start, complete, rateClient,
     sendChat, clearNewMessage, clearOfferTaken, clearCurrent,
   } = useProviderSocket()
 
@@ -247,6 +247,7 @@ export function ProviderPanel() {
                 chatOpen={chatOpen}
                 setChatOpen={toggleChat}
                 unreadChat={unreadChat}
+                onRateClient={(stars, comment) => rateClient(svc.id, stars, comment)}
               />
             )}
           </>
@@ -371,10 +372,11 @@ function OfferCard({ offer, onAccept, onReject, notifiedCount }: { offer: Servic
   )
 }
 
-function ProviderServiceCard({ svc, onArrived, onStart, onComplete, onDismiss, messages, onSendChat, chatOpen, setChatOpen, unreadChat }: {
+function ProviderServiceCard({ svc, onArrived, onStart, onComplete, onDismiss, messages, onSendChat, chatOpen, setChatOpen, unreadChat, onRateClient }: {
   svc: ServiceData; onArrived: () => void; onStart: () => void; onComplete: () => void; onDismiss: () => void
   messages: any[]; onSendChat: (text: string) => void
   chatOpen: boolean; setChatOpen: (v: boolean) => void; unreadChat: number
+  onRateClient: (stars: number, comment: string) => void
 }) {
   const status = svc.status
   const statusMeta = STATUS_LABELS[status]
@@ -516,7 +518,7 @@ function ProviderServiceCard({ svc, onArrived, onStart, onComplete, onDismiss, m
       {/* rating received */}
       {svc.rating && (
         <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3">
-          <p className="text-xs font-bold text-white">Avaliação recebida</p>
+          <p className="text-xs font-bold text-white">Avaliação recebida do cliente</p>
           <div className="mt-1 flex items-center gap-1">
             {Array.from({ length: 5 }).map((_, i) => (
               <Star key={i} className={`h-4 w-4 ${i < svc.rating!.stars ? 'text-amber-400' : 'text-slate-700'}`} fill="currentColor" />
@@ -525,6 +527,11 @@ function ProviderServiceCard({ svc, onArrived, onStart, onComplete, onDismiss, m
           </div>
           {svc.rating.comment && <p className="mt-1 text-xs italic text-slate-300">"{svc.rating.comment}"</p>}
         </div>
+      )}
+
+      {/* Client rating (provider rates client) — bidirectional */}
+      {status === 'completed' && (
+        <ClientRatingCard svc={svc} onRate={onRateClient} />
       )}
 
       {/* CTA */}
@@ -859,7 +866,9 @@ function ServiceDetailDialog({ record, onClose, role }: { record: ServiceRecord 
 
             {record.rating && (
               <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3">
-                <p className="mb-1 text-xs font-semibold uppercase text-slate-500">Avaliação</p>
+                <p className="mb-1 text-xs font-semibold uppercase text-slate-500">
+                  {role === 'client' ? 'Sua avaliação do prestador' : 'Avaliação do cliente'}
+                </p>
                 <div className="flex items-center gap-1">
                   {Array.from({ length: 5 }).map((_, i) => (
                     <Star key={i} className={`h-4 w-4 ${i < record.rating!.stars ? 'text-amber-400' : 'text-slate-700'}`} fill="currentColor" />
@@ -867,6 +876,21 @@ function ServiceDetailDialog({ record, onClose, role }: { record: ServiceRecord 
                   <span className="ml-1 text-xs font-bold text-amber-400">{record.rating.stars}.0</span>
                 </div>
                 {record.rating.comment && <p className="mt-1 text-xs italic text-slate-300">"{record.rating.comment}"</p>}
+              </div>
+            )}
+
+            {record.clientRating && (
+              <div className="rounded-xl border border-sky-500/40 bg-sky-500/10 p-3">
+                <p className="mb-1 text-xs font-semibold uppercase text-slate-500">
+                  {role === 'client' ? 'Avaliação recebida do prestador' : 'Sua avaliação do cliente'}
+                </p>
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Star key={i} className={`h-4 w-4 ${i < record.clientRating!.stars ? 'text-sky-400' : 'text-slate-700'}`} fill="currentColor" />
+                  ))}
+                  <span className="ml-1 text-xs font-bold text-sky-400">{record.clientRating.stars}.0</span>
+                </div>
+                {record.clientRating.comment && <p className="mt-1 text-xs italic text-slate-300">"{record.clientRating.comment}"</p>}
               </div>
             )}
 
@@ -1033,6 +1057,61 @@ function ProfileView({ state, history }: { state: any; history: ServiceRecord[] 
           </span>
         </div>
       </div>
+    </div>
+  )
+}
+
+function ClientRatingCard({ svc, onRate }: { svc: ServiceData; onRate: (stars: number, comment: string) => void }) {
+  const [stars, setStars] = useState(5)
+  const [hover, setHover] = useState(0)
+  const [comment, setComment] = useState('')
+
+  if (svc.clientRating) {
+    return (
+      <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-center">
+        <CheckCircle2 className="mx-auto mb-1 h-6 w-6 text-emerald-400" />
+        <p className="text-sm font-bold text-white">Cliente avaliado!</p>
+        <div className="mt-1 flex items-center justify-center gap-1">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Star key={i} className={`h-4 w-4 ${i < svc.clientRating!.stars ? 'text-amber-400' : 'text-slate-700'}`} fill="currentColor" />
+          ))}
+        </div>
+        {svc.clientRating.comment && <p className="mt-1 text-xs italic text-slate-400">"{svc.clientRating.comment}"</p>}
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-xl border border-sky-500/40 bg-gradient-to-b from-sky-500/10 to-transparent p-4">
+      <p className="text-sm font-bold text-white">Avalie o cliente</p>
+      <p className="mt-0.5 text-xs text-slate-400">Sua avaliação ajuda outros prestadores.</p>
+      <div className="mt-3 flex justify-center gap-1">
+        {Array.from({ length: 5 }).map((_, i) => {
+          const val = i + 1
+          const active = val <= (hover || stars)
+          return (
+            <button
+              key={i}
+              onMouseEnter={() => setHover(val)}
+              onMouseLeave={() => setHover(0)}
+              onClick={() => setStars(val)}
+              className="transition-transform hover:scale-110"
+            >
+              <Star className={`h-7 w-7 ${active ? 'text-sky-400' : 'text-slate-700'}`} fill={active ? 'currentColor' : 'none'} />
+            </button>
+          )
+        })}
+      </div>
+      <textarea
+        value={comment}
+        onChange={(e) => setComment(e.target.value)}
+        placeholder="Comentário sobre o cliente (opcional)..."
+        className="mt-3 w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-500 outline-none focus:border-sky-500"
+        rows={2}
+      />
+      <Button onClick={() => onRate(stars, comment.trim())} className="mt-2 w-full bg-sky-500 py-4 text-sm font-bold text-slate-950 hover:bg-sky-400">
+        <Send className="mr-1.5 h-4 w-4" /> Enviar avaliação do cliente
+      </Button>
     </div>
   )
 }

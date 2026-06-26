@@ -298,3 +298,59 @@ Task: QA + adicionar segundo painel de prestador, perfil de prestador, resgate d
   - Notificação push quando novo tier desbloqueado.
   - Cupons resgatáveis com validade (expiram após N dias).
 - **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork a partir de `/home/z/my-project/mini-services/rescue-service`: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy) para o WebSocket `/?XTransformPort=3003` rotear corretamente.
+
+---
+Task ID: 6 (cron webDevReview)
+Agent: cron review agent
+Task: QA + adicionar avaliação bidirecional (prestador avalia cliente), leaderboard de prestadores na landing, e melhorias de estilo.
+
+## Current project status / assessment
+- Protótipo SocorroJá estável após Tasks 1-5: landing + demo ao vivo com WebSocket, avaliações, pagamentos, histórico, dashboard de ganhos, chat, toasts, cupons, modal de detalhe, multi-prestador, progresso de trajeto, fidelidade com resgate, filtros, segundo painel de prestador, perfil com achievements.
+- QA desta rodada via agent-browser: nenhum bug encontrado no fluxo existente. Logs limpos.
+- rescue-service (porta 3003) e Next.js (porta 3000) ambos ativos.
+- Decidi focar em: avaliação bidirecional, leaderboard ao vivo, e melhorias de estilo.
+
+## Completed modifications / verification results
+### Novos recursos implementados
+1. **Avaliação bidirecional (prestador avalia cliente)** ⭐ — após concluir o serviço, o prestador agora vê um card "Avalie o cliente" com estrelas interativas (1-5) e campo de comentário. Backend: novo evento `service:rate-client` que cria `clientRating` no ServiceRequest. Cliente vê "Avaliação que você recebeu do prestador" com estrelas sky/blue e comentário. Modal de detalhe do serviço mostra ambas as avaliações (dada e recebida) com labels contextuais por role. *Validado: prestador Carlos Guincho avaliou cliente Ana Silva 5★ → prestador viu "Cliente avaliado!" → cliente viu "Avaliação que você recebeu do prestador". Backend log: "client rated 5★ by Carlos Guincho".*
+
+2. **Leaderboard de prestadores ao vivo** 🏆 — nova seção "Ranking ao vivo" na landing page com top 10 prestadores ordenados por serviços concluídos + nota. Backend: broadcast `leaderboard` a cada 5s com dados de todos providers. Componente Leaderboard com medalhas (Crown/Medal/Award para top 3), avatares com iniciais, stats (nota, serviços, ganhos hoje), empty state "Aguardando prestadores entrarem no app...". Atualiza em tempo real conforme serviços são concluídos. Link "Ranking" adicionado ao nav. *Validado: após registrar e concluir serviço, Carlos Guincho apareceu no leaderboard com 1 serviço, R$ 204 hoje, nota 4.8.*
+
+3. **Histórico e modal de detalhe com clientRating** 📋 — ServiceRecord agora inclui clientRating. Modal de detalhe mostra ambas as avaliações com labels contextuais: "Sua avaliação do prestador" / "Avaliação do cliente" (rating) e "Avaliação recebida do prestador" / "Sua avaliação do cliente" (clientRating), com cores distintas (amber para rating, sky para clientRating).
+
+### Polimento de estilo
+4. Leaderboard com gradientes para top 3 (amber/slate/orange), ícones de medalha, avatares com gradientes.
+5. ClientRatingCard com gradiente sky/blue, estrelas interativas com hover scale, textarea estilizada.
+6. Labels contextuais por role nos modais de detalhe (cliente vs prestador).
+7. Seção de ranking com SectionHead e bordas consistentes.
+
+### Arquivos modificados
+- `mini-services/rescue-service/index.ts` — adicionado clientRating ao ServiceRequest e sanitizeService, evento service:rate-client, broadcast leaderboard a cada 5s.
+- `src/lib/rescue-types.ts` — adicionado clientRating ao ServiceData e ServiceRecord.
+- `src/lib/rescue-history.ts` — recordFromService captura clientRating.
+- `src/hooks/use-rescue-socket.ts` — adicionado rateClient callback ao provider hook.
+- `src/components/rescue/provider-panel.tsx` — adicionado ClientRatingCard component, onRateClient prop no ProviderServiceCard, clientRating no ServiceDetailDialog.
+- `src/components/rescue/client-panel.tsx` — adicionado clientRating display no ServiceTracker e ServiceDetailDialog.
+- `src/components/rescue/leaderboard.tsx` (novo) — Leaderboard component com socket connection, medalhas, stats.
+- `src/app/page.tsx` — adicionado seção Ranking, import Leaderboard, link Ranking no nav.
+
+### Verificação (agent-browser via porta 81)
+- Bidirectional rating: serviço concluído → prestador viu "Avalie o cliente" → selecionou 5★ + comentário "Cliente pontual e educado." → clicou "Enviar avaliação do cliente" → prestador viu "Cliente avaliado!" → cliente viu "Avaliação que você recebeu do prestador". ✓
+- Leaderboard: landing mostra seção "Top prestadores SocorroJá" → inicialmente "Aguardando prestadores entrarem no app..." → após registro + serviço: "Carlos Guincho" com 1 serviço, R$ 204, nota 4.8. ✓
+- `bun run lint`: 0 erros. rescue-service.log: "client rated 5★ by Carlos Guincho". Sem erros de browser.
+
+## Unresolved issues / risks + next-phase recommendations
+- **Dark/light mode toggle:** não implementado nesta rodada. A app é dark-only por design.
+- **Gráfico de serviços por dia:** o EarningsView já tem um BarChart, mas poderia ser expandido com mais granularidade.
+- **Recomendação próxima fase:**
+  - Modo escuro/claro toggle (next-themes disponível).
+  - Notificações sonoras opcionais.
+  - Compartilhamento de localização via link.
+  - Persistir tudo em Prisma (schema.prisma).
+  - Estatísticas avançadas no perfil (gráfico de serviços por dia, mapa de calor de regiões).
+  - Sistema de ranking semanal/mensal com recompensas.
+  - Notificação push quando novo tier desbloqueado ou subida no ranking.
+  - Cupons resgatáveis com validade (expiram após N dias).
+  - Tela de perfil do cliente (histórico de avaliações recebidas, tier, pontos).
+  - Filtro de leaderboard por período (hoje/semana/mês).
+- **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork a partir de `/home/z/my-project/mini-services/rescue-service`: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy) para o WebSocket `/?XTransformPort=3003` rotear corretamente.

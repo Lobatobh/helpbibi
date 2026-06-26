@@ -129,6 +129,7 @@ export type ServiceData = {
   completedAt?: number | null
   timeline: TimelineEvent[]
   rating?: Rating | null
+  clientRating?: Rating | null
   loyaltyPoints: number
 }
 
@@ -154,6 +155,7 @@ export type ServiceRecord = {
   createdAt: number
   completedAt: number
   rating?: { stars: number; comment: string } | null
+  clientRating?: { stars: number; comment: string } | null
 }
 
 export const SERVICE_TYPES: { id: ServiceType; label: string; desc: string; base: number; icon: string }[] = [

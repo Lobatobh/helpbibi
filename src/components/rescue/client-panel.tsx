@@ -782,6 +782,20 @@ function ServiceTracker({
         <RatingCard svc={svc} rated={rated} onRate={onRate} />
       )}
 
+      {/* Client rating received from provider (bidirectional) */}
+      {status === 'completed' && svc.clientRating && (
+        <div className="rounded-xl border border-sky-500/40 bg-sky-500/10 p-3">
+          <p className="text-xs font-bold text-white">Avaliação que você recebeu do prestador</p>
+          <div className="mt-1 flex items-center gap-1">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Star key={i} className={`h-4 w-4 ${i < svc.clientRating!.stars ? 'text-sky-400' : 'text-slate-700'}`} fill="currentColor" />
+            ))}
+            <span className="ml-1 text-xs font-bold text-sky-400">{svc.clientRating.stars}.0</span>
+          </div>
+          {svc.clientRating.comment && <p className="mt-1 text-xs italic text-slate-300">"{svc.clientRating.comment}"</p>}
+        </div>
+      )}
+
       {/* Actions */}
       {isLive && (
         <Button onClick={onCancel} variant="outline" className="w-full border-rose-500/40 text-rose-400 hover:bg-rose-500/10">
@@ -1043,7 +1057,9 @@ function ServiceDetailDialog({ record, onClose, role }: { record: ServiceRecord 
 
             {record.rating && (
               <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3">
-                <p className="mb-1 text-xs font-semibold uppercase text-slate-500">Avaliação</p>
+                <p className="mb-1 text-xs font-semibold uppercase text-slate-500">
+                  {role === 'client' ? 'Sua avaliação do prestador' : 'Avaliação do cliente'}
+                </p>
                 <div className="flex items-center gap-1">
                   {Array.from({ length: 5 }).map((_, i) => (
                     <Star key={i} className={`h-4 w-4 ${i < record.rating!.stars ? 'text-amber-400' : 'text-slate-700'}`} fill="currentColor" />
@@ -1051,6 +1067,21 @@ function ServiceDetailDialog({ record, onClose, role }: { record: ServiceRecord 
                   <span className="ml-1 text-xs font-bold text-amber-400">{record.rating.stars}.0</span>
                 </div>
                 {record.rating.comment && <p className="mt-1 text-xs italic text-slate-300">"{record.rating.comment}"</p>}
+              </div>
+            )}
+
+            {record.clientRating && (
+              <div className="rounded-xl border border-sky-500/40 bg-sky-500/10 p-3">
+                <p className="mb-1 text-xs font-semibold uppercase text-slate-500">
+                  {role === 'client' ? 'Avaliação recebida do prestador' : 'Sua avaliação do cliente'}
+                </p>
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Star key={i} className={`h-4 w-4 ${i < record.clientRating!.stars ? 'text-sky-400' : 'text-slate-700'}`} fill="currentColor" />
+                  ))}
+                  <span className="ml-1 text-xs font-bold text-sky-400">{record.clientRating.stars}.0</span>
+                </div>
+                {record.clientRating.comment && <p className="mt-1 text-xs italic text-slate-300">"{record.clientRating.comment}"</p>}
               </div>
             )}
 

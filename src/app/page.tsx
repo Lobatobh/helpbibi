@@ -36,6 +36,7 @@ import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { ClientPanel } from '@/components/rescue/client-panel'
 import { ProviderPanel } from '@/components/rescue/provider-panel'
+import { Leaderboard } from '@/components/rescue/leaderboard'
 
 export default function Home() {
   const [demoOpen, setDemoOpen] = useState(false)
@@ -57,6 +58,7 @@ export default function Home() {
           <nav className="hidden items-center gap-6 text-sm text-slate-300 lg:flex">
             <a href="#como-funciona" className="hover:text-white">Como funciona</a>
             <a href="#precos" className="hover:text-white">Preços</a>
+            <a href="#ranking" className="hover:text-white">Ranking</a>
             <a href="#depoimentos" className="hover:text-white">Depoimentos</a>
             <a href="#faq" className="hover:text-white">FAQ</a>
             <a href="#demo" className="hover:text-white">Demo ao vivo</a>
@@ -270,6 +272,20 @@ export default function Home() {
               stars={5}
               color="emerald"
             />
+          </div>
+        </div>
+      </section>
+
+      {/* LEADERBOARD */}
+      <section id="ranking" className="border-y border-slate-800 bg-slate-900/30">
+        <div className="mx-auto max-w-4xl px-4 py-16 sm:px-6 lg:py-24">
+          <SectionHead
+            eyebrow="Ranking ao vivo"
+            title="Top prestadores SocorroJá"
+            subtitle="Ranking em tempo real dos prestadores mais ativos. Atualiza automaticamente conforme serviços são concluídos."
+          />
+          <div className="mt-10">
+            <Leaderboard />
           </div>
         </div>
       </section>

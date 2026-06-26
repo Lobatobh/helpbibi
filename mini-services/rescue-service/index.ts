@@ -91,6 +91,7 @@ type ServiceRequest = {
   completedAt?: number | null
   timeline: TimelineEvent[]
   rating?: Rating | null
+  clientRating?: Rating | null
   // loyalty
   loyaltyPoints: number
 }
@@ -234,6 +235,7 @@ const sanitizeService = (svc: ServiceRequest) => ({
   provider: svc.providerId ? providers.get(svc.providerId) : null,
   createdAt: svc.createdAt, acceptedAt: svc.acceptedAt, completedAt: svc.completedAt,
   timeline: svc.timeline, rating: svc.rating || null,
+  clientRating: svc.clientRating || null,
   loyaltyPoints: svc.loyaltyPoints,
 })
 
@@ -679,6 +681,21 @@ io.on('connection', (socket) => {
     console.log(`[rating] service ${svc.id} rated ${stars}★ by ${svc.clientName}`)
   })
 
+  // Provider rates the client after completion (bidirectional rating)
+  socket.on('service:rate-client', (data: { serviceId: string; stars: number; comment: string }) => {
+    const role = socketToRole.get(socket.id)
+    if (!role || role.role !== 'provider') return
+    const svc = services.get(data.serviceId)
+    if (!svc || svc.providerId !== role.id) return
+    if (svc.status !== 'completed') return
+    if (svc.clientRating) return
+    const stars = Math.max(1, Math.min(5, Math.round(data.stars)))
+    const p = providers.get(role.id)!
+    svc.clientRating = { stars, comment: (data.comment || '').slice(0, 240), at: Date.now(), from: p.name }
+    emitService(svc)
+    console.log(`[rating] service ${svc.id} client rated ${stars}★ by ${p.name}`)
+  })
+
   socket.on('service:cancel', (data: { serviceId: string }) => {
     const role = socketToRole.get(socket.id)
     if (!role || role.role !== 'client') return
@@ -786,7 +803,20 @@ setInterval(() => {
 
 setInterval(() => {
   io.emit('providers:nearby', Array.from(providers.values()).filter((x) => x.online).map(providerPublic))
-}, 2000)
+  // Broadcast leaderboard (top providers by completedCount + rating)
+  const leaderboard = Array.from(providers.values())
+    .map(p => ({
+      id: p.id, name: p.name, vehicle: p.vehicle, rating: p.rating,
+      completedCount: p.completedCount, earningsToday: p.earningsToday,
+    }))
+    .sort((a, b) => {
+      // Sort by completedCount desc, then rating desc
+      if (b.completedCount !== a.completedCount) return b.completedCount - a.completedCount
+      return b.rating - a.rating
+    })
+    .slice(0, 10)
+  io.emit('leaderboard', leaderboard)
+}, 5000)
 
 const PORT = 3003
 httpServer.listen(PORT, () => {

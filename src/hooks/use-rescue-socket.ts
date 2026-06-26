@@ -266,6 +266,13 @@ export function useProviderSocket() {
     socketRef.current?.emit('service:complete', { serviceId })
   }, [])
 
+  const rateClient = useCallback(
+    (serviceId: string, stars: number, comment: string) => {
+      socketRef.current?.emit('service:rate-client', { serviceId, stars, comment })
+    },
+    []
+  )
+
   const sendChat = useCallback((serviceId: string, text: string) => {
     socketRef.current?.emit('chat:send', { serviceId, text })
   }, [])
@@ -284,7 +291,7 @@ export function useProviderSocket() {
 
   return {
     ...state,
-    register, toggleOnline, accept, reject, arrived, start, complete,
+    register, toggleOnline, accept, reject, arrived, start, complete, rateClient,
     sendChat, clearNewMessage, clearOfferTaken, clearCurrent,
   }
 }

@@ -64,6 +64,7 @@ export function recordFromService(svc: ServiceData, role: Role): ServiceRecord |
     createdAt: svc.createdAt,
     completedAt: svc.completedAt ?? Date.now(),
     rating: svc.rating ? { stars: svc.rating.stars, comment: svc.rating.comment } : null,
+    clientRating: svc.clientRating ? { stars: svc.clientRating.stars, comment: svc.clientRating.comment } : null,
   }
 }
 
