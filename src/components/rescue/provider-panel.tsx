@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Truck, Star, Power, MapPin, Navigation, Flag, Clock, CheckCircle2, X, Loader2,
   Wallet, TrendingUp, Battery, Fuel, Key, Wrench, CircleDot, Phone, MessageCircle,
-  History, Home, BarChart3, Award,
+  History, Home, BarChart3, Award, Tag, Eye, ChevronRight, Send,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,12 +13,17 @@ import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
+import {
   ResponsiveContainer, BarChart, Bar, XAxis, Tooltip, Cell,
 } from 'recharts'
 import { useProviderSocket } from '@/hooks/use-rescue-socket'
-import { PAYMENT_METHODS, STATUS_LABELS, type ServiceData, type ServiceRecord } from '@/lib/rescue-types'
+import { useServiceToasts } from '@/hooks/use-service-toasts'
+import { PAYMENT_METHODS, SERVICE_TYPES, STATUS_LABELS, type ServiceData, type ServiceRecord } from '@/lib/rescue-types'
 import { getHistoryForRole, addRecord, recordFromService } from '@/lib/rescue-history'
 import { RescueMap } from './rescue-map'
+import { ChatPanel } from './chat-panel'
 
 const ICONS: Record<string, any> = {
   'tow-truck': Truck, tire: CircleDot, battery: Battery, fuel: Fuel, key: Key, wrench: Wrench,
@@ -27,9 +32,12 @@ const PAY_ICONS: Record<string, any> = { zap: Power, 'credit-card': Wallet, wall
 
 export function ProviderPanel() {
   const {
-    connected, registered, state, offer, currentService,
-    register, toggleOnline, accept, reject, arrived, start, complete, clearCurrent,
+    connected, registered, state, offer, currentService, messages, newMessage,
+    register, toggleOnline, accept, reject, arrived, start, complete,
+    sendChat, clearNewMessage, clearCurrent,
   } = useProviderSocket()
+
+  useServiceToasts(currentService, 'provider')
 
   const [name, setName] = useState('')
   const [vehicle, setVehicle] = useState('Guincho Plataforma')
@@ -38,7 +46,30 @@ export function ProviderPanel() {
   const [history, setHistory] = useState<ServiceRecord[]>(() =>
     typeof window !== 'undefined' ? getHistoryForRole('provider') : []
   )
+  const [detailRecord, setDetailRecord] = useState<ServiceRecord | null>(null)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [unreadChat, setUnreadChat] = useState(0)
   const recordedRef = useRef<Set<string>>(new Set())
+
+  // Track unread chat messages when chat is closed
+  useEffect(() => {
+    if (!newMessage) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!chatOpen) setUnreadChat((n) => n + 1)
+    clearNewMessage()
+  }, [newMessage, chatOpen, clearNewMessage])
+
+  // Reset chat state when service changes or clears
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setChatOpen(false)
+    setUnreadChat(0)
+  }, [currentService?.id])
+
+  const toggleChat = () => {
+    setChatOpen(!chatOpen)
+    if (!chatOpen) setUnreadChat(0)
+  }
 
   const refreshHistory = () => setHistory(getHistoryForRole('provider'))
 
@@ -188,6 +219,11 @@ export function ProviderPanel() {
                 onStart={() => start(svc.id)}
                 onComplete={() => complete(svc.id)}
                 onDismiss={clearCurrent}
+                messages={messages}
+                onSendChat={(text) => sendChat(svc.id, text)}
+                chatOpen={chatOpen}
+                setChatOpen={toggleChat}
+                unreadChat={unreadChat}
               />
             )}
           </>
@@ -198,9 +234,12 @@ export function ProviderPanel() {
         )}
 
         {view === 'history' && (
-          <HistoryView history={history} />
+          <HistoryView history={history} onSelect={setDetailRecord} />
         )}
       </div>
+
+      {/* Service detail dialog */}
+      <ServiceDetailDialog record={detailRecord} onClose={() => setDetailRecord(null)} role="provider" />
     </div>
   )
 }
@@ -298,8 +337,10 @@ function OfferCard({ offer, onAccept, onReject }: { offer: ServiceData; onAccept
   )
 }
 
-function ProviderServiceCard({ svc, onArrived, onStart, onComplete, onDismiss }: {
+function ProviderServiceCard({ svc, onArrived, onStart, onComplete, onDismiss, messages, onSendChat, chatOpen, setChatOpen, unreadChat }: {
   svc: ServiceData; onArrived: () => void; onStart: () => void; onComplete: () => void; onDismiss: () => void
+  messages: any[]; onSendChat: (text: string) => void
+  chatOpen: boolean; setChatOpen: (v: boolean) => void; unreadChat: number
 }) {
   const status = svc.status
   const statusMeta = STATUS_LABELS[status]
@@ -314,6 +355,7 @@ function ProviderServiceCard({ svc, onArrived, onStart, onComplete, onDismiss }:
         : null
 
   const isFinal = status === 'completed' || status === 'cancelled' || status === 'expired'
+  const canChat = !isFinal && ['accepted', 'arriving', 'arrived', 'in_progress'].includes(status)
 
   return (
     <div className="space-y-3">
@@ -347,8 +389,18 @@ function ProviderServiceCard({ svc, onArrived, onStart, onComplete, onDismiss }:
               <Button size="icon" variant="outline" className="h-7 w-7 border-slate-700 bg-slate-800 text-emerald-400 hover:bg-slate-700">
                 <Phone className="h-3.5 w-3.5" />
               </Button>
-              <Button size="icon" variant="outline" className="h-7 w-7 border-slate-700 bg-slate-800 text-sky-400 hover:bg-slate-700">
+              <Button
+                size="icon"
+                variant="outline"
+                onClick={() => setChatOpen(!chatOpen)}
+                className={`relative h-7 w-7 border-slate-700 bg-slate-800 text-sky-400 hover:bg-slate-700 ${chatOpen ? 'ring-2 ring-sky-500' : ''}`}
+              >
                 <MessageCircle className="h-3.5 w-3.5" />
+                {unreadChat > 0 && (
+                  <span className="absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-rose-500 px-0.5 text-[9px] font-bold text-white">
+                    {unreadChat}
+                  </span>
+                )}
               </Button>
             </div>
           )}
@@ -394,11 +446,29 @@ function ProviderServiceCard({ svc, onArrived, onStart, onComplete, onDismiss }:
             <p className="text-xs font-bold text-amber-400">R$ {svc.price}</p>
           </div>
         </div>
-        <div className="mt-2 flex items-center gap-1.5 border-t border-slate-800 pt-2 text-[11px] text-slate-400">
-          <PayIcon className="h-3 w-3 text-amber-400" />
-          Pagamento: {PAYMENT_METHODS.find((m) => m.id === svc.paymentMethod)?.label}
+        <div className="mt-2 flex items-center justify-between border-t border-slate-800 pt-2 text-[11px] text-slate-400">
+          <span className="flex items-center gap-1.5">
+            <PayIcon className="h-3 w-3 text-amber-400" />
+            {PAYMENT_METHODS.find((m) => m.id === svc.paymentMethod)?.label}
+          </span>
+          {svc.discount > 0 && (
+            <span className="flex items-center gap-0.5 text-emerald-400">
+              <Tag className="h-3 w-3" /> {svc.promoCode} -R${svc.discount}
+            </span>
+          )}
         </div>
       </div>
+
+      {/* Chat panel (collapsible) */}
+      {canChat && chatOpen && (
+        <ChatPanel
+          messages={messages}
+          myRole="provider"
+          onSend={onSendChat}
+          counterpartName={svc.clientName}
+          compact
+        />
+      )}
 
       {/* rating received */}
       {svc.rating && (
@@ -562,7 +632,7 @@ function ServiceTypeBreakdown({ history }: { history: ServiceRecord[] }) {
   )
 }
 
-function HistoryView({ history }: { history: ServiceRecord[] }) {
+function HistoryView({ history, onSelect }: { history: ServiceRecord[]; onSelect: (r: ServiceRecord) => void }) {
   if (history.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-slate-800 p-8 text-center">
@@ -579,7 +649,11 @@ function HistoryView({ history }: { history: ServiceRecord[] }) {
         const Icon = ICONS[r.icon] || CircleDot
         const PayIcon = PAY_ICONS[PAYMENT_METHODS.find((m) => m.id === r.paymentMethod)?.icon || 'zap']
         return (
-          <div key={r.id} className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+          <button
+            key={r.id}
+            onClick={() => onSelect(r)}
+            className="w-full rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-left transition hover:border-slate-700 hover:bg-slate-900/80"
+          >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-800 text-slate-300">
@@ -590,25 +664,155 @@ function HistoryView({ history }: { history: ServiceRecord[] }) {
                   <p className="text-[10px] text-slate-500">Cliente: {r.counterpartName}</p>
                 </div>
               </div>
-              <span className="text-sm font-bold text-emerald-400">+R$ {r.price}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-emerald-400">+R$ {r.price}</span>
+                <ChevronRight className="h-4 w-4 text-slate-600" />
+              </div>
             </div>
             <div className="mt-2 flex items-center gap-3 text-[10px] text-slate-500">
               <span className="flex items-center gap-0.5"><MapPin className="h-3 w-3" /> {r.pickupLabel.split(',')[0]}</span>
               <span className="flex items-center gap-0.5"><PayIcon className="h-3 w-3" /> {PAYMENT_METHODS.find((m) => m.id === r.paymentMethod)?.label}</span>
               <span className="flex items-center gap-0.5"><Clock className="h-3 w-3" /> {new Date(r.completedAt).toLocaleDateString('pt-BR')}</span>
             </div>
-            {r.rating && (
-              <div className="mt-2 flex items-center gap-1 border-t border-slate-800 pt-2">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Star key={i} className={`h-3 w-3 ${i < r.rating!.stars ? 'text-amber-400' : 'text-slate-700'}`} fill="currentColor" />
-                ))}
-                {r.rating.comment && <span className="ml-1 text-[10px] italic text-slate-400">"{r.rating.comment}"</span>}
-              </div>
-            )}
-            {r.status === 'cancelled' && <Badge variant="outline" className="mt-2 border-rose-500/40 text-rose-400">Cancelado</Badge>}
-          </div>
+            <div className="mt-1.5 flex items-center gap-2">
+              {r.rating && (
+                <div className="flex items-center gap-0.5">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Star key={i} className={`h-2.5 w-2.5 ${i < r.rating!.stars ? 'text-amber-400' : 'text-slate-700'}`} fill="currentColor" />
+                  ))}
+                </div>
+              )}
+              {r.discount > 0 && (
+                <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-[9px] text-emerald-400">
+                  <Tag className="mr-0.5 h-2.5 w-2.5" /> {r.promoCode}
+                </Badge>
+              )}
+              {r.status === 'cancelled' && (
+                <Badge variant="outline" className="border-rose-500/40 text-[9px] text-rose-400">Cancelado</Badge>
+              )}
+              <span className="ml-auto flex items-center gap-0.5 text-[9px] text-sky-400"><Eye className="h-2.5 w-2.5" /> Detalhes</span>
+            </div>
+          </button>
         )
       })}
+    </div>
+  )
+}
+
+function ServiceDetailDialog({ record, onClose, role }: { record: ServiceRecord | null; onClose: () => void; role: 'client' | 'provider' }) {
+  return (
+    <Dialog open={!!record} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto border-slate-800 bg-slate-950 text-white">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-white">
+            {record && (() => {
+              const Icon = ICONS[record.icon] || CircleDot
+              return <Icon className="h-4 w-4 text-emerald-400" />
+            })()}
+            Detalhes do serviço
+          </DialogTitle>
+        </DialogHeader>
+        {record && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-2">
+              <InfoBox label="Tipo" value={record.typeLabel} />
+              <InfoBox label="Status" value={STATUS_LABELS[record.status].label} />
+              <InfoBox label={role === 'client' ? 'Prestador' : 'Cliente'} value={record.counterpartName} />
+              <InfoBox label="Pagamento" value={PAYMENT_METHODS.find((m) => m.id === record.paymentMethod)?.label || record.paymentMethod} />
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+              <p className="mb-2 text-xs font-semibold uppercase text-slate-500">Trajeto</p>
+              <div className="flex gap-3">
+                <div className="flex flex-col items-center pt-1">
+                  <div className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                  <div className="my-1 w-0.5 flex-1 bg-slate-700" />
+                  <div className="h-2.5 w-2.5 rounded-full bg-sky-500" />
+                </div>
+                <div className="flex-1 space-y-3">
+                  <div>
+                    <p className="text-[10px] uppercase text-slate-500">Local</p>
+                    <p className="text-xs font-medium text-white">{record.pickupLabel}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase text-slate-500">Destino</p>
+                    <p className="text-xs font-medium text-white">{record.destinationLabel}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+              <p className="mb-2 text-xs font-semibold uppercase text-slate-500">Valores</p>
+              <div className="space-y-1.5 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Valor original</span>
+                  <span className="text-slate-300">R$ {record.originalPrice}</span>
+                </div>
+                {record.discount > 0 && (
+                  <div className="flex justify-between text-emerald-400">
+                    <span className="flex items-center gap-1"><Tag className="h-3 w-3" /> Desconto ({record.promoCode})</span>
+                    <span>- R$ {record.discount}</span>
+                  </div>
+                )}
+                <div className="flex justify-between border-t border-slate-800 pt-1.5">
+                  <span className="font-bold text-white">{role === 'provider' ? 'Você recebeu' : 'Total'}</span>
+                  <span className={`text-base font-extrabold ${role === 'provider' ? 'text-emerald-400' : 'text-amber-400'}`}>R$ {record.price}</span>
+                </div>
+              </div>
+            </div>
+
+            {record.description && record.description !== 'Sem detalhes adicionais' && (
+              <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+                <p className="mb-1 text-xs font-semibold uppercase text-slate-500">Descrição do problema</p>
+                <p className="text-xs text-slate-300">{record.description}</p>
+              </div>
+            )}
+
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+              <p className="mb-2 text-xs font-semibold uppercase text-slate-500">Linha do tempo</p>
+              <div className="space-y-2">
+                {record.timeline.map((ev, i) => (
+                  <div key={i} className="flex gap-2 text-xs">
+                    <div className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-600" />
+                    <div className="flex-1">
+                      <p className="text-slate-300">{ev.label}</p>
+                      <p className="text-[10px] text-slate-600">{new Date(ev.at).toLocaleString('pt-BR')}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {record.rating && (
+              <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3">
+                <p className="mb-1 text-xs font-semibold uppercase text-slate-500">Avaliação</p>
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Star key={i} className={`h-4 w-4 ${i < record.rating!.stars ? 'text-amber-400' : 'text-slate-700'}`} fill="currentColor" />
+                  ))}
+                  <span className="ml-1 text-xs font-bold text-amber-400">{record.rating.stars}.0</span>
+                </div>
+                {record.rating.comment && <p className="mt-1 text-xs italic text-slate-300">"{record.rating.comment}"</p>}
+              </div>
+            )}
+
+            <div className="flex items-center justify-between text-[11px] text-slate-500">
+              <span>Solicitado: {new Date(record.createdAt).toLocaleString('pt-BR')}</span>
+              <span>Concluído: {new Date(record.completedAt).toLocaleString('pt-BR')}</span>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function InfoBox({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-2.5">
+      <p className="text-[10px] uppercase text-slate-500">{label}</p>
+      <p className="text-xs font-semibold text-white">{value}</p>
     </div>
   )
 }

@@ -4,7 +4,7 @@ import { Server } from 'socket.io'
 // ============================================================
 // SocorroJá — Real-time rescue orchestration service
 // Handles: provider presence, service requests, live tracking,
-//          ratings, payment method, provider stats.
+//          ratings, payment method, provider stats, chat, promos.
 // ============================================================
 
 const httpServer = createServer((req, res) => {
@@ -35,6 +35,15 @@ type ServiceStatus =
 
 type Rating = { stars: number; comment: string; at: number; from: string }
 
+type ChatMessage = {
+  id: string
+  serviceId: string
+  from: 'client' | 'provider'
+  fromName: string
+  text: string
+  at: number
+}
+
 type Provider = {
   id: string
   socketId: string
@@ -63,6 +72,9 @@ type ServiceRequest = {
   destination: LatLng
   destinationLabel: string
   price: number
+  originalPrice: number
+  discount: number
+  promoCode: string | null
   distanceKm: number
   etaMin: number
   status: ServiceStatus
@@ -88,10 +100,19 @@ const SERVICE_TYPES: Record<ServiceType, ServiceTypeMeta> = {
   pane: { label: 'Pane Seca / Mecânica', basePrice: 110, icon: 'wrench' },
 }
 
+// Promo codes (demo): code -> { type, value, label }
+type PromoDef = { type: 'percent' | 'fixed'; value: number; label: string }
+const PROMO_CODES: Record<string, PromoDef> = {
+  SOCORRO10: { type: 'percent', value: 10, label: '10% OFF' },
+  BEMVINDO20: { type: 'fixed', value: 20, label: 'R$ 20 OFF' },
+  PROMO15: { type: 'percent', value: 15, label: '15% OFF' },
+}
+
 // ----------------------- State -----------------------
 const providers = new Map<string, Provider>()
 const clients = new Map<string, { id: string; socketId: string }>()
 const services = new Map<string, ServiceRequest>()
+const chats = new Map<string, ChatMessage[]>() // serviceId -> messages
 const socketToRole = new Map<string, { role: Role; id: string }>()
 
 const CITY = { center: { lat: -23.5505, lng: -46.6333 }, span: 0.05 }
@@ -113,6 +134,16 @@ const calcPrice = (type: ServiceType, distanceKm: number) => {
   const meta = SERVICE_TYPES[type]
   const perKm = 4.5
   return Math.round(meta.basePrice + distanceKm * perKm)
+}
+
+const applyPromo = (price: number, code: string | null): { final: number; discount: number; valid: boolean } => {
+  if (!code) return { final: price, discount: 0, valid: false }
+  const promo = PROMO_CODES[code.toUpperCase()]
+  if (!promo) return { final: price, discount: 0, valid: false }
+  let discount = 0
+  if (promo.type === 'percent') discount = Math.round((price * promo.value) / 100)
+  else discount = Math.min(promo.value, price)
+  return { final: Math.max(0, price - discount), discount, valid: true }
 }
 
 const calcEta = (distanceKm: number) => Math.max(3, Math.round(distanceKm / 0.5))
@@ -152,7 +183,8 @@ const sanitizeService = (svc: ServiceRequest) => ({
   type: svc.type, typeLabel: SERVICE_TYPES[svc.type].label, icon: SERVICE_TYPES[svc.type].icon,
   description: svc.description, pickup: svc.pickup, pickupLabel: svc.pickupLabel,
   destination: svc.destination, destinationLabel: svc.destinationLabel,
-  price: svc.price, distanceKm: svc.distanceKm, etaMin: svc.etaMin, status: svc.status,
+  price: svc.price, originalPrice: svc.originalPrice, discount: svc.discount, promoCode: svc.promoCode,
+  distanceKm: svc.distanceKm, etaMin: svc.etaMin, status: svc.status,
   paymentMethod: svc.paymentMethod,
   providerId: svc.providerId,
   provider: svc.providerId ? providers.get(svc.providerId) : null,
@@ -172,6 +204,30 @@ const emitService = (svc: ServiceRequest) => {
     id: svc.id, status: svc.status, clientId: svc.clientId, providerId: svc.providerId,
     pickup: svc.pickup, destination: svc.destination,
   })
+}
+
+// Send chat history + emit to both parties
+const emitChatToService = (serviceId: string, msg?: ChatMessage) => {
+  const svc = services.get(serviceId)
+  if (!svc) return
+  const msgs = chats.get(serviceId) || []
+  if (msg) {
+    if (!chats.has(serviceId)) chats.set(serviceId, [])
+    chats.get(serviceId)!.push(msg)
+  }
+  const payload = { serviceId, messages: chats.get(serviceId) || [] }
+  const client = clients.get(svc.clientId)
+  if (client) {
+    io.to(client.socketId).emit('chat:messages', payload)
+    if (msg && msg.from === 'provider') io.to(client.socketId).emit('chat:new', msg)
+  }
+  if (svc.providerId) {
+    const p = providers.get(svc.providerId)
+    if (p) {
+      io.to(p.socketId).emit('chat:messages', payload)
+      if (msg && msg.from === 'client') io.to(p.socketId).emit('chat:new', msg)
+    }
+  }
 }
 
 // ----------------------- Connection -----------------------
@@ -215,6 +271,23 @@ io.on('connection', (socket) => {
     emitProvider(p)
   })
 
+  // Validate a promo code (returns discount preview without creating a service)
+  socket.on('promo:validate', (data: { code: string; type: ServiceType; distanceKm: number }) => {
+    const code = (data.code || '').trim().toUpperCase()
+    const promo = PROMO_CODES[code]
+    if (!promo) {
+      socket.emit('promo:result', { valid: false, code, message: 'Cupom inválido ou expirado' })
+      return
+    }
+    const base = calcPrice(data.type, data.distanceKm)
+    const { final, discount } = applyPromo(base, code)
+    socket.emit('promo:result', {
+      valid: true, code, label: promo.label, type: promo.type, value: promo.value,
+      originalPrice: base, discount, finalPrice: final,
+      message: `Cupom aplicado: ${promo.label}`,
+    })
+  })
+
   socket.on('service:request', (data: {
     clientName: string
     type: ServiceType
@@ -224,12 +297,15 @@ io.on('connection', (socket) => {
     destination: LatLng
     destinationLabel: string
     paymentMethod: PaymentMethod
+    promoCode?: string | null
   }) => {
     const role = socketToRole.get(socket.id)
     if (!role || role.role !== 'client') return
 
     const distanceKm = haversineKm(data.pickup, data.destination)
-    const price = calcPrice(data.type, distanceKm)
+    const originalPrice = calcPrice(data.type, distanceKm)
+    const promoResult = applyPromo(originalPrice, data.promoCode || null)
+    const price = promoResult.valid ? promoResult.final : originalPrice
     const etaMin = calcEta(distanceKm)
 
     const svc: ServiceRequest = {
@@ -240,13 +316,18 @@ io.on('connection', (socket) => {
       description: data.description,
       pickup: data.pickup, pickupLabel: data.pickupLabel,
       destination: data.destination, destinationLabel: data.destinationLabel,
-      price, distanceKm: Number(distanceKm.toFixed(2)), etaMin,
+      price, originalPrice, discount: promoResult.discount,
+      promoCode: promoResult.valid ? (data.promoCode || '').trim().toUpperCase() : null,
+      distanceKm: Number(distanceKm.toFixed(2)), etaMin,
       status: 'searching',
       paymentMethod: data.paymentMethod || 'pix',
       providerId: null,
       createdAt: Date.now(),
       timeline: [{ status: 'searching', label: 'Solicitação enviada — procurando prestador próximo', at: Date.now() }],
       rating: null,
+    }
+    if (promoResult.valid) {
+      svc.timeline.push({ status: 'searching', label: `Cupom ${svc.promoCode} aplicado: -R$ ${promoResult.discount}`, at: Date.now() })
     }
     services.set(svc.id, svc)
     emitService(svc)
@@ -310,6 +391,8 @@ io.on('connection', (socket) => {
     p.destination = svc.pickup
     emitProvider(p)
     emitService(svc)
+    // send existing chat history to provider (if any)
+    emitChatToService(svc.id)
   })
 
   socket.on('service:reject', (data: { serviceId: string }) => {
@@ -382,17 +465,15 @@ io.on('connection', (socket) => {
     console.log(`[service] completed ${svc.id} — provider ${p.name} earned R$ ${svc.price}`)
   })
 
-  // Client rates the provider after completion
   socket.on('service:rate', (data: { serviceId: string; stars: number; comment: string }) => {
     const role = socketToRole.get(socket.id)
     if (!role || role.role !== 'client') return
     const svc = services.get(data.serviceId)
     if (!svc || svc.clientId !== role.id) return
     if (svc.status !== 'completed') return
-    if (svc.rating) return // already rated
+    if (svc.rating) return
     const stars = Math.max(1, Math.min(5, Math.round(data.stars)))
     svc.rating = { stars, comment: (data.comment || '').slice(0, 240), at: Date.now(), from: svc.clientName }
-    // update provider rating (running average)
     if (svc.providerId) {
       const p = providers.get(svc.providerId)
       if (p) {
@@ -425,6 +506,41 @@ io.on('connection', (socket) => {
     pushTimeline(svc, 'cancelled', 'Solicitação cancelada pelo cliente')
     svc.completedAt = Date.now()
     emitService(svc)
+  })
+
+  // ---------- Chat ----------
+  socket.on('chat:send', (data: { serviceId: string; text: string }) => {
+    const role = socketToRole.get(socket.id)
+    if (!role) return
+    const svc = services.get(data.serviceId)
+    if (!svc) return
+    // Only client or assigned provider can chat
+    if (role.role === 'client' && svc.clientId !== role.id) return
+    if (role.role === 'provider' && svc.providerId !== role.id) return
+    const text = (data.text || '').trim().slice(0, 500)
+    if (!text) return
+    const fromName = role.role === 'client' ? svc.clientName : (providers.get(role.id)?.name || 'Prestador')
+    const msg: ChatMessage = {
+      id: uid('msg_'),
+      serviceId: svc.id,
+      from: role.role,
+      fromName,
+      text,
+      at: Date.now(),
+    }
+    emitChatToService(svc.id, msg)
+    console.log(`[chat] ${fromName}: ${text}`)
+  })
+
+  // Request chat history for a service (e.g. after reconnect)
+  socket.on('chat:history', (data: { serviceId: string }) => {
+    const role = socketToRole.get(socket.id)
+    if (!role) return
+    const svc = services.get(data.serviceId)
+    if (!svc) return
+    if (role.role === 'client' && svc.clientId !== role.id) return
+    if (role.role === 'provider' && svc.providerId !== role.id) return
+    socket.emit('chat:messages', { serviceId: svc.id, messages: chats.get(svc.id) || [] })
   })
 
   socket.on('disconnect', () => {

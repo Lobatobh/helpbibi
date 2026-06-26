@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import {
   Shield, Phone, Star, MapPin, Navigation, X, Truck, Battery, Fuel, Key, Wrench,
   CircleDot, Clock, CheckCircle2, Loader2, AlertTriangle, MessageCircle,
-  Zap, CreditCard, Wallet, History, Home, Send,
+  Zap, CreditCard, Wallet, History, Home, Send, Tag, Eye, ArrowRight, ChevronRight,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,13 +13,18 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
 import { useClientSocket } from '@/hooks/use-rescue-socket'
+import { useServiceToasts } from '@/hooks/use-service-toasts'
 import {
   SERVICE_TYPES, PAYMENT_METHODS, STATUS_LABELS,
-  type ServiceType, type LatLng, type PaymentMethod, type ServiceData, type ServiceRecord,
+  type ServiceType, type LatLng, type PaymentMethod, type ServiceData, type ServiceRecord, type PromoResult,
 } from '@/lib/rescue-types'
 import { getHistoryForRole, addRecord, recordFromService, updateRecord } from '@/lib/rescue-history'
 import { RescueMap } from './rescue-map'
+import { ChatPanel } from './chat-panel'
 
 const ICONS: Record<string, any> = {
   'tow-truck': Truck, tire: CircleDot, battery: Battery, fuel: Fuel, key: Key, wrench: Wrench,
@@ -35,11 +40,25 @@ const PRESETS: { id: string; label: string; pos: LatLng }[] = [
   { id: 'ibirapuera', label: 'Parque Ibirapuera', pos: { lat: -23.5874, lng: -46.6576 } },
 ]
 
+// haversine to estimate distance for promo preview
+const haversineKm = (a: LatLng, b: LatLng) => {
+  const R = 6371
+  const dLat = ((b.lat - a.lat) * Math.PI) / 180
+  const dLng = ((b.lng - a.lng) * Math.PI) / 180
+  const la1 = (a.lat * Math.PI) / 180
+  const la2 = (b.lat * Math.PI) / 180
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2
+  return 2 * R * Math.asin(Math.sqrt(h))
+}
+
 export function ClientPanel() {
   const {
-    connected, registered, nearby, currentService,
-    register, requestService, cancelService, rateService, clearCurrent,
+    connected, registered, nearby, currentService, messages, newMessage, promoResult,
+    register, requestService, cancelService, rateService,
+    validatePromo, clearPromo, sendChat, clearNewMessage, clearCurrent,
   } = useClientSocket()
+
+  useServiceToasts(currentService, 'client')
 
   const [name, setName] = useState('')
   const [view, setView] = useState<'home' | 'form' | 'history'>('home')
@@ -48,13 +67,37 @@ export function ClientPanel() {
   const [pickupId, setPickupId] = useState('paulista')
   const [destId, setDestId] = useState('moema')
   const [payment, setPayment] = useState<PaymentMethod>('pix')
+  const [promoInput, setPromoInput] = useState('')
+  const [promoValidating, setPromoValidating] = useState(false)
   const [history, setHistory] = useState<ServiceRecord[]>(() =>
     typeof window !== 'undefined' ? getHistoryForRole('client') : []
   )
   const [ratedServices, setRatedServices] = useState<Set<string>>(new Set())
+  const [detailRecord, setDetailRecord] = useState<ServiceRecord | null>(null)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [unreadChat, setUnreadChat] = useState(0)
   const recordedRef = useRef<Set<string>>(new Set())
+  const promoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const refreshHistory = () => setHistory(getHistoryForRole('client'))
+  // Track unread chat messages when chat is closed
+  useEffect(() => {
+    if (!newMessage) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!chatOpen) setUnreadChat((n) => n + 1)
+    clearNewMessage()
+  }, [newMessage, chatOpen, clearNewMessage])
+
+  // Reset chat state when service changes or clears
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setChatOpen(false)
+    setUnreadChat(0)
+  }, [currentService?.id])
+
+  const toggleChat = () => {
+    setChatOpen(!chatOpen)
+    if (!chatOpen) setUnreadChat(0)
+  }
 
   // When a service reaches a terminal state, persist it to history once
   useEffect(() => {
@@ -76,6 +119,22 @@ export function ClientPanel() {
     register(name.trim())
   }
 
+  // Debounced promo validation
+  const handlePromoInput = (val: string) => {
+    setPromoInput(val)
+    clearPromo()
+    setPromoValidating(false)
+    if (promoTimer.current) clearTimeout(promoTimer.current)
+    if (!val.trim()) return
+    setPromoValidating(true)
+    promoTimer.current = setTimeout(() => {
+      const pickup = PRESETS.find((p) => p.id === pickupId)!
+      const dest = PRESETS.find((p) => p.id === destId)!
+      validatePromo(val.trim(), svcType, haversineKm(pickup.pos, dest.pos))
+      setPromoValidating(false)
+    }, 600)
+  }
+
   const handleSubmit = () => {
     const pickup = PRESETS.find((p) => p.id === pickupId)!
     const dest = PRESETS.find((p) => p.id === destId)!
@@ -88,16 +147,19 @@ export function ClientPanel() {
       destination: dest.pos,
       destinationLabel: dest.label,
       paymentMethod: payment,
+      promoCode: promoResult?.valid ? promoResult.code : null,
     })
     setView('home')
     setDescription('')
+    setPromoInput('')
+    clearPromo()
   }
 
   const handleRate = (svc: ServiceData, stars: number, comment: string) => {
     rateService(svc.id, stars, comment)
     setRatedServices((prev) => new Set(prev).add(svc.id))
     updateRecord(svc.id, 'client', { rating: { stars, comment } })
-    refreshHistory()
+    setHistory(getHistoryForRole('client'))
   }
 
   const handleNewRequest = () => {
@@ -167,7 +229,7 @@ export function ClientPanel() {
       </div>
 
       {/* Map area */}
-      <div className="relative h-[38%] min-h-[170px] p-3">
+      <div className="relative h-[34%] min-h-[150px] p-3">
         <RescueMap
           providers={nearby}
           pickup={svc?.pickup}
@@ -185,13 +247,13 @@ export function ClientPanel() {
       {/* Tab nav */}
       <div className="flex gap-1 border-b border-slate-800 px-3 pt-1">
         <TabBtn active={view === 'home' || view === 'form'} onClick={() => setView('home')} icon={Home} label="Início" />
-        <TabBtn active={view === 'history'} onClick={() => { setView('history'); refreshHistory() }} icon={History} label="Histórico" badge={history.length} />
+        <TabBtn active={view === 'history'} onClick={() => { setView('history'); setHistory(getHistoryForRole('client')) }} icon={History} label="Histórico" badge={history.length} />
       </div>
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto p-4">
         {view === 'history' && (
-          <HistoryView history={history} role="client" />
+          <HistoryView history={history} role="client" onSelect={setDetailRecord} />
         )}
 
         {view === 'home' && !svc && (
@@ -262,6 +324,11 @@ export function ClientPanel() {
             onRate={(stars, comment) => handleRate(svc, stars, comment)}
             rated={ratedServices.has(svc.id) || !!svc.rating}
             onNewRequest={handleNewRequest}
+            messages={messages}
+            onSendChat={(text) => sendChat(svc.id, text)}
+            chatOpen={chatOpen}
+            setChatOpen={toggleChat}
+            unreadChat={unreadChat}
           />
         )}
 
@@ -272,8 +339,12 @@ export function ClientPanel() {
             pickupId={pickupId} setPickupId={setPickupId}
             destId={destId} setDestId={setDestId}
             payment={payment} setPayment={setPayment}
+            promoInput={promoInput} onPromoInput={handlePromoInput}
+            promoResult={promoResult}
+            promoValidating={promoValidating}
             onCancel={() => setView('home')}
             onSubmit={handleSubmit}
+            presets={PRESETS}
           />
         )}
         {view === 'form' && hasActive && (
@@ -282,6 +353,9 @@ export function ClientPanel() {
           </div>
         )}
       </div>
+
+      {/* Service detail dialog */}
+      <ServiceDetailDialog record={detailRecord} onClose={() => setDetailRecord(null)} role="client" />
     </div>
   )
 }
@@ -304,8 +378,34 @@ function TabBtn({ active, onClick, icon: Icon, label, badge }: { active: boolean
 }
 
 function RequestForm(props: any) {
-  const { svcType, setSvcType, description, setDescription, pickupId, setPickupId, destId, setDestId, payment, setPayment, onCancel, onSubmit } = props
+  const {
+    svcType, setSvcType, description, setDescription, pickupId, setPickupId, destId, setDestId,
+    payment, setPayment, promoInput, onPromoInput, promoResult, promoValidating,
+    onCancel, onSubmit, presets,
+  } = props
   const sameLoc = pickupId === destId
+
+  const effectiveResult = promoResult as PromoResult | null
+
+  // Compute preview price
+  const pickup = presets?.find((p: any) => p.id === pickupId)
+  const dest = presets?.find((p: any) => p.id === destId)
+  const basePrice = (() => {
+    if (!pickup || !dest) return 0
+    const R = 6371
+    const dLat = ((dest.pos.lat - pickup.pos.lat) * Math.PI) / 180
+    const dLng = ((dest.pos.lng - pickup.pos.lng) * Math.PI) / 180
+    const la1 = (pickup.pos.lat * Math.PI) / 180
+    const la2 = (dest.pos.lat * Math.PI) / 180
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2
+    const dist = 2 * R * Math.asin(Math.sqrt(h))
+    const meta = SERVICE_TYPES.find((s) => s.id === svcType)!
+    return Math.round(meta.base + dist * 4.5)
+  })()
+
+  const finalPrice = effectiveResult?.valid ? effectiveResult.finalPrice! : basePrice
+  const discount = effectiveResult?.valid ? effectiveResult.discount! : 0
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -372,6 +472,40 @@ function RequestForm(props: any) {
         </div>
       </div>
 
+      {/* Promo code */}
+      <div>
+        <Label className="mb-1.5 block text-xs font-semibold uppercase text-slate-400">
+          <Tag className="mr-1 inline h-3 w-3 text-amber-400" />
+          Cupom de desconto
+        </Label>
+        <div className="flex gap-2">
+          <Input
+            value={promoInput}
+            onChange={(e) => onPromoInput(e.target.value.toUpperCase())}
+            placeholder="Ex: SOCORRO10"
+            className="border-slate-700 bg-slate-900 text-white placeholder:text-slate-500 uppercase"
+          />
+          {promoValidating && !effectiveResult && (
+            <Loader2 className="mt-2.5 h-4 w-4 animate-spin text-slate-500" />
+          )}
+        </div>
+        {effectiveResult && (
+          <div className={`mt-1.5 flex items-center gap-1.5 rounded-lg border p-2 text-xs ${
+            effectiveResult.valid
+              ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+              : 'border-rose-500/40 bg-rose-500/10 text-rose-300'
+          }`}>
+            {effectiveResult.valid ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+            <span>{effectiveResult.message}</span>
+          </div>
+        )}
+        {!promoInput && (
+          <p className="mt-1 text-[10px] text-slate-500">
+            Experimente: <span className="font-mono text-amber-400">SOCORRO10</span> · <span className="font-mono text-amber-400">BEMVINDO20</span> · <span className="font-mono text-amber-400">PROMO15</span>
+          </p>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 gap-2">
         <div>
           <Label className="mb-1.5 block text-xs font-semibold uppercase text-slate-400">
@@ -383,7 +517,7 @@ function RequestForm(props: any) {
             onChange={(e) => setPickupId(e.target.value)}
             className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-amber-500"
           >
-            {PRESETS.map((p) => (<option key={p.id} value={p.id}>{p.label}</option>))}
+            {presets.map((p: any) => (<option key={p.id} value={p.id}>{p.label}</option>))}
           </select>
         </div>
         <div>
@@ -396,9 +530,33 @@ function RequestForm(props: any) {
             onChange={(e) => setDestId(e.target.value)}
             className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-amber-500"
           >
-            {PRESETS.map((p) => (<option key={p.id} value={p.id}>{p.label}</option>))}
+            {presets.map((p: any) => (<option key={p.id} value={p.id}>{p.label}</option>))}
           </select>
         </div>
+      </div>
+
+      {/* Price summary */}
+      <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-slate-400">Valor do serviço</span>
+          <span className={`font-bold ${discount > 0 ? 'text-slate-500 line-through' : 'text-amber-400'}`}>
+            R$ {basePrice}
+          </span>
+        </div>
+        {discount > 0 && (
+          <>
+            <div className="mt-1 flex items-center justify-between text-xs">
+              <span className="flex items-center gap-1 text-emerald-400">
+                <Tag className="h-3 w-3" /> Desconto ({effectiveResult?.code})
+              </span>
+              <span className="font-bold text-emerald-400">- R$ {discount}</span>
+            </div>
+            <div className="mt-1.5 flex items-center justify-between border-t border-slate-800 pt-1.5">
+              <span className="text-xs font-bold text-white">Total a pagar</span>
+              <span className="text-lg font-extrabold text-amber-400">R$ {finalPrice}</span>
+            </div>
+          </>
+        )}
       </div>
 
       <Button
@@ -407,6 +565,7 @@ function RequestForm(props: any) {
         className="w-full bg-amber-500 py-5 text-sm font-bold text-slate-950 shadow-lg shadow-amber-500/20 hover:bg-amber-400"
       >
         Confirmar e procurar prestador
+        <ArrowRight className="ml-2 h-4 w-4" />
       </Button>
       {sameLoc && <p className="text-center text-xs text-rose-400">Local e destino não podem ser iguais</p>}
     </div>
@@ -415,21 +574,28 @@ function RequestForm(props: any) {
 
 function ServiceTracker({
   svc, onCancel, onRate, rated, onNewRequest,
+  messages, onSendChat, chatOpen, setChatOpen, unreadChat,
 }: {
   svc: ServiceData
   onCancel: () => void
   onRate: (stars: number, comment: string) => void
   rated: boolean
   onNewRequest: () => void
+  messages: any[]
+  onSendChat: (text: string) => void
+  chatOpen: boolean
+  setChatOpen: (v: boolean) => void
+  unreadChat: number
 }) {
   const status = svc.status
   const statusMeta = STATUS_LABELS[status]
   const isFinal = status === 'completed' || status === 'cancelled' || status === 'expired'
   const isLive = !isFinal
   const PayIcon = PAY_ICONS[PAYMENT_METHODS.find((m) => m.id === svc.paymentMethod)?.icon || 'zap']
+  const canChat = isLive && !!svc.provider && ['accepted', 'arriving', 'arrived', 'in_progress'].includes(status)
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Status banner */}
       <div
         className={`rounded-xl border p-3 ${
@@ -472,8 +638,18 @@ function ServiceTracker({
                   <Button size="icon" variant="outline" className="h-7 w-7 border-slate-700 bg-slate-800 text-emerald-400 hover:bg-slate-700">
                     <Phone className="h-3.5 w-3.5" />
                   </Button>
-                  <Button size="icon" variant="outline" className="h-7 w-7 border-slate-700 bg-slate-800 text-sky-400 hover:bg-slate-700">
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    onClick={() => setChatOpen(!chatOpen)}
+                    className={`relative h-7 w-7 border-slate-700 bg-slate-800 text-sky-400 hover:bg-slate-700 ${chatOpen ? 'ring-2 ring-sky-500' : ''}`}
+                  >
                     <MessageCircle className="h-3.5 w-3.5" />
+                    {unreadChat > 0 && (
+                      <span className="absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-rose-500 px-0.5 text-[9px] font-bold text-white">
+                        {unreadChat}
+                      </span>
+                    )}
                   </Button>
                 </div>
               )}
@@ -497,6 +673,17 @@ function ServiceTracker({
             </div>
           )}
         </div>
+      )}
+
+      {/* Chat panel (collapsible) */}
+      {canChat && chatOpen && (
+        <ChatPanel
+          messages={messages}
+          myRole="client"
+          onSend={onSendChat}
+          counterpartName={svc.provider?.name || 'Prestador'}
+          compact
+        />
       )}
 
       {/* Route + payment */}
@@ -523,14 +710,21 @@ function ServiceTracker({
             <PayIcon className="h-3.5 w-3.5 text-amber-400" />
             {PAYMENT_METHODS.find((m) => m.id === svc.paymentMethod)?.label}
           </span>
-          <span className="font-bold text-amber-400">R$ {svc.price}</span>
+          <div className="flex items-center gap-2">
+            {svc.discount > 0 && (
+              <span className="text-[10px] text-emerald-400">
+                <Tag className="mr-0.5 inline h-3 w-3" />{svc.promoCode} -R${svc.discount}
+              </span>
+            )}
+            <span className="font-bold text-amber-400">R$ {svc.price}</span>
+          </div>
         </div>
       </div>
 
       {/* Timeline */}
       <div>
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Acompanhamento</p>
-        <ScrollArea className="max-h-36">
+        <ScrollArea className="max-h-32">
           <div className="space-y-2 pr-2">
             {svc.timeline.slice().reverse().map((ev, i) => (
               <div key={i} className="flex gap-2 text-xs">
@@ -556,22 +750,13 @@ function ServiceTracker({
           Cancelar solicitação
         </Button>
       )}
-      {isFinal && !hasRated(svc, rated) && status !== 'completed' && (
-        <Button onClick={onNewRequest} className="w-full bg-amber-500 py-5 text-sm font-bold text-slate-950 hover:bg-amber-400">
-          <Shield className="mr-2 h-4 w-4" /> Nova solicitação
-        </Button>
-      )}
-      {isFinal && (status !== 'completed' || hasRated(svc, rated)) && (
+      {isFinal && (
         <Button onClick={onNewRequest} className="w-full bg-amber-500 py-5 text-sm font-bold text-slate-950 hover:bg-amber-400">
           <Shield className="mr-2 h-4 w-4" /> Nova solicitação
         </Button>
       )}
     </div>
   )
-}
-
-function hasRated(svc: ServiceData, rated: boolean) {
-  return rated || !!svc.rating
 }
 
 function RatingCard({ svc, rated, onRate }: { svc: ServiceData; rated: boolean; onRate: (s: number, c: string) => void }) {
@@ -632,7 +817,7 @@ function RatingCard({ svc, rated, onRate }: { svc: ServiceData; rated: boolean; 
   )
 }
 
-function HistoryView({ history, role }: { history: ServiceRecord[]; role: 'client' | 'provider' }) {
+function HistoryView({ history, role, onSelect }: { history: ServiceRecord[]; role: 'client' | 'provider'; onSelect: (r: ServiceRecord) => void }) {
   if (history.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-slate-800 p-8 text-center">
@@ -653,7 +838,11 @@ function HistoryView({ history, role }: { history: ServiceRecord[]; role: 'clien
         const Icon = ICONS[r.icon] || CircleDot
         const PayIcon = PAY_ICONS[PAYMENT_METHODS.find((m) => m.id === r.paymentMethod)?.icon || 'zap']
         return (
-          <div key={r.id} className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+          <button
+            key={r.id}
+            onClick={() => onSelect(r)}
+            className="w-full rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-left transition hover:border-slate-700 hover:bg-slate-900/80"
+          >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-800 text-slate-300">
@@ -666,35 +855,155 @@ function HistoryView({ history, role }: { history: ServiceRecord[]; role: 'clien
                   </p>
                 </div>
               </div>
-              <span className="text-sm font-bold text-amber-400">R$ {r.price}</span>
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-bold text-amber-400">R$ {r.price}</span>
+                <ChevronRight className="h-4 w-4 text-slate-600" />
+              </div>
             </div>
             <div className="mt-2 flex items-center gap-3 text-[10px] text-slate-500">
-              <span className="flex items-center gap-0.5">
-                <MapPin className="h-3 w-3" /> {r.pickupLabel.split(',')[0]}
-              </span>
-              <span className="flex items-center gap-0.5">
-                <PayIcon className="h-3 w-3" />
-                {PAYMENT_METHODS.find((m) => m.id === r.paymentMethod)?.label}
-              </span>
-              <span className="flex items-center gap-0.5">
-                <Clock className="h-3 w-3" />
-                {new Date(r.completedAt).toLocaleDateString('pt-BR')}
-              </span>
+              <span className="flex items-center gap-0.5"><MapPin className="h-3 w-3" /> {r.pickupLabel.split(',')[0]}</span>
+              <span className="flex items-center gap-0.5"><PayIcon className="h-3 w-3" /> {PAYMENT_METHODS.find((m) => m.id === r.paymentMethod)?.label}</span>
+              <span className="flex items-center gap-0.5"><Clock className="h-3 w-3" /> {new Date(r.completedAt).toLocaleDateString('pt-BR')}</span>
             </div>
-            {r.rating && (
-              <div className="mt-2 flex items-center gap-1 border-t border-slate-800 pt-2">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <Star key={i} className={`h-3 w-3 ${i < r.rating!.stars ? 'text-amber-400' : 'text-slate-700'}`} fill="currentColor" />
-                ))}
-                {r.rating.comment && <span className="ml-1 text-[10px] italic text-slate-400">"{r.rating.comment}"</span>}
-              </div>
-            )}
-            {r.status === 'cancelled' && (
-              <Badge variant="outline" className="mt-2 border-rose-500/40 text-rose-400">Cancelado</Badge>
-            )}
-          </div>
+            <div className="mt-1.5 flex items-center gap-2">
+              {r.rating && (
+                <div className="flex items-center gap-0.5">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Star key={i} className={`h-2.5 w-2.5 ${i < r.rating!.stars ? 'text-amber-400' : 'text-slate-700'}`} fill="currentColor" />
+                  ))}
+                </div>
+              )}
+              {r.discount > 0 && (
+                <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-[9px] text-emerald-400">
+                  <Tag className="mr-0.5 h-2.5 w-2.5" /> {r.promoCode}
+                </Badge>
+              )}
+              {r.status === 'cancelled' && (
+                <Badge variant="outline" className="border-rose-500/40 text-[9px] text-rose-400">Cancelado</Badge>
+              )}
+              <span className="ml-auto flex items-center gap-0.5 text-[9px] text-sky-400"><Eye className="h-2.5 w-2.5" /> Detalhes</span>
+            </div>
+          </button>
         )
       })}
+    </div>
+  )
+}
+
+function ServiceDetailDialog({ record, onClose, role }: { record: ServiceRecord | null; onClose: () => void; role: 'client' | 'provider' }) {
+  return (
+    <Dialog open={!!record} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto border-slate-800 bg-slate-950 text-white">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-white">
+            {record && (() => {
+              const Icon = ICONS[record.icon] || CircleDot
+              return <Icon className="h-4 w-4 text-amber-400" />
+            })()}
+            Detalhes do serviço
+          </DialogTitle>
+        </DialogHeader>
+        {record && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-2">
+              <InfoBox label="Tipo" value={record.typeLabel} />
+              <InfoBox label="Status" value={STATUS_LABELS[record.status].label} />
+              <InfoBox label={role === 'client' ? 'Prestador' : 'Cliente'} value={record.counterpartName} />
+              <InfoBox label="Pagamento" value={PAYMENT_METHODS.find((m) => m.id === record.paymentMethod)?.label || record.paymentMethod} />
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+              <p className="mb-2 text-xs font-semibold uppercase text-slate-500">Trajeto</p>
+              <div className="flex gap-3">
+                <div className="flex flex-col items-center pt-1">
+                  <div className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                  <div className="my-1 w-0.5 flex-1 bg-slate-700" />
+                  <div className="h-2.5 w-2.5 rounded-full bg-sky-500" />
+                </div>
+                <div className="flex-1 space-y-3">
+                  <div>
+                    <p className="text-[10px] uppercase text-slate-500">Local</p>
+                    <p className="text-xs font-medium text-white">{record.pickupLabel}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] uppercase text-slate-500">Destino</p>
+                    <p className="text-xs font-medium text-white">{record.destinationLabel}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+              <p className="mb-2 text-xs font-semibold uppercase text-slate-500">Valores</p>
+              <div className="space-y-1.5 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Valor original</span>
+                  <span className="text-slate-300">R$ {record.originalPrice}</span>
+                </div>
+                {record.discount > 0 && (
+                  <div className="flex justify-between text-emerald-400">
+                    <span className="flex items-center gap-1"><Tag className="h-3 w-3" /> Desconto ({record.promoCode})</span>
+                    <span>- R$ {record.discount}</span>
+                  </div>
+                )}
+                <div className="flex justify-between border-t border-slate-800 pt-1.5">
+                  <span className="font-bold text-white">Total</span>
+                  <span className="text-base font-extrabold text-amber-400">R$ {record.price}</span>
+                </div>
+              </div>
+            </div>
+
+            {record.description && record.description !== 'Sem detalhes adicionais' && (
+              <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+                <p className="mb-1 text-xs font-semibold uppercase text-slate-500">Descrição do problema</p>
+                <p className="text-xs text-slate-300">{record.description}</p>
+              </div>
+            )}
+
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+              <p className="mb-2 text-xs font-semibold uppercase text-slate-500">Linha do tempo</p>
+              <div className="space-y-2">
+                {record.timeline.map((ev, i) => (
+                  <div key={i} className="flex gap-2 text-xs">
+                    <div className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-600" />
+                    <div className="flex-1">
+                      <p className="text-slate-300">{ev.label}</p>
+                      <p className="text-[10px] text-slate-600">{new Date(ev.at).toLocaleString('pt-BR')}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {record.rating && (
+              <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3">
+                <p className="mb-1 text-xs font-semibold uppercase text-slate-500">Avaliação</p>
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: 5 }).map((_, i) => (
+                    <Star key={i} className={`h-4 w-4 ${i < record.rating!.stars ? 'text-amber-400' : 'text-slate-700'}`} fill="currentColor" />
+                  ))}
+                  <span className="ml-1 text-xs font-bold text-amber-400">{record.rating.stars}.0</span>
+                </div>
+                {record.rating.comment && <p className="mt-1 text-xs italic text-slate-300">"{record.rating.comment}"</p>}
+              </div>
+            )}
+
+            <div className="flex items-center justify-between text-[11px] text-slate-500">
+              <span>Solicitado: {new Date(record.createdAt).toLocaleString('pt-BR')}</span>
+              <span>Concluído: {new Date(record.completedAt).toLocaleString('pt-BR')}</span>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function InfoBox({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-slate-800 bg-slate-900/60 p-2.5">
+      <p className="text-[10px] uppercase text-slate-500">{label}</p>
+      <p className="text-xs font-semibold text-white">{value}</p>
     </div>
   )
 }

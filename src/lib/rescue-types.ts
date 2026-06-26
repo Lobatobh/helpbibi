@@ -47,6 +47,27 @@ export type Rating = {
   from: string
 }
 
+export type ChatMessage = {
+  id: string
+  serviceId: string
+  from: 'client' | 'provider'
+  fromName: string
+  text: string
+  at: number
+}
+
+export type PromoResult = {
+  valid: boolean
+  code: string
+  label?: string
+  type?: 'percent' | 'fixed'
+  value?: number
+  originalPrice?: number
+  discount?: number
+  finalPrice?: number
+  message: string
+}
+
 export type ServiceData = {
   id: string
   clientId: string
@@ -60,6 +81,9 @@ export type ServiceData = {
   destination: LatLng
   destinationLabel: string
   price: number
+  originalPrice: number
+  discount: number
+  promoCode: string | null
   distanceKm: number
   etaMin: number
   status: ServiceStatus
@@ -81,12 +105,17 @@ export type ServiceRecord = {
   typeLabel: string
   icon: string
   price: number
+  originalPrice: number
+  discount: number
+  promoCode: string | null
   distanceKm: number
   paymentMethod: PaymentMethod
   pickupLabel: string
   destinationLabel: string
   counterpartName: string
   status: ServiceStatus
+  description: string
+  timeline: TimelineEvent[]
   createdAt: number
   completedAt: number
   rating?: { stars: number; comment: string } | null

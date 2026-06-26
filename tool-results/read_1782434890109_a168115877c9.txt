@@ -1,0 +1,701 @@
+     1→'use client'
+     2→
+     3→import { useEffect, useRef, useState } from 'react'
+     4→import {
+     5→  Shield, Phone, Star, MapPin, Navigation, X, Truck, Battery, Fuel, Key, Wrench,
+     6→  CircleDot, Clock, CheckCircle2, Loader2, AlertTriangle, MessageCircle,
+     7→  Zap, CreditCard, Wallet, History, Home, Send,
+     8→} from 'lucide-react'
+     9→import { Button } from '@/components/ui/button'
+    10→import { Input } from '@/components/ui/input'
+    11→import { Textarea } from '@/components/ui/textarea'
+    12→import { Label } from '@/components/ui/label'
+    13→import { Badge } from '@/components/ui/badge'
+    14→import { ScrollArea } from '@/components/ui/scroll-area'
+    15→import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+    16→import { useClientSocket } from '@/hooks/use-rescue-socket'
+    17→import {
+    18→  SERVICE_TYPES, PAYMENT_METHODS, STATUS_LABELS,
+    19→  type ServiceType, type LatLng, type PaymentMethod, type ServiceData, type ServiceRecord,
+    20→} from '@/lib/rescue-types'
+    21→import { getHistoryForRole, addRecord, recordFromService, updateRecord } from '@/lib/rescue-history'
+    22→import { RescueMap } from './rescue-map'
+    23→
+    24→const ICONS: Record<string, any> = {
+    25→  'tow-truck': Truck, tire: CircleDot, battery: Battery, fuel: Fuel, key: Key, wrench: Wrench,
+    26→}
+    27→const PAY_ICONS: Record<string, any> = { zap: Zap, 'credit-card': CreditCard, wallet: Wallet }
+    28→
+    29→const PRESETS: { id: string; label: string; pos: LatLng }[] = [
+    30→  { id: 'paulista', label: 'Av. Paulista, 1578', pos: { lat: -23.5614, lng: -46.6559 } },
+    31→  { id: 'centro', label: 'Praça da Sé, Centro', pos: { lat: -23.5503, lng: -46.6334 } },
+    32→  { id: 'pinheiros', label: 'Rua dos Pinheiros, 100', pos: { lat: -23.5673, lng: -46.6910 } },
+    33→  { id: 'vilamariana', label: 'Vila Mariana, 220', pos: { lat: -23.5876, lng: -46.6376 } },
+    34→  { id: 'moema', label: 'Moema, Av. Ibirapuera 3100', pos: { lat: -23.6075, lng: -46.6660 } },
+    35→  { id: 'ibirapuera', label: 'Parque Ibirapuera', pos: { lat: -23.5874, lng: -46.6576 } },
+    36→]
+    37→
+    38→export function ClientPanel() {
+    39→  const {
+    40→    connected, registered, nearby, currentService,
+    41→    register, requestService, cancelService, rateService, clearCurrent,
+    42→  } = useClientSocket()
+    43→
+    44→  const [name, setName] = useState('')
+    45→  const [view, setView] = useState<'home' | 'form' | 'history'>('home')
+    46→  const [svcType, setSvcType] = useState<ServiceType>('reboque')
+    47→  const [description, setDescription] = useState('')
+    48→  const [pickupId, setPickupId] = useState('paulista')
+    49→  const [destId, setDestId] = useState('moema')
+    50→  const [payment, setPayment] = useState<PaymentMethod>('pix')
+    51→  const [history, setHistory] = useState<ServiceRecord[]>(() =>
+    52→    typeof window !== 'undefined' ? getHistoryForRole('client') : []
+    53→  )
+    54→  const [ratedServices, setRatedServices] = useState<Set<string>>(new Set())
+    55→  const recordedRef = useRef<Set<string>>(new Set())
+    56→
+    57→  const refreshHistory = () => setHistory(getHistoryForRole('client'))
+    58→
+    59→  // When a service reaches a terminal state, persist it to history once
+    60→  useEffect(() => {
+    61→    if (!currentService) return
+    62→    const s = currentService
+    63→    if (s.status !== 'completed' && s.status !== 'cancelled' && s.status !== 'expired') return
+    64→    if (recordedRef.current.has(s.id)) return
+    65→    recordedRef.current.add(s.id)
+    66→    const rec = recordFromService(s, 'client')
+    67→    if (rec) {
+    68→      addRecord(rec)
+    69→      // eslint-disable-next-line react-hooks/set-state-in-effect
+    70→      setHistory((prev) => (prev.some((r) => r.id === rec.id) ? prev : [rec, ...prev]))
+    71→    }
+    72→  }, [currentService?.status, currentService?.id])
+    73→
+    74→  const handleRegister = () => {
+    75→    if (!name.trim()) return
+    76→    register(name.trim())
+    77→  }
+    78→
+    79→  const handleSubmit = () => {
+    80→    const pickup = PRESETS.find((p) => p.id === pickupId)!
+    81→    const dest = PRESETS.find((p) => p.id === destId)!
+    82→    requestService({
+    83→      clientName: name.trim(),
+    84→      type: svcType,
+    85→      description: description.trim() || 'Sem detalhes adicionais',
+    86→      pickup: pickup.pos,
+    87→      pickupLabel: pickup.label,
+    88→      destination: dest.pos,
+    89→      destinationLabel: dest.label,
+    90→      paymentMethod: payment,
+    91→    })
+    92→    setView('home')
+    93→    setDescription('')
+    94→  }
+    95→
+    96→  const handleRate = (svc: ServiceData, stars: number, comment: string) => {
+    97→    rateService(svc.id, stars, comment)
+    98→    setRatedServices((prev) => new Set(prev).add(svc.id))
+    99→    updateRecord(svc.id, 'client', { rating: { stars, comment } })
+   100→    refreshHistory()
+   101→  }
+   102→
+   103→  const handleNewRequest = () => {
+   104→    clearCurrent()
+   105→    setView('form')
+   106→  }
+   107→
+   108→  // -------- Render states --------
+   109→  if (!registered) {
+   110→    return (
+   111→      <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
+   112→        <div className="relative">
+   113→          <div className="absolute -inset-3 animate-pulse rounded-3xl bg-amber-500/20 blur-xl" />
+   114→          <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 shadow-lg shadow-amber-500/30">
+   115→            <Shield className="h-8 w-8" />
+   116→          </div>
+   117→        </div>
+   118→        <div>
+   119→          <h3 className="text-lg font-bold text-white">Sou Cliente</h3>
+   120→          <p className="mt-1 text-sm text-slate-400">
+   121→            Informe seu nome para entrar no app e solicitar socorro.
+   122→          </p>
+   123→        </div>
+   124→        <div className="w-full space-y-2">
+   125→          <Input
+   126→            value={name}
+   127→            onChange={(e) => setName(e.target.value)}
+   128→            placeholder="Seu nome"
+   129→            className="border-slate-700 bg-slate-900 text-white placeholder:text-slate-500"
+   130→            onKeyDown={(e) => e.key === 'Enter' && handleRegister()}
+   131→          />
+   132→          <Button
+   133→            onClick={handleRegister}
+   134→            disabled={!name.trim() || !connected}
+   135→            className="w-full bg-amber-500 text-slate-950 hover:bg-amber-400"
+   136→          >
+   137→            Entrar como cliente
+   138→          </Button>
+   139→        </div>
+   140→        <p className="text-xs text-slate-500">
+   141→          {connected ? '✓ Conectado ao serviço' : 'Conectando...'}
+   142→        </p>
+   143→      </div>
+   144→    )
+   145→  }
+   146→
+   147→  const svc = currentService
+   148→  const hasActive = svc && !['completed', 'cancelled', 'expired'].includes(svc.status)
+   149→
+   150→  return (
+   151→    <div className="flex h-full flex-col bg-slate-950 text-white">
+   152→      {/* Header */}
+   153→      <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+   154→        <div className="flex items-center gap-2">
+   155→          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 shadow-md shadow-amber-500/20">
+   156→            <Shield className="h-5 w-5" />
+   157→          </div>
+   158→          <div>
+   159→            <p className="text-sm font-bold leading-tight">SocorroJá · Cliente</p>
+   160→            <p className="text-[11px] text-slate-400">Olá, {name || 'motorista'}</p>
+   161→          </div>
+   162→        </div>
+   163→        <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-400">
+   164→          <span className="mr-1 h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+   165→          Online
+   166→        </Badge>
+   167→      </div>
+   168→
+   169→      {/* Map area */}
+   170→      <div className="relative h-[38%] min-h-[170px] p-3">
+   171→        <RescueMap
+   172→          providers={nearby}
+   173→          pickup={svc?.pickup}
+   174→          destination={svc?.destination}
+   175→          clientPos={PRESETS.find((p) => p.id === pickupId)?.pos}
+   176→          providerState={svc?.provider}
+   177→          height="h-full"
+   178→        />
+   179→        <div className="absolute left-5 top-5 flex items-center gap-1.5 rounded-lg bg-slate-900/85 px-3 py-1.5 text-xs font-medium text-slate-300 backdrop-blur">
+   180→          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+   181→          {nearby.length} prestador(es) por perto
+   182→        </div>
+   183→      </div>
+   184→
+   185→      {/* Tab nav */}
+   186→      <div className="flex gap-1 border-b border-slate-800 px-3 pt-1">
+   187→        <TabBtn active={view === 'home' || view === 'form'} onClick={() => setView('home')} icon={Home} label="Início" />
+   188→        <TabBtn active={view === 'history'} onClick={() => { setView('history'); refreshHistory() }} icon={History} label="Histórico" badge={history.length} />
+   189→      </div>
+   190→
+   191→      {/* Body */}
+   192→      <div className="flex-1 overflow-y-auto p-4">
+   193→        {view === 'history' && (
+   194→          <HistoryView history={history} role="client" />
+   195→        )}
+   196→
+   197→        {view === 'home' && !svc && (
+   198→          <div className="space-y-4">
+   199→            <div className="rounded-xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-900/40 p-4">
+   200→              <div className="flex items-center gap-2">
+   201→                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/15 text-amber-400">
+   202→                  <Shield className="h-4 w-4" />
+   203→                </div>
+   204→                <p className="text-sm font-semibold text-white">Pronto para ajudar</p>
+   205→              </div>
+   206→              <p className="mt-2 text-xs text-slate-400">
+   207→                Toque abaixo para solicitar um serviço. O prestador mais próximo receberá a chamada
+   208→                automaticamente.
+   209→              </p>
+   210→            </div>
+   211→            <Button
+   212→              onClick={() => setView('form')}
+   213→              className="w-full bg-amber-500 py-6 text-base font-bold text-slate-950 shadow-lg shadow-amber-500/20 hover:bg-amber-400"
+   214→            >
+   215→              <Shield className="mr-2 h-5 w-5" />
+   216→              Solicitar socorro
+   217→            </Button>
+   218→
+   219→            <div>
+   220→              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+   221→                Prestadores próximos
+   222→              </p>
+   223→              <div className="space-y-2">
+   224→                {nearby.length === 0 && (
+   225→                  <div className="rounded-lg border border-dashed border-slate-800 p-4 text-center">
+   226→                    <Truck className="mx-auto mb-1 h-5 w-5 text-slate-600" />
+   227→                    <p className="text-xs text-slate-500">Aguardando prestadores entrarem no app...</p>
+   228→                  </div>
+   229→                )}
+   230→                {nearby.slice(0, 4).map((p) => (
+   231→                  <div
+   232→                    key={p.id}
+   233→                    className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-900/60 p-2.5 transition hover:border-slate-700"
+   234→                  >
+   235→                    <Avatar className="h-8 w-8 bg-gradient-to-br from-emerald-500 to-emerald-700">
+   236→                      <AvatarFallback className="bg-transparent text-xs font-bold text-white">
+   237→                        {p.name.slice(0, 2).toUpperCase()}
+   238→                      </AvatarFallback>
+   239→                    </Avatar>
+   240→                    <div className="flex-1">
+   241→                      <p className="text-xs font-semibold text-white">{p.name}</p>
+   242→                      <p className="text-[11px] text-slate-400">{p.vehicle}</p>
+   243→                    </div>
+   244→                    <div className="flex flex-col items-end gap-0.5">
+   245→                      <div className="flex items-center gap-1 text-amber-400">
+   246→                        <Star className="h-3 w-3" fill="currentColor" />
+   247→                        <span className="text-[11px] font-semibold">{p.rating.toFixed(1)}</span>
+   248→                      </div>
+   249→                      <span className="text-[9px] text-slate-500">{p.completedCount} serviços</span>
+   250→                    </div>
+   251→                  </div>
+   252→                ))}
+   253→              </div>
+   254→            </div>
+   255→          </div>
+   256→        )}
+   257→
+   258→        {view === 'home' && svc && (
+   259→          <ServiceTracker
+   260→            svc={svc}
+   261→            onCancel={() => cancelService(svc.id)}
+   262→            onRate={(stars, comment) => handleRate(svc, stars, comment)}
+   263→            rated={ratedServices.has(svc.id) || !!svc.rating}
+   264→            onNewRequest={handleNewRequest}
+   265→          />
+   266→        )}
+   267→
+   268→        {view === 'form' && !hasActive && (
+   269→          <RequestForm
+   270→            svcType={svcType} setSvcType={setSvcType}
+   271→            description={description} setDescription={setDescription}
+   272→            pickupId={pickupId} setPickupId={setPickupId}
+   273→            destId={destId} setDestId={setDestId}
+   274→            payment={payment} setPayment={setPayment}
+   275→            onCancel={() => setView('home')}
+   276→            onSubmit={handleSubmit}
+   277→          />
+   278→        )}
+   279→        {view === 'form' && hasActive && (
+   280→          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-center text-xs text-amber-300">
+   281→            Você já tem um serviço em andamento. Acompanhe na aba Início.
+   282→          </div>
+   283→        )}
+   284→      </div>
+   285→    </div>
+   286→  )
+   287→}
+   288→
+   289→function TabBtn({ active, onClick, icon: Icon, label, badge }: { active: boolean; onClick: () => void; icon: any; label: string; badge?: number }) {
+   290→  return (
+   291→    <button
+   292→      onClick={onClick}
+   293→      className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 px-3 py-2.5 text-xs font-semibold transition ${
+   294→        active ? 'border-amber-500 text-amber-400' : 'border-transparent text-slate-500 hover:text-slate-300'
+   295→      }`}
+   296→    >
+   297→      <Icon className="h-3.5 w-3.5" />
+   298→      {label}
+   299→      {badge ? (
+   300→        <span className="ml-0.5 rounded-full bg-slate-700 px-1.5 text-[10px] text-white">{badge}</span>
+   301→      ) : null}
+   302→    </button>
+   303→  )
+   304→}
+   305→
+   306→function RequestForm(props: any) {
+   307→  const { svcType, setSvcType, description, setDescription, pickupId, setPickupId, destId, setDestId, payment, setPayment, onCancel, onSubmit } = props
+   308→  const sameLoc = pickupId === destId
+   309→  return (
+   310→    <div className="space-y-4">
+   311→      <div className="flex items-center justify-between">
+   312→        <h3 className="text-sm font-bold">Nova solicitação</h3>
+   313→        <Button variant="ghost" size="sm" className="h-7 px-2 text-slate-400 hover:text-white" onClick={onCancel}>
+   314→          <X className="h-4 w-4" />
+   315→        </Button>
+   316→      </div>
+   317→
+   318→      <div>
+   319→        <Label className="mb-2 block text-xs font-semibold uppercase text-slate-400">Tipo de serviço</Label>
+   320→        <div className="grid grid-cols-2 gap-2">
+   321→          {SERVICE_TYPES.map((s) => {
+   322→            const Icon = ICONS[s.icon] || CircleDot
+   323→            const active = svcType === s.id
+   324→            return (
+   325→              <button
+   326→                key={s.id}
+   327→                onClick={() => setSvcType(s.id)}
+   328→                className={`flex flex-col items-start gap-1 rounded-lg border p-2.5 text-left transition ${
+   329→                  active ? 'border-amber-500 bg-amber-500/10 shadow-sm shadow-amber-500/10' : 'border-slate-800 bg-slate-900/60 hover:border-slate-700'
+   330→                }`}
+   331→              >
+   332→                <Icon className={`h-4 w-4 ${active ? 'text-amber-400' : 'text-slate-400'}`} />
+   333→                <span className="text-xs font-semibold text-white">{s.label}</span>
+   334→                <span className="text-[10px] text-slate-500">a partir de R$ {s.base}</span>
+   335→              </button>
+   336→            )
+   337→          })}
+   338→        </div>
+   339→      </div>
+   340→
+   341→      <div>
+   342→        <Label className="mb-1.5 block text-xs font-semibold uppercase text-slate-400">Descreva o problema</Label>
+   343→        <Textarea
+   344→          value={description}
+   345→          onChange={(e) => setDescription(e.target.value)}
+   346→          placeholder="Ex: Carro parado no acostamento, não dá partida..."
+   347→          className="border-slate-700 bg-slate-900 text-white placeholder:text-slate-500"
+   348→          rows={2}
+   349→        />
+   350→      </div>
+   351→
+   352→      <div>
+   353→        <Label className="mb-1.5 block text-xs font-semibold uppercase text-slate-400">Forma de pagamento</Label>
+   354→        <div className="grid grid-cols-3 gap-2">
+   355→          {PAYMENT_METHODS.map((m) => {
+   356→            const Icon = PAY_ICONS[m.icon]
+   357→            const active = payment === m.id
+   358→            return (
+   359→              <button
+   360→                key={m.id}
+   361→                onClick={() => setPayment(m.id)}
+   362→                className={`flex flex-col items-center gap-1 rounded-lg border p-2.5 transition ${
+   363→                  active ? 'border-amber-500 bg-amber-500/10' : 'border-slate-800 bg-slate-900/60 hover:border-slate-700'
+   364→                }`}
+   365→              >
+   366→                <Icon className={`h-4 w-4 ${active ? 'text-amber-400' : 'text-slate-400'}`} />
+   367→                <span className="text-[11px] font-semibold text-white">{m.label}</span>
+   368→                <span className="text-[9px] text-slate-500">{m.desc}</span>
+   369→              </button>
+   370→            )
+   371→          })}
+   372→        </div>
+   373→      </div>
+   374→
+   375→      <div className="grid grid-cols-1 gap-2">
+   376→        <div>
+   377→          <Label className="mb-1.5 block text-xs font-semibold uppercase text-slate-400">
+   378→            <MapPin className="mr-1 inline h-3 w-3 text-amber-400" />
+   379→            Local do atendimento
+   380→          </Label>
+   381→          <select
+   382→            value={pickupId}
+   383→            onChange={(e) => setPickupId(e.target.value)}
+   384→            className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-amber-500"
+   385→          >
+   386→            {PRESETS.map((p) => (<option key={p.id} value={p.id}>{p.label}</option>))}
+   387→          </select>
+   388→        </div>
+   389→        <div>
+   390→          <Label className="mb-1.5 block text-xs font-semibold uppercase text-slate-400">
+   391→            <Navigation className="mr-1 inline h-3 w-3 text-sky-400" />
+   392→            Destino final (reboque)
+   393→          </Label>
+   394→          <select
+   395→            value={destId}
+   396→            onChange={(e) => setDestId(e.target.value)}
+   397→            className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-amber-500"
+   398→          >
+   399→            {PRESETS.map((p) => (<option key={p.id} value={p.id}>{p.label}</option>))}
+   400→          </select>
+   401→        </div>
+   402→      </div>
+   403→
+   404→      <Button
+   405→        onClick={onSubmit}
+   406→        disabled={sameLoc}
+   407→        className="w-full bg-amber-500 py-5 text-sm font-bold text-slate-950 shadow-lg shadow-amber-500/20 hover:bg-amber-400"
+   408→      >
+   409→        Confirmar e procurar prestador
+   410→      </Button>
+   411→      {sameLoc && <p className="text-center text-xs text-rose-400">Local e destino não podem ser iguais</p>}
+   412→    </div>
+   413→  )
+   414→}
+   415→
+   416→function ServiceTracker({
+   417→  svc, onCancel, onRate, rated, onNewRequest,
+   418→}: {
+   419→  svc: ServiceData
+   420→  onCancel: () => void
+   421→  onRate: (stars: number, comment: string) => void
+   422→  rated: boolean
+   423→  onNewRequest: () => void
+   424→}) {
+   425→  const status = svc.status
+   426→  const statusMeta = STATUS_LABELS[status]
+   427→  const isFinal = status === 'completed' || status === 'cancelled' || status === 'expired'
+   428→  const isLive = !isFinal
+   429→  const PayIcon = PAY_ICONS[PAYMENT_METHODS.find((m) => m.id === svc.paymentMethod)?.icon || 'zap']
+   430→
+   431→  return (
+   432→    <div className="space-y-4">
+   433→      {/* Status banner */}
+   434→      <div
+   435→        className={`rounded-xl border p-3 ${
+   436→          status === 'completed' ? 'border-emerald-500/40 bg-emerald-500/10'
+   437→          : status === 'cancelled' || status === 'expired' ? 'border-rose-500/40 bg-rose-500/10'
+   438→          : 'border-amber-500/40 bg-amber-500/10'
+   439→        }`}
+   440→      >
+   441→        <div className="flex items-center gap-2">
+   442→          {isLive && <Loader2 className="h-4 w-4 animate-spin text-amber-400" />}
+   443→          {status === 'completed' && <CheckCircle2 className="h-4 w-4 text-emerald-400" />}
+   444→          {(status === 'cancelled' || status === 'expired') && <AlertTriangle className="h-4 w-4 text-rose-400" />}
+   445→          <p className="text-sm font-bold text-white">{statusMeta.label}</p>
+   446→        </div>
+   447→        <p className="mt-1 text-xs text-slate-400">
+   448→          Serviço #{svc.id.slice(-6).toUpperCase()} · {svc.typeLabel}
+   449→        </p>
+   450→      </div>
+   451→
+   452→      {/* Provider card */}
+   453→      {svc.provider && (
+   454→        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+   455→          <div className="flex items-center gap-3">
+   456→            <Avatar className="h-11 w-11 bg-gradient-to-br from-emerald-500 to-emerald-700">
+   457→              <AvatarFallback className="bg-transparent text-sm font-bold text-white">
+   458→                {svc.provider.name.slice(0, 2).toUpperCase()}
+   459→              </AvatarFallback>
+   460→            </Avatar>
+   461→            <div className="flex-1">
+   462→              <p className="text-sm font-bold text-white">{svc.provider.name}</p>
+   463→              <p className="text-xs text-slate-400">{svc.provider.vehicle} · {svc.provider.plate}</p>
+   464→            </div>
+   465→            <div className="flex flex-col items-end gap-1">
+   466→              <div className="flex items-center gap-1 text-amber-400">
+   467→                <Star className="h-3.5 w-3.5" fill="currentColor" />
+   468→                <span className="text-xs font-bold">{svc.provider.rating.toFixed(1)}</span>
+   469→              </div>
+   470→              {isLive && (
+   471→                <div className="flex gap-1">
+   472→                  <Button size="icon" variant="outline" className="h-7 w-7 border-slate-700 bg-slate-800 text-emerald-400 hover:bg-slate-700">
+   473→                    <Phone className="h-3.5 w-3.5" />
+   474→                  </Button>
+   475→                  <Button size="icon" variant="outline" className="h-7 w-7 border-slate-700 bg-slate-800 text-sky-400 hover:bg-slate-700">
+   476→                    <MessageCircle className="h-3.5 w-3.5" />
+   477→                  </Button>
+   478→                </div>
+   479→              )}
+   480→            </div>
+   481→          </div>
+   482→
+   483→          {(status === 'accepted' || status === 'arriving') && (
+   484→            <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+   485→              <div className="rounded-lg bg-slate-800/60 p-2">
+   486→                <p className="text-[10px] uppercase text-slate-500">ETA</p>
+   487→                <p className="text-sm font-bold text-emerald-400">{svc.etaMin} min</p>
+   488→              </div>
+   489→              <div className="rounded-lg bg-slate-800/60 p-2">
+   490→                <p className="text-[10px] uppercase text-slate-500">Distância</p>
+   491→                <p className="text-sm font-bold text-white">{svc.distanceKm} km</p>
+   492→              </div>
+   493→              <div className="rounded-lg bg-slate-800/60 p-2">
+   494→                <p className="text-[10px] uppercase text-slate-500">Valor</p>
+   495→                <p className="text-sm font-bold text-amber-400">R$ {svc.price}</p>
+   496→              </div>
+   497→            </div>
+   498→          )}
+   499→        </div>
+   500→      )}
+   501→
+   502→      {/* Route + payment */}
+   503→      <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+   504→        <div className="flex gap-3">
+   505→          <div className="flex flex-col items-center pt-1">
+   506→            <div className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+   507→            <div className="my-1 w-0.5 flex-1 bg-slate-700" />
+   508→            <div className="h-2.5 w-2.5 rounded-full bg-sky-500" />
+   509→          </div>
+   510→          <div className="flex-1 space-y-3">
+   511→            <div>
+   512→              <p className="text-[10px] uppercase text-slate-500">Local do atendimento</p>
+   513→              <p className="text-xs font-medium text-white">{svc.pickupLabel}</p>
+   514→            </div>
+   515→            <div>
+   516→              <p className="text-[10px] uppercase text-slate-500">Destino final</p>
+   517→              <p className="text-xs font-medium text-white">{svc.destinationLabel}</p>
+   518→            </div>
+   519→          </div>
+   520→        </div>
+   521→        <div className="mt-2 flex items-center justify-between border-t border-slate-800 pt-2 text-xs">
+   522→          <span className="flex items-center gap-1.5 text-slate-400">
+   523→            <PayIcon className="h-3.5 w-3.5 text-amber-400" />
+   524→            {PAYMENT_METHODS.find((m) => m.id === svc.paymentMethod)?.label}
+   525→          </span>
+   526→          <span className="font-bold text-amber-400">R$ {svc.price}</span>
+   527→        </div>
+   528→      </div>
+   529→
+   530→      {/* Timeline */}
+   531→      <div>
+   532→        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Acompanhamento</p>
+   533→        <ScrollArea className="max-h-36">
+   534→          <div className="space-y-2 pr-2">
+   535→            {svc.timeline.slice().reverse().map((ev, i) => (
+   536→              <div key={i} className="flex gap-2 text-xs">
+   537→                <div className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-600" />
+   538→                <div className="flex-1">
+   539→                  <p className="text-slate-300">{ev.label}</p>
+   540→                  <p className="text-[10px] text-slate-600">{new Date(ev.at).toLocaleTimeString('pt-BR')}</p>
+   541→                </div>
+   542→              </div>
+   543→            ))}
+   544→          </div>
+   545→        </ScrollArea>
+   546→      </div>
+   547→
+   548→      {/* Rating UI after completion */}
+   549→      {status === 'completed' && (
+   550→        <RatingCard svc={svc} rated={rated} onRate={onRate} />
+   551→      )}
+   552→
+   553→      {/* Actions */}
+   554→      {isLive && (
+   555→        <Button onClick={onCancel} variant="outline" className="w-full border-rose-500/40 text-rose-400 hover:bg-rose-500/10">
+   556→          Cancelar solicitação
+   557→        </Button>
+   558→      )}
+   559→      {isFinal && !hasRated(svc, rated) && status !== 'completed' && (
+   560→        <Button onClick={onNewRequest} className="w-full bg-amber-500 py-5 text-sm font-bold text-slate-950 hover:bg-amber-400">
+   561→          <Shield className="mr-2 h-4 w-4" /> Nova solicitação
+   562→        </Button>
+   563→      )}
+   564→      {isFinal && (status !== 'completed' || hasRated(svc, rated)) && (
+   565→        <Button onClick={onNewRequest} className="w-full bg-amber-500 py-5 text-sm font-bold text-slate-950 hover:bg-amber-400">
+   566→          <Shield className="mr-2 h-4 w-4" /> Nova solicitação
+   567→        </Button>
+   568→      )}
+   569→    </div>
+   570→  )
+   571→}
+   572→
+   573→function hasRated(svc: ServiceData, rated: boolean) {
+   574→  return rated || !!svc.rating
+   575→}
+   576→
+   577→function RatingCard({ svc, rated, onRate }: { svc: ServiceData; rated: boolean; onRate: (s: number, c: string) => void }) {
+   578→  const [stars, setStars] = useState(5)
+   579→  const [hover, setHover] = useState(0)
+   580→  const [comment, setComment] = useState('')
+   581→
+   582→  if (svc.rating || rated) {
+   583→    const r = svc.rating
+   584→    return (
+   585→      <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-center">
+   586→        <CheckCircle2 className="mx-auto mb-1 h-6 w-6 text-emerald-400" />
+   587→        <p className="text-sm font-bold text-white">Obrigado pela avaliação!</p>
+   588→        {r && (
+   589→          <div className="mt-1 flex items-center justify-center gap-1">
+   590→            {Array.from({ length: 5 }).map((_, i) => (
+   591→              <Star key={i} className={`h-4 w-4 ${i < r.stars ? 'text-amber-400' : 'text-slate-700'}`} fill="currentColor" />
+   592→            ))}
+   593→          </div>
+   594→        )}
+   595→        {r?.comment && <p className="mt-1 text-xs italic text-slate-400">"{r.comment}"</p>}
+   596→      </div>
+   597→    )
+   598→  }
+   599→
+   600→  return (
+   601→    <div className="rounded-xl border border-amber-500/40 bg-gradient-to-b from-amber-500/10 to-transparent p-4">
+   602→      <p className="text-sm font-bold text-white">Avalie o atendimento</p>
+   603→      <p className="mt-0.5 text-xs text-slate-400">Sua avaliação ajuda outros motoristas.</p>
+   604→      <div className="mt-3 flex justify-center gap-1">
+   605→        {Array.from({ length: 5 }).map((_, i) => {
+   606→          const val = i + 1
+   607→          const active = val <= (hover || stars)
+   608→          return (
+   609→            <button
+   610→              key={i}
+   611→              onMouseEnter={() => setHover(val)}
+   612→              onMouseLeave={() => setHover(0)}
+   613→              onClick={() => setStars(val)}
+   614→              className="transition-transform hover:scale-110"
+   615→            >
+   616→              <Star className={`h-7 w-7 ${active ? 'text-amber-400' : 'text-slate-700'}`} fill={active ? 'currentColor' : 'none'} />
+   617→            </button>
+   618→          )
+   619→        })}
+   620→      </div>
+   621→      <Textarea
+   622→        value={comment}
+   623→        onChange={(e) => setComment(e.target.value)}
+   624→        placeholder="Comentário (opcional)..."
+   625→        className="mt-3 border-slate-700 bg-slate-900 text-white placeholder:text-slate-500"
+   626→        rows={2}
+   627→      />
+   628→      <Button onClick={() => onRate(stars, comment.trim())} className="mt-2 w-full bg-amber-500 py-4 text-sm font-bold text-slate-950 hover:bg-amber-400">
+   629→        <Send className="mr-1.5 h-4 w-4" /> Enviar avaliação
+   630→      </Button>
+   631→    </div>
+   632→  )
+   633→}
+   634→
+   635→function HistoryView({ history, role }: { history: ServiceRecord[]; role: 'client' | 'provider' }) {
+   636→  if (history.length === 0) {
+   637→    return (
+   638→      <div className="rounded-xl border border-dashed border-slate-800 p-8 text-center">
+   639→        <History className="mx-auto mb-2 h-8 w-8 text-slate-600" />
+   640→        <p className="text-sm font-semibold text-slate-300">Nenhum serviço no histórico</p>
+   641→        <p className="mt-1 text-xs text-slate-500">
+   642→          {role === 'client' ? 'Solicite um socorro para começar.' : 'Aceite uma chamada para começar.'}
+   643→        </p>
+   644→      </div>
+   645→    )
+   646→  }
+   647→  return (
+   648→    <div className="space-y-2">
+   649→      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+   650→        {history.length} serviço(s) registrado(s)
+   651→      </p>
+   652→      {history.map((r) => {
+   653→        const Icon = ICONS[r.icon] || CircleDot
+   654→        const PayIcon = PAY_ICONS[PAYMENT_METHODS.find((m) => m.id === r.paymentMethod)?.icon || 'zap']
+   655→        return (
+   656→          <div key={r.id} className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+   657→            <div className="flex items-center justify-between">
+   658→              <div className="flex items-center gap-2">
+   659→                <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-800 text-slate-300">
+   660→                  <Icon className="h-3.5 w-3.5" />
+   661→                </div>
+   662→                <div>
+   663→                  <p className="text-xs font-bold text-white">{r.typeLabel}</p>
+   664→                  <p className="text-[10px] text-slate-500">
+   665→                    {role === 'client' ? 'Prestador' : 'Cliente'}: {r.counterpartName}
+   666→                  </p>
+   667→                </div>
+   668→              </div>
+   669→              <span className="text-sm font-bold text-amber-400">R$ {r.price}</span>
+   670→            </div>
+   671→            <div className="mt-2 flex items-center gap-3 text-[10px] text-slate-500">
+   672→              <span className="flex items-center gap-0.5">
+   673→                <MapPin className="h-3 w-3" /> {r.pickupLabel.split(',')[0]}
+   674→              </span>
+   675→              <span className="flex items-center gap-0.5">
+   676→                <PayIcon className="h-3 w-3" />
+   677→                {PAYMENT_METHODS.find((m) => m.id === r.paymentMethod)?.label}
+   678→              </span>
+   679→              <span className="flex items-center gap-0.5">
+   680→                <Clock className="h-3 w-3" />
+   681→                {new Date(r.completedAt).toLocaleDateString('pt-BR')}
+   682→              </span>
+   683→            </div>
+   684→            {r.rating && (
+   685→              <div className="mt-2 flex items-center gap-1 border-t border-slate-800 pt-2">
+   686→                {Array.from({ length: 5 }).map((_, i) => (
+   687→                  <Star key={i} className={`h-3 w-3 ${i < r.rating!.stars ? 'text-amber-400' : 'text-slate-700'}`} fill="currentColor" />
+   688→                ))}
+   689→                {r.rating.comment && <span className="ml-1 text-[10px] italic text-slate-400">"{r.rating.comment}"</span>}
+   690→              </div>
+   691→            )}
+   692→            {r.status === 'cancelled' && (
+   693→              <Badge variant="outline" className="mt-2 border-rose-500/40 text-rose-400">Cancelado</Badge>
+   694→            )}
+   695→          </div>
+   696→        )
+   697→      })}
+   698→    </div>
+   699→  )
+   700→}
+   701→

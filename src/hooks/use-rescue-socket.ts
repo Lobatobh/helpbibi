@@ -2,7 +2,10 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { io, Socket } from 'socket.io-client'
-import type { ProviderState, ProviderPublic, ServiceData, PaymentMethod } from '@/lib/rescue-types'
+import type {
+  ProviderState, ProviderPublic, ServiceData, PaymentMethod,
+  ChatMessage, PromoResult,
+} from '@/lib/rescue-types'
 
 type ClientState = {
   connected: boolean
@@ -10,6 +13,9 @@ type ClientState = {
   clientId: string | null
   nearby: ProviderPublic[]
   currentService: ServiceData | null
+  messages: ChatMessage[]
+  newMessage: ChatMessage | null
+  promoResult: PromoResult | null
 }
 
 type ProviderSession = {
@@ -19,6 +25,8 @@ type ProviderSession = {
   state: ProviderState | null
   offer: ServiceData | null
   currentService: ServiceData | null
+  messages: ChatMessage[]
+  newMessage: ChatMessage | null
 }
 
 const SOCKET_URL = '/?XTransformPort=3003'
@@ -31,6 +39,9 @@ export function useClientSocket() {
     clientId: null,
     nearby: [],
     currentService: null,
+    messages: [],
+    newMessage: null,
+    promoResult: null,
   })
 
   useEffect(() => {
@@ -59,6 +70,18 @@ export function useClientSocket() {
       setState((p) => ({ ...p, currentService: svc }))
     })
 
+    s.on('chat:messages', (data: { serviceId: string; messages: ChatMessage[] }) => {
+      setState((p) => ({ ...p, messages: data.messages }))
+    })
+
+    s.on('chat:new', (msg: ChatMessage) => {
+      setState((p) => ({ ...p, newMessage: msg, messages: [...p.messages, msg] }))
+    })
+
+    s.on('promo:result', (result: PromoResult) => {
+      setState((p) => ({ ...p, promoResult: result }))
+    })
+
     return () => {
       s.disconnect()
     }
@@ -78,6 +101,7 @@ export function useClientSocket() {
       destination: any
       destinationLabel: string
       paymentMethod: PaymentMethod
+      promoCode?: string | null
     }) => {
       socketRef.current?.emit('service:request', payload)
     },
@@ -95,12 +119,31 @@ export function useClientSocket() {
     []
   )
 
-  // dismiss current service from view (after rating / for new request)
-  const clearCurrent = useCallback(() => {
-    setState((p) => ({ ...p, currentService: null }))
+  const validatePromo = useCallback((code: string, type: any, distanceKm: number) => {
+    socketRef.current?.emit('promo:validate', { code, type, distanceKm })
   }, [])
 
-  return { ...state, register, requestService, cancelService, rateService, clearCurrent }
+  const clearPromo = useCallback(() => {
+    setState((p) => ({ ...p, promoResult: null }))
+  }, [])
+
+  const sendChat = useCallback((serviceId: string, text: string) => {
+    socketRef.current?.emit('chat:send', { serviceId, text })
+  }, [])
+
+  const clearNewMessage = useCallback(() => {
+    setState((p) => ({ ...p, newMessage: null }))
+  }, [])
+
+  const clearCurrent = useCallback(() => {
+    setState((p) => ({ ...p, currentService: null, messages: [], newMessage: null, promoResult: null }))
+  }, [])
+
+  return {
+    ...state,
+    register, requestService, cancelService, rateService,
+    validatePromo, clearPromo, sendChat, clearNewMessage, clearCurrent,
+  }
 }
 
 export function useProviderSocket() {
@@ -112,6 +155,8 @@ export function useProviderSocket() {
     state: null,
     offer: null,
     currentService: null,
+    messages: [],
+    newMessage: null,
   })
 
   useEffect(() => {
@@ -142,6 +187,14 @@ export function useProviderSocket() {
 
     s.on('service:update', (svc: ServiceData) => {
       setState((p) => ({ ...p, currentService: svc, offer: svc.status === 'offered' ? svc : null }))
+    })
+
+    s.on('chat:messages', (data: { serviceId: string; messages: ChatMessage[] }) => {
+      setState((p) => ({ ...p, messages: data.messages }))
+    })
+
+    s.on('chat:new', (msg: ChatMessage) => {
+      setState((p) => ({ ...p, newMessage: msg, messages: [...p.messages, msg] }))
     })
 
     return () => {
@@ -180,9 +233,21 @@ export function useProviderSocket() {
     socketRef.current?.emit('service:complete', { serviceId })
   }, [])
 
-  const clearCurrent = useCallback(() => {
-    setState((p) => ({ ...p, currentService: null, offer: null }))
+  const sendChat = useCallback((serviceId: string, text: string) => {
+    socketRef.current?.emit('chat:send', { serviceId, text })
   }, [])
 
-  return { ...state, register, toggleOnline, accept, reject, arrived, start, complete, clearCurrent }
+  const clearNewMessage = useCallback(() => {
+    setState((p) => ({ ...p, newMessage: null }))
+  }, [])
+
+  const clearCurrent = useCallback(() => {
+    setState((p) => ({ ...p, currentService: null, offer: null, messages: [], newMessage: null }))
+  }, [])
+
+  return {
+    ...state,
+    register, toggleOnline, accept, reject, arrived, start, complete,
+    sendChat, clearNewMessage, clearCurrent,
+  }
 }

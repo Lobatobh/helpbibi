@@ -122,3 +122,62 @@ Task: QA do protótipo + adicionar recursos (avaliações, pagamentos, históric
   - Persistir dados em Prisma (schema.prisma) para histórico e avaliações sobreviverem entre sessões/servidores.
   - Tela de detalhe do serviço no histórico (clique para ver timeline completa).
 - **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork a partir de `/home/z/my-project/mini-services/rescue-service`: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy) para o WebSocket `/?XTransformPort=3003` rotear corretamente.
+
+---
+Task ID: 3 (cron webDevReview)
+Agent: cron review agent
+Task: QA + adicionar chat em tempo real, notificações toast, cupons de desconto, e modal de detalhe do serviço no histórico.
+
+## Current project status / assessment
+- Protótipo SocorroJá estável após Tasks 1-2: landing + demo ao vivo com WebSocket, avaliações, pagamentos, histórico e dashboard de ganhos.
+- QA desta rodada via agent-browser: nenhum bug encontrado no fluxo existente. Logs limpos.
+- rescue-service (porta 3003) e Next.js (porta 3000) ambos ativos.
+- Decidi focar em novos recursos de alto impacto: chat, toasts, cupons, e modal de detalhe.
+
+## Completed modifications / verification results
+### Novos recursos implementados
+1. **Chat em tempo real entre cliente e prestador** 💬 — mensagens bidirecionais via WebSocket, persistidas em memória no backend por serviço. Botões de chat funcionais (antes eram decorativos). Badge de não-lidas no botão de chat. Painel colapsável com auto-scroll. Mensagens alinhadas à direita (minhas) / esquerda (outra parte) com timestamp.
+2. **Notificações toast (sonner)** 🔔 — toasts disparados em transições de status do serviço: oferta enviada, prestador aceitou, chegando, chegou, em andamento, concluído (+R$ valor), cancelado. Estilo dark com richColors. Hook `useServiceToasts` reutilizável para cliente e prestador.
+3. **Cupons de desconto (promo codes)** 🏷️ — validação em tempo real no backend. 3 cupons demo: SOCORRO10 (10% off), BEMVINDO20 (R$ 20 off), PROMO15 (15% off). Preview de preço com desconto no formulário. Badge de cupom no card de oferta (prestador vê o cupom aplicado). Desconto exibido na timeline, no card de serviço e no histórico.
+4. **Modal de detalhe do serviço** 📋 — clique em qualquer item do histórico abre um Dialog com: tipo, status, contraparte, pagamento, trajeto (local/destino), valores (original, desconto, total), descrição do problema, linha do tempo completa com timestamps, avaliação com estrelas e comentário. Disponível em ambos os painéis (cliente e prestador).
+
+### Polimento de estilo
+5. Botões de chat com ring highlight quando ativos, badge de não-lidas.
+6. Cards de histórico clicáveis com hover effect e seta indicando ação.
+7. Price summary no formulário com strike-through no valor original e destaque do desconto.
+8. Dialog estilizado em dark mode com seções organizadas (info boxes, trajeto, valores, timeline).
+
+### Arquivos modificados
+- `mini-services/rescue-service/index.ts` — adicionado: ChatMessage type, chats Map, eventos chat:send/chat:history/chat:messages/chat:new, PROMO_CODES, evento promo:validate, applyPromo(), campos originalPrice/discount/promoCode no ServiceRequest, emitChatToService().
+- `src/lib/rescue-types.ts` — adicionado ChatMessage, PromoResult, campos originalPrice/discount/promoCode no ServiceData e ServiceRecord, description e timeline no ServiceRecord.
+- `src/lib/rescue-history.ts` — recordFromService atualizado para capturar originalPrice, discount, promoCode, description, timeline.
+- `src/hooks/use-rescue-socket.ts` — adicionado messages, newMessage, promoResult no state; sendChat, validatePromo, clearPromo, clearNewMessage callbacks; listeners chat:messages, chat:new, promo:result.
+- `src/hooks/use-service-toasts.ts` (novo) — hook useServiceToasts que dispara toasts em transições de status.
+- `src/components/rescue/chat-panel.tsx` (novo) — ChatPanel (inline) e ChatWidget (floating) com auto-scroll, timestamps, alinhamento de mensagens.
+- `src/components/rescue/client-panel.tsx` — integrado chat, promo, toasts, service detail dialog, toggleChat, unread tracking.
+- `src/components/rescue/provider-panel.tsx` — integrado chat, toasts, service detail dialog, promo display no card de serviço.
+- `src/app/layout.tsx` — adicionado Sonner Toaster (richColors, dark style, top-center).
+
+### Verificação (agent-browser via porta 81)
+- Promo: digitei "SOCORRO10" → "Cupom aplicado: 10% OFF" → base R$ 204 → -R$ 20 → final R$ 184. ✓
+- Oferta: prestador viu "Aceitar (R$ 184)" com cupom aplicado. ✓
+- Chat: cliente enviou "Olá, estou na via principal..." → prestador recebeu → prestador respondeu "Chegando em 5 min!" → cliente recebeu. Mensagem visível em ambos os painéis. ✓
+- Toasts: disparados em aceite, chegada, conclusão. ✓
+- Histórico: 2 serviços listados, um com badge SOCORRO10. ✓
+- Modal de detalhe: abri ao clicar → mostrou trajeto, valores (R$ 204, -R$ 20, R$ 184), linha do tempo completa, avaliação 5★. ✓
+- `bun run lint`: 0 erros. rescue-service.log: chat messages registradas, serviço concluído, rating 5★. Sem erros de browser.
+
+## Unresolved issues / risks + next-phase recommendations
+- **Dark/light mode toggle:** não implementado nesta rodada (next-themes disponível mas a app é dark-only por design). Para implementar, seria necessário adicionar toggle no header e variáveis CSS para modo claro.
+- **Risco (baixo):** chat é em memória no backend — mensagens se perdem se o rescue-service reiniciar. Para produção, persistir em banco.
+- **Recomendação próxima fase:**
+  - Multi-prestador competindo: notificar N prestadores simultaneamente, primeiro que aceita ganha.
+  - Filtro de histórico por data/tipo/valor.
+  - Estimativa de tempo restante em tempo real (barra de progresso do trajeto).
+  - Compartilhamento de localização via link.
+  - Modo escuro/claro toggle.
+  - Persistir chat e serviços em Prisma (schema.prisma).
+  - Notificações sonoras opcional além dos toasts visuais.
+  - Tela de perfil do prestador (foto, documentos, estatísticas históricas).
+  - Sistema de fidelidade (acumular pontos por serviço).
+- **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork a partir de `/home/z/my-project/mini-services/rescue-service`: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy) para o WebSocket `/?XTransformPort=3003` rotear corretamente.
