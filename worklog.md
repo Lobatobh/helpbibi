@@ -404,3 +404,55 @@ Task: QA + adicionar dark/light mode toggle, tela de perfil do cliente, filtro d
   - PWA / instalação no celular.
   - Internacionalização (i18n) com next-intl.
 - **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork a partir de `/home/z/my-project/mini-services/rescue-service`: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy) para o WebSocket `/?XTransformPort=3003` rotear corretamente.
+
+---
+Task ID: 8 (cron webDevReview)
+Agent: cron review agent
+Task: QA + adicionar notificações sonoras, animações Framer Motion, e botão SOS de emergência.
+
+## Current project status / assessment
+- Protótipo SocorroJá estável após Tasks 1-7: landing + demo ao vivo com WebSocket, avaliações bidirecionais, pagamentos, histórico, dashboard de ganhos, chat, toasts, cupons, modal de detalhe, multi-prestador, progresso de trajeto, fidelidade com resgate, filtros, segundo painel, perfis (cliente + prestador), leaderboard ao vivo, dark/light mode.
+- QA desta rodada via agent-browser: nenhum bug encontrado no fluxo existente. Logs limpos.
+- rescue-service (porta 3003) e Next.js (porta 3000) ambos ativos.
+- Decidi focar em: notificações sonoras, animações Framer Motion, botão SOS.
+
+## Completed modifications / verification results
+### Novos recursos implementados
+1. **Notificações sonoras** 🔔 — hook `useSoundNotifications` usando Web Audio API (sem arquivos de áudio, tons gerados programaticamente). 6 padrões de som distintos: offer (dois tons ascendentes), accept (arpejo de acorde), arrive (doorbell), complete (fanfarra de sucesso), cancel (descendente), chat (pop curto). Toggle de som (Volume2/VolumeX) no header de ambos os painéis (cliente e prestador). Som desativado por padrão (requer interação do usuário para ativar — política de autoplay do browser). Hook `useChatSound` separado para notificar novas mensagens de chat. *Validado: botão "Alternar som" visível em ambos os painéis, muda ícone Volume2↔VolumeX ao clicar.*
+
+2. **Animações Framer Motion** ✨ — hero da landing agora anima entrada com fade+slide (Badge → H1 → P em cascata com delays). Phone frames na demo animam com fade+slide ao aparecer. Segundo painel de prestador usa AnimatePresence com scale+fade para entrada/saída suave. Import `motion, AnimatePresence` from 'framer-motion'. *Validado: hero renderiza com animação cascata, 3 painéis aparecem suavemente ao adicionar 2º prestador.*
+
+3. **Botão SOS de emergência** 🚨 — botão prominente com borda rose, ícone AlertTriangle com efeito ping animado, "SOS · Emergência" e "Reboque urgente com 1 toque — prioridade máxima". Ao clicar, pré-preenche o formulário com tipo=reboque e descrição="EMERGÊNCIA — veículo imobilizado, necessita guincho urgente". Posicionado entre "Solicitar socorro" e o LoyaltyCard na home do cliente. *Validado: cliquei SOS → formulário abriu com Reboque/Guincho selecionado e descrição de emergência pré-preenchida.*
+
+### Polimento de estilo
+4. SOS button com gradiente rose, hover effect, arrow que desliza à direita, pulse animation no ícone.
+5. Sound toggle com cor contextual (amber no cliente, emerald no prestador) quando ativo.
+6. Animações de entrada suaves (opacity 0→1, y 20→0) com delays escalonados.
+
+### Arquivos modificados
+- `src/hooks/use-sound-notifications.ts` (novo) — useSoundNotifications + useChatSound com Web Audio API, 6 padrões de som, toggle enabled state.
+- `src/components/rescue/client-panel.tsx` — integrado useSoundNotifications + useChatSound, botão Volume2/VolumeX no header, botão SOS de emergência na home, imports Volume2/VolumeX.
+- `src/components/rescue/provider-panel.tsx` — integrado useSoundNotifications + useChatSound, botão Volume2/VolumeX no header, imports Volume2/VolumeX.
+- `src/app/page.tsx` — import motion/AnimatePresence do framer-motion, hero com animações cascata (Badge/H1/P), phone frames com fade+slide, segundo provider com AnimatePresence scale.
+
+### Verificação (agent-browser via porta 81)
+- Sound toggle: botão "Alternar som" visível no header do cliente e prestador, muda ícone ao clicar. ✓
+- SOS button: "SOS · Emergência" visível na home do cliente → clique → formulário abriu com Reboque/Guincho + descrição de emergência. ✓
+- Framer Motion: hero anima entrada em cascata, 3 painéis aparecem com fade+slide, segundo provider com scale animation. ✓
+- `bun run lint`: 0 erros. Sem erros de browser.
+
+## Unresolved issues / risks + next-phase recommendations
+- **Som desativado por padrão:** browsers bloqueiam autoplay de áudio sem interação do usuário. O som só funciona após o usuário ativar o toggle (que conta como interação). Comportamento esperado.
+- **Share location via link:** não implementado nesta rodada.
+- **Recomendação próxima fase:**
+  - Compartilhamento de localização via link (gerar URL com lat/lng).
+  - Persistir tudo em Prisma (schema.prisma).
+  - Estatísticas avançadas no perfil (gráfico de serviços por dia, mapa de calor).
+  - Sistema de ranking semanal/mensal com recompensas.
+  - PWA / instalação no celular.
+  - Internacionalização (i18n) com next-intl.
+  - Notificação push quando novo tier desbloqueado.
+  - Cupons resgatáveis com validade (expiram após N dias).
+  - Tela de configurações (som, notificações, privacidade).
+  - Histórico de localizações favoritas (casa, trabalho).
+- **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork a partir de `/home/z/my-project/mini-services/rescue-service`: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy) para o WebSocket `/?XTransformPort=3003` rotear corretamente.

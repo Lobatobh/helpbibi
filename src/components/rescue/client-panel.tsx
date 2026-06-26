@@ -5,7 +5,7 @@ import {
   Shield, Phone, Star, MapPin, Navigation, X, Truck, Battery, Fuel, Key, Wrench,
   CircleDot, Clock, CheckCircle2, Loader2, AlertTriangle, MessageCircle,
   Zap, CreditCard, Wallet, History, Home, Send, Tag, Eye, ArrowRight, ChevronRight, User,
-  TrendingUp, Trophy, Heart,
+  TrendingUp, Trophy, Heart, Volume2, VolumeX,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/dialog'
 import { useClientSocket } from '@/hooks/use-rescue-socket'
 import { useServiceToasts } from '@/hooks/use-service-toasts'
+import { useSoundNotifications, useChatSound } from '@/hooks/use-sound-notifications'
 import {
   SERVICE_TYPES, PAYMENT_METHODS, STATUS_LABELS,
   type ServiceType, type LatLng, type PaymentMethod, type ServiceData, type ServiceRecord, type PromoResult, type LoyaltyInfo,
@@ -63,6 +64,8 @@ export function ClientPanel() {
   } = useClientSocket()
 
   useServiceToasts(currentService, 'client')
+  const { enabled: soundEnabled, toggle: toggleSound } = useSoundNotifications(currentService, 'client')
+  useChatSound(soundEnabled, messages.length)
 
   const [name, setName] = useState('')
   const [view, setView] = useState<'home' | 'form' | 'history' | 'profile'>('home')
@@ -226,10 +229,21 @@ export function ClientPanel() {
             <p className="text-[11px] text-slate-400">Olá, {name || 'motorista'}</p>
           </div>
         </div>
-        <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-400">
-          <span className="mr-1 h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-          Online
-        </Badge>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleSound}
+            className={`h-7 w-7 ${soundEnabled ? 'text-amber-400' : 'text-slate-500'} hover:bg-slate-800`}
+            aria-label="Alternar som"
+          >
+            {soundEnabled ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
+          </Button>
+          <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-400">
+            <span className="mr-1 h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+            Online
+          </Badge>
+        </div>
       </div>
 
       {/* Map area */}
@@ -282,6 +296,28 @@ export function ClientPanel() {
               <Shield className="mr-2 h-5 w-5" />
               Solicitar socorro
             </Button>
+
+            {/* Emergency SOS quick button */}
+            <button
+              onClick={() => {
+                setSvcType('reboque')
+                setDescription('EMERGÊNCIA — veículo imobilizado, necessita guincho urgente')
+                setView('form')
+              }}
+              className="group relative w-full overflow-hidden rounded-xl border-2 border-rose-500/60 bg-gradient-to-r from-rose-500/20 to-rose-600/10 p-4 text-left transition hover:from-rose-500/30 hover:to-rose-600/20"
+            >
+              <div className="flex items-center gap-3">
+                <div className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-500 text-white shadow-lg shadow-rose-500/30">
+                  <span className="absolute -inset-1 animate-ping rounded-xl bg-rose-500/40" />
+                  <AlertTriangle className="relative h-5 w-5" />
+                </div>
+                <div className="flex-1">
+                  <p className="text-sm font-extrabold text-rose-400">SOS · Emergência</p>
+                  <p className="text-[10px] text-slate-400">Reboque urgente com 1 toque — prioridade máxima</p>
+                </div>
+                <ArrowRight className="h-4 w-4 text-rose-400 transition group-hover:translate-x-1" />
+              </div>
+            </button>
 
             {loyalty && (
               <LoyaltyCard

@@ -5,7 +5,7 @@ import {
   Truck, Star, Power, MapPin, Navigation, Flag, Clock, CheckCircle2, X, Loader2,
   Wallet, TrendingUp, Battery, Fuel, Key, Wrench, CircleDot, Phone, MessageCircle,
   History, Home, BarChart3, Award, Tag, Eye, ChevronRight, Send, Users, User,
-  Shield, Zap, Trophy,
+  Shield, Zap, Trophy, Volume2, VolumeX,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -21,6 +21,7 @@ import {
 } from 'recharts'
 import { useProviderSocket } from '@/hooks/use-rescue-socket'
 import { useServiceToasts } from '@/hooks/use-service-toasts'
+import { useSoundNotifications, useChatSound } from '@/hooks/use-sound-notifications'
 import { PAYMENT_METHODS, SERVICE_TYPES, STATUS_LABELS, type ServiceData, type ServiceRecord } from '@/lib/rescue-types'
 import { getHistoryForRole, addRecord, recordFromService } from '@/lib/rescue-history'
 import { RescueMap } from './rescue-map'
@@ -40,6 +41,8 @@ export function ProviderPanel() {
   } = useProviderSocket()
 
   useServiceToasts(currentService, 'provider')
+  const { enabled: soundEnabled, toggle: toggleSound } = useSoundNotifications(currentService, 'provider')
+  useChatSound(soundEnabled, messages.length)
 
   const [name, setName] = useState('')
   const [vehicle, setVehicle] = useState('Guincho Plataforma')
@@ -140,6 +143,15 @@ export function ProviderPanel() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={toggleSound}
+            className={`h-7 w-7 ${soundEnabled ? 'text-emerald-400' : 'text-slate-500'} hover:bg-slate-800`}
+            aria-label="Alternar som"
+          >
+            {soundEnabled ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
+          </Button>
           <span className={`text-[11px] ${online ? 'text-emerald-400' : 'text-slate-500'}`}>{online ? 'Online' : 'Offline'}</span>
           <Switch checked={online} onCheckedChange={(v) => toggleOnline(v)} disabled={busy} />
         </div>

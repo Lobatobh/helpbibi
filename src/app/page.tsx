@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import {
   Shield,
   Truck,
@@ -96,19 +97,35 @@ export default function Home() {
 
         <div className="relative mx-auto grid max-w-7xl items-center gap-10 px-4 py-16 sm:px-6 lg:grid-2 lg:py-24">
           <div className="max-w-2xl">
-            <Badge className="mb-4 border-amber-500/40 bg-amber-500/10 text-amber-400 hover:bg-amber-500/10">
-              <Sparkles className="mr-1 h-3 w-3" /> Plataforma estilo Uber para socorro veicular
-            </Badge>
-            <h1 className="text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+            >
+              <Badge className="mb-4 border-amber-500/40 bg-amber-500/10 text-amber-400 hover:bg-amber-500/10">
+                <Sparkles className="mr-1 h-3 w-3" /> Plataforma estilo Uber para socorro veicular
+              </Badge>
+            </motion.div>
+            <motion.h1
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.1 }}
+              className="text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl"
+            >
               Socorro automotivo
               <span className="block bg-gradient-to-r from-amber-300 via-amber-400 to-amber-500 bg-clip-text text-transparent">
                 na palma da mão
               </span>
-            </h1>
-            <p className="mt-5 max-w-xl text-base text-slate-300 sm:text-lg">
+            </motion.h1>
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.2 }}
+              className="mt-5 max-w-xl text-base text-slate-300 sm:text-lg"
+            >
               O cliente solicita, acompanha a chegada em tempo real e segue o serviço até o destino
               final. O prestador mais próximo recebe a chamada, confere o valor e atende — tudo pelo app.
-            </p>
+            </motion.p>
 
             <div className="mt-7 flex flex-col gap-3 sm:flex-row">
               <Button
@@ -589,17 +606,38 @@ function DemoLive() {
         </button>
       </div>
       <div className={`grid gap-8 ${showSecondProvider ? 'xl:grid-cols-3 lg:grid-cols-2' : 'lg:grid-cols-2'}`}>
-        <PhoneFrame label="App do Cliente" color="amber">
-          <ClientPanel />
-        </PhoneFrame>
-        <PhoneFrame label="App do Prestador 1" color="emerald">
-          <ProviderPanel />
-        </PhoneFrame>
-        {showSecondProvider && (
-          <PhoneFrame label="App do Prestador 2" color="emerald">
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+        >
+          <PhoneFrame label="App do Cliente" color="amber">
+            <ClientPanel />
+          </PhoneFrame>
+        </motion.div>
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1 }}
+        >
+          <PhoneFrame label="App do Prestador 1" color="emerald">
             <ProviderPanel />
           </PhoneFrame>
-        )}
+        </motion.div>
+        <AnimatePresence>
+          {showSecondProvider && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8, y: 30 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.8, y: 30 }}
+              transition={{ duration: 0.4 }}
+            >
+              <PhoneFrame label="App do Prestador 2" color="emerald">
+                <ProviderPanel />
+              </PhoneFrame>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
       <p className="mx-auto mt-6 max-w-2xl text-center text-xs text-slate-500">
         Dica: registre-se nos painéis. No app do cliente, solicite um serviço — os prestadores
