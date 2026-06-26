@@ -120,3 +120,77 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Light mode overrides for the dark-themed SocorroJá app.
+   When html has class "light" (set by next-themes), override the
+   slate-950/900 backgrounds and white text to light variants. */
+html.light {
+  --sj-bg: #f8fafc;
+  --sj-bg-secondary: #f1f5f9;
+  --sj-bg-card: #ffffff;
+  --sj-border: #e2e8f0;
+  --sj-text: #0f172a;
+  --sj-text-muted: #475569;
+  --sj-text-subtle: #64748b;
+}
+html.dark, html:not(.light) {
+  --sj-bg: #020617;
+  --sj-bg-secondary: #0f172a;
+  --sj-bg-card: #1e293b;
+  --sj-border: #1e293b;
+  --sj-text: #f1f5f9;
+  --sj-text-muted: #94a3b8;
+  --sj-text-subtle: #64748b;
+}
+
+/* Apply light-mode background/text to the root wrapper */
+html.light body {
+  background: var(--sj-bg) !important;
+  color: var(--sj-text) !important;
+}
+
+/* In light mode, override common dark utility classes used in the app */
+html.light .bg-slate-950 { background-color: var(--sj-bg) !important; }
+html.light .bg-slate-900\/30 { background-color: rgba(241, 245, 249, 0.5) !important; }
+html.light .bg-slate-900\/40 { background-color: rgba(241, 245, 249, 0.4) !important; }
+html.light .bg-slate-900\/50 { background-color: rgba(241, 245, 249, 0.6) !important; }
+html.light .bg-slate-900\/60 { background-color: rgba(241, 245, 249, 0.7) !important; }
+html.light .bg-slate-900\/80 { background-color: rgba(241, 245, 249, 0.85) !important; }
+html.light .bg-slate-900 { background-color: var(--sj-bg-secondary) !important; }
+html.light .bg-slate-800\/40 { background-color: rgba(226, 232, 240, 0.4) !important; }
+html.light .bg-slate-800\/60 { background-color: rgba(226, 232, 240, 0.6) !important; }
+html.light .bg-slate-800 { background-color: #e2e8f0 !important; }
+html.light .bg-slate-800\/50 { background-color: rgba(226, 232, 240, 0.5) !important; }
+
+html.light .text-white { color: var(--sj-text) !important; }
+html.light .text-slate-300 { color: var(--sj-text-muted) !important; }
+html.light .text-slate-400 { color: var(--sj-text-subtle) !important; }
+
+html.light .border-slate-800\/80 { border-color: var(--sj-border) !important; }
+html.light .border-slate-800 { border-color: var(--sj-border) !important; }
+html.light .border-slate-800\/60 { border-color: var(--sj-border) !important; }
+html.light .border-slate-700 { border-color: #cbd5e1 !important; }
+
+/* Keep accent colors (amber, emerald, sky, rose) vibrant in both modes */
+html.light .bg-amber-500 { background-color: #f59e0b !important; }
+html.light .bg-emerald-500 { background-color: #10b981 !important; }
+html.light .bg-sky-500 { background-color: #0ea5e9 !important; }
+
+/* Inputs and selects in light mode */
+html.light select,
+html.light input,
+html.light textarea {
+  background-color: #ffffff !important;
+  color: var(--sj-text) !important;
+  border-color: #cbd5e1 !important;
+}
+html.light select option {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+}
+
+/* Phone frames stay dark even in light mode (app mockup) */
+html.light .bg-slate-950[class*="rounded-\[2"] {
+  background-color: #020617 !important;
+}
+

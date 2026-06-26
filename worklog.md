@@ -354,3 +354,53 @@ Task: QA + adicionar avaliação bidirecional (prestador avalia cliente), leader
   - Tela de perfil do cliente (histórico de avaliações recebidas, tier, pontos).
   - Filtro de leaderboard por período (hoje/semana/mês).
 - **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork a partir de `/home/z/my-project/mini-services/rescue-service`: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy) para o WebSocket `/?XTransformPort=3003` rotear corretamente.
+
+---
+Task ID: 7 (cron webDevReview)
+Agent: cron review agent
+Task: QA + adicionar dark/light mode toggle, tela de perfil do cliente, filtro de período no leaderboard.
+
+## Current project status / assessment
+- Protótipo SocorroJá estável após Tasks 1-6: landing + demo ao vivo com WebSocket, avaliações bidirecionais, pagamentos, histórico, dashboard de ganhos, chat, toasts, cupons, modal de detalhe, multi-prestador, progresso de trajeto, fidelidade com resgate, filtros, segundo painel, perfil de prestador, leaderboard ao vivo.
+- QA desta rodada via agent-browser: nenhum bug encontrado no fluxo existente. Logs limpos.
+- rescue-service (porta 3003) e Next.js (porta 3000) ambos ativos.
+- Decidi focar em: dark/light mode, perfil do cliente, filtro de leaderboard.
+
+## Completed modifications / verification results
+### Novos recursos implementados
+1. **Dark/light mode toggle** 🌓 — ThemeProvider (next-themes) integrado ao layout com `attribute="class" defaultTheme="dark"`. ThemeToggle component com ícone Sun/Moon no header da landing. CSS overrides em globals.css: quando `html.light`, sobrescreve bg-slate-950/900/800, text-white/slate-300/400, border-slate-800/700, inputs/selects/textarea para fundo branco. Mantém cores de accent (amber/emerald/sky) vibrantes em ambos os modos. Phone frames permanecem dark (mockup de app). *Validado: cliquei no toggle → html class mudou para "light" → screenshot mostrou fundo claro com texto escuro. Voltei para dark sem issues.*
+
+2. **Tela de perfil do cliente** 👤 — nova aba "Perfil" no painel do cliente com: header com avatar (iniciais), nome, badge do tier de fidelidade, pontos; grid de 4 stats (serviços totais, total gasto, nota média dada, nota recebida); LoyaltyCard integrado; lista de "Avaliações recebidas" (últimas 5, com stars sky/blue, comentário e data); empty state "Conclua seu primeiro serviço para ver suas estatísticas." *Validado: Maria Teste registrou → aba Perfil → avatar MA, Bronze, 0 pontos, 4 stats (0/0/—/—), LoyaltyCard, empty state.*
+
+3. **Filtro de período no leaderboard** 🔍 — Leaderboard agora tem toggle "Hoje" / "Total" no header. "Hoje" ordena por ganhos de hoje (earningsToday) desc; "Total" ordena por serviços totais (completedCount) desc. Stat principal exibido muda conforme o período (R$ hoje vs N serviços). *Validado: botões "Hoje" e "Total" visíveis e clicáveis no leaderboard.*
+
+### Arquivos modificados
+- `src/components/theme-provider.tsx` (novo) — wrapper next-themes.
+- `src/components/theme-toggle.tsx` (novo) — botão Sun/Moon com hydration-safe mounted check.
+- `src/app/layout.tsx` — envolvido children com ThemeProvider (attribute="class", defaultTheme="dark").
+- `src/app/globals.css` — adicionado ~75 linhas de CSS overrides para light mode (bg, text, border, inputs, phone frames).
+- `src/app/page.tsx` — adicionado ThemeToggle no header, import ThemeToggle.
+- `src/components/rescue/client-panel.tsx` — adicionado aba Perfil, ClientProfileView component com stats + loyalty + ratings received, imports User/Trophy/Heart.
+- `src/components/rescue/leaderboard.tsx` — adicionado period state (today/total), toggle buttons, sorting dinâmico, stat principal contextual.
+
+### Verificação (agent-browser via porta 81)
+- Dark/light: cliquei toggle → html.light → fundo claro, texto escuro, inputs brancos. Voltei para dark. ✓
+- Client profile: Maria Teste → aba Perfil → avatar MA, Bronze 0pts, 4 stats, LoyaltyCard, empty state. ✓
+- Leaderboard filter: botões Hoje/Total visíveis e funcionais. ✓
+- `bun run lint`: 0 erros. Sem erros de browser.
+
+## Unresolved issues / risks + next-phase recommendations
+- **Light mode completeness:** os painéis de phone (demo) permanecem dark por design (são mockups de app). Algumas classes menos comuns podem não ter override completo, mas o fluxo principal (landing, header, seções) funciona em ambos os modos.
+- **Sound notifications:** não implementadas nesta rodada.
+- **Recomendação próxima fase:**
+  - Notificações sonoras opcionais (toggle de som).
+  - Compartilhamento de localização via link.
+  - Persistir tudo em Prisma (schema.prisma).
+  - Estatísticas avançadas no perfil (gráfico de serviços por dia, mapa de calor).
+  - Sistema de ranking semanal/mensal com recompensas.
+  - Notificação push quando novo tier desbloqueado ou subida no ranking.
+  - Cupons resgatáveis com validade (expiram após N dias).
+  - Filtro de leaderboard por período estendido (semana/mês com dados históricos).
+  - PWA / instalação no celular.
+  - Internacionalização (i18n) com next-intl.
+- **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork a partir de `/home/z/my-project/mini-services/rescue-service`: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy) para o WebSocket `/?XTransformPort=3003` rotear corretamente.

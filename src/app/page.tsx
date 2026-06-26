@@ -37,6 +37,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { ClientPanel } from '@/components/rescue/client-panel'
 import { ProviderPanel } from '@/components/rescue/provider-panel'
 import { Leaderboard } from '@/components/rescue/leaderboard'
+import { ThemeToggle } from '@/components/theme-toggle'
 
 export default function Home() {
   const [demoOpen, setDemoOpen] = useState(false)
@@ -63,12 +64,15 @@ export default function Home() {
             <a href="#faq" className="hover:text-white">FAQ</a>
             <a href="#demo" className="hover:text-white">Demo ao vivo</a>
           </nav>
-          <Button
-            onClick={() => document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth' })}
-            className="bg-amber-500 text-slate-950 hover:bg-amber-400"
-          >
-            Ver demo
-          </Button>
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <Button
+              onClick={() => document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth' })}
+              className="bg-amber-500 text-slate-950 hover:bg-amber-400"
+            >
+              Ver demo
+            </Button>
+          </div>
         </div>
       </header>
 

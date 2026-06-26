@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from 'react'
 import {
   Shield, Phone, Star, MapPin, Navigation, X, Truck, Battery, Fuel, Key, Wrench,
   CircleDot, Clock, CheckCircle2, Loader2, AlertTriangle, MessageCircle,
-  Zap, CreditCard, Wallet, History, Home, Send, Tag, Eye, ArrowRight, ChevronRight,
+  Zap, CreditCard, Wallet, History, Home, Send, Tag, Eye, ArrowRight, ChevronRight, User,
+  TrendingUp, Trophy, Heart,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -20,7 +21,7 @@ import { useClientSocket } from '@/hooks/use-rescue-socket'
 import { useServiceToasts } from '@/hooks/use-service-toasts'
 import {
   SERVICE_TYPES, PAYMENT_METHODS, STATUS_LABELS,
-  type ServiceType, type LatLng, type PaymentMethod, type ServiceData, type ServiceRecord, type PromoResult,
+  type ServiceType, type LatLng, type PaymentMethod, type ServiceData, type ServiceRecord, type PromoResult, type LoyaltyInfo,
 } from '@/lib/rescue-types'
 import { getHistoryForRole, addRecord, recordFromService, updateRecord } from '@/lib/rescue-history'
 import { RescueMap } from './rescue-map'
@@ -64,7 +65,7 @@ export function ClientPanel() {
   useServiceToasts(currentService, 'client')
 
   const [name, setName] = useState('')
-  const [view, setView] = useState<'home' | 'form' | 'history'>('home')
+  const [view, setView] = useState<'home' | 'form' | 'history' | 'profile'>('home')
   const [svcType, setSvcType] = useState<ServiceType>('reboque')
   const [description, setDescription] = useState('')
   const [pickupId, setPickupId] = useState('paulista')
@@ -251,6 +252,7 @@ export function ClientPanel() {
       <div className="flex gap-1 border-b border-slate-800 px-3 pt-1">
         <TabBtn active={view === 'home' || view === 'form'} onClick={() => setView('home')} icon={Home} label="Início" />
         <TabBtn active={view === 'history'} onClick={() => { setView('history'); setHistory(getHistoryForRole('client')) }} icon={History} label="Histórico" badge={history.length} />
+        <TabBtn active={view === 'profile'} onClick={() => setView('profile')} icon={User} label="Perfil" />
       </div>
 
       {/* Body */}
@@ -364,6 +366,10 @@ export function ClientPanel() {
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-center text-xs text-amber-300">
             Você já tem um serviço em andamento. Acompanhe na aba Início.
           </div>
+        )}
+
+        {view === 'profile' && (
+          <ClientProfileView name={name} loyalty={loyalty} history={history} />
         )}
       </div>
 
@@ -1117,5 +1123,105 @@ function FilterChip({ active, onClick, label, small }: { active: boolean; onClic
     >
       {label}
     </button>
+  )
+}
+
+function ClientProfileView({ name, loyalty, history }: { name: string; loyalty: LoyaltyInfo | null; history: ServiceRecord[] }) {
+  const completedServices = history.filter(h => h.status === 'completed')
+  const totalSpent = completedServices.reduce((sum, h) => sum + h.price, 0)
+  const ratingsReceived = completedServices.filter(h => h.clientRating)
+  const avgRatingReceived = ratingsReceived.length > 0
+    ? (ratingsReceived.reduce((sum, h) => sum + (h.clientRating?.stars || 0), 0) / ratingsReceived.length).toFixed(1)
+    : '—'
+  const ratingsGiven = completedServices.filter(h => h.rating)
+  const avgRatingGiven = ratingsGiven.length > 0
+    ? (ratingsGiven.reduce((sum, h) => sum + (h.rating?.stars || 0), 0) / ratingsGiven.length).toFixed(1)
+    : '—'
+
+  return (
+    <div className="space-y-4">
+      {/* Profile header */}
+      <div className="relative overflow-hidden rounded-2xl border border-slate-800 bg-gradient-to-br from-amber-500/10 to-slate-900 p-4">
+        <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-amber-500/10 blur-2xl" />
+        <div className="relative flex items-center gap-3">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 text-xl font-extrabold text-slate-950 shadow-lg shadow-amber-500/30">
+            {name.slice(0, 2).toUpperCase()}
+          </div>
+          <div className="flex-1">
+            <p className="text-base font-extrabold text-white">{name}</p>
+            <p className="text-xs text-slate-400">Cliente SocorroJá</p>
+            {loyalty && (
+              <div className="mt-1 flex items-center gap-2">
+                <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-400">
+                  <Trophy className="mr-1 h-2.5 w-2.5" /> {loyalty.tier.name}
+                </Badge>
+                <span className="text-[10px] text-slate-500">{loyalty.points} pontos</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Stats grid */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+          <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase text-slate-500">
+            <Shield className="h-3 w-3 text-amber-400" /> Serviços totais
+          </div>
+          <p className="text-xl font-extrabold text-white">{completedServices.length}</p>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+          <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase text-slate-500">
+            <Wallet className="h-3 w-3 text-amber-400" /> Total gasto
+          </div>
+          <p className="text-xl font-extrabold text-white">R$ {totalSpent}</p>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+          <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase text-slate-500">
+            <Star className="h-3 w-3 text-amber-400" /> Nota média dada
+          </div>
+          <p className="text-xl font-extrabold text-white">{avgRatingGiven} ★</p>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+          <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase text-slate-500">
+            <Heart className="h-3 w-3 text-sky-400" /> Nota recebida
+          </div>
+          <p className="text-xl font-extrabold text-white">{avgRatingReceived} ★</p>
+        </div>
+      </div>
+
+      {/* Loyalty card */}
+      {loyalty && <LoyaltyCard loyalty={loyalty} rewards={[]} redeemResult={null} onRedeem={() => {}} onClearRedeem={() => {}} />}
+
+      {/* Recent ratings received */}
+      {ratingsReceived.length > 0 && (
+        <div>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Avaliações recebidas</p>
+          <div className="space-y-2">
+            {ratingsReceived.slice(0, 5).map((r) => (
+              <div key={r.id} className="rounded-xl border border-slate-800 bg-slate-900/60 p-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-white">{r.counterpartName}</span>
+                  <div className="flex items-center gap-0.5">
+                    {Array.from({ length: 5 }).map((_, i) => (
+                      <Star key={i} className={`h-3 w-3 ${i < (r.clientRating?.stars || 0) ? 'text-sky-400' : 'text-slate-700'}`} fill="currentColor" />
+                    ))}
+                  </div>
+                </div>
+                {r.clientRating?.comment && <p className="mt-1 text-[10px] italic text-slate-400">"{r.clientRating.comment}"</p>}
+                <p className="mt-0.5 text-[9px] text-slate-600">{new Date(r.completedAt).toLocaleDateString('pt-BR')}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {completedServices.length === 0 && (
+        <div className="rounded-xl border border-dashed border-slate-800 p-6 text-center">
+          <User className="mx-auto mb-2 h-8 w-8 text-slate-600" />
+          <p className="text-xs text-slate-500">Conclua seu primeiro serviço para ver suas estatísticas.</p>
+        </div>
+      )}
+    </div>
   )
 }
