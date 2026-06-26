@@ -7,7 +7,7 @@ import type { LoyaltyInfo, LoyaltyReward } from '@/lib/rescue-types'
 const TIERS = [
   { name: 'Bronze', min: 0, color: '#a16207' },
   { name: 'Prata', min: 200, color: '#94a3b8' },
-  { name: 'Ouro', min: 500, color: '#f59e0b' },
+  { name: 'Ouro', min: 500, color: '#00B0FF' },
   { name: 'Diamante', min: 1000, color: '#38bdf8' },
 ]
 
@@ -75,7 +75,7 @@ export function LoyaltyCard({
                 <p className="text-sm font-bold text-white">
                   {tier.name}
                   {tierUpgraded && (
-                    <span className="ml-1.5 inline-flex items-center gap-0.5 rounded-full bg-emerald-500/20 px-1.5 py-0.5 text-[9px] font-bold text-emerald-400">
+                    <span className="ml-1.5 inline-flex items-center gap-0.5 rounded-full bg-orange-500/20 px-1.5 py-0.5 text-[9px] font-bold text-orange-400">
                       <Sparkles className="h-2.5 w-2.5" /> NOVO!
                     </span>
                   )}
@@ -89,7 +89,7 @@ export function LoyaltyCard({
           </div>
 
           {earnedThisService ? (
-            <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-emerald-500/15 px-2 py-1 text-xs text-emerald-300">
+            <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-orange-500/15 px-2 py-1 text-xs text-orange-300">
               <TrendingUp className="h-3 w-3" />
               +{earnedThisService} pontos ganhos neste serviço
             </div>
@@ -124,7 +124,7 @@ export function LoyaltyCard({
               onClick={() => setShowRewards((v) => !v)}
               className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/50 py-1.5 text-[11px] font-semibold text-slate-300 transition hover:bg-slate-800"
             >
-              <Gift className="h-3 w-3 text-amber-400" />
+              <Gift className="h-3 w-3 text-sky-400" />
               {showRewards ? 'Ocultar recompensas' : 'Resgatar pontos'}
             </button>
           )}
@@ -139,12 +139,12 @@ export function LoyaltyCard({
               key={r.id}
               className={`flex items-center gap-2.5 rounded-xl border p-2.5 transition ${
                 r.affordable
-                  ? 'border-amber-500/40 bg-amber-500/5'
+                  ? 'border-sky-500/40 bg-sky-500/5'
                   : 'border-slate-800 bg-slate-900/40 opacity-60'
               }`}
             >
               <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
-                r.affordable ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-800 text-slate-500'
+                r.affordable ? 'bg-sky-500/20 text-sky-400' : 'bg-slate-800 text-slate-500'
               }`}>
                 {r.affordable ? <Gift className="h-4 w-4" /> : <Lock className="h-3.5 w-3.5" />}
               </div>
@@ -157,7 +157,7 @@ export function LoyaltyCard({
                 disabled={!r.affordable || redeeming === r.id}
                 className={`shrink-0 rounded-lg px-2.5 py-1 text-[10px] font-bold transition ${
                   r.affordable
-                    ? 'bg-amber-500 text-slate-950 hover:bg-amber-400'
+                    ? 'bg-sky-500 text-slate-950 hover:bg-sky-400'
                     : 'cursor-not-allowed bg-slate-800 text-slate-500'
                 }`}
               >
@@ -173,7 +173,7 @@ export function LoyaltyCard({
         <div
           className={`flex items-start gap-2 rounded-xl border p-3 text-xs ${
             redeemResult.success
-              ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+              ? 'border-orange-500/40 bg-orange-500/10 text-orange-300'
               : 'border-rose-500/40 bg-rose-500/10 text-rose-300'
           }`}
         >
@@ -186,7 +186,7 @@ export function LoyaltyCard({
             <p className="font-semibold">{redeemResult.message}</p>
             {redeemResult.success && redeemResult.code && (
               <p className="mt-0.5 text-[10px] text-slate-400">
-                Use o cupom <span className="font-mono font-bold text-amber-400">{redeemResult.code}</span> no próximo serviço.
+                Use o cupom <span className="font-mono font-bold text-sky-400">{redeemResult.code}</span> no próximo serviço.
               </p>
             )}
           </div>

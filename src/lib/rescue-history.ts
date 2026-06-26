@@ -2,7 +2,7 @@
 
 import type { ServiceRecord, ServiceData, Role } from './rescue-types'
 
-const KEY = 'socorroja:history'
+const KEY = 'helpbibi:history'
 
 function read(): ServiceRecord[] {
   if (typeof window === 'undefined') return []

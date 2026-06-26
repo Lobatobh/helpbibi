@@ -60,7 +60,7 @@ export function ChatPanel({
               <div
                 className={`max-w-[80%] rounded-2xl px-3 py-1.5 text-xs ${
                   mine
-                    ? 'rounded-br-sm bg-amber-500 text-slate-950'
+                    ? 'rounded-br-sm bg-sky-500 text-slate-950'
                     : 'rounded-bl-sm bg-slate-800 text-slate-100'
                 }`}
               >
@@ -88,7 +88,7 @@ export function ChatPanel({
           size="icon"
           onClick={handleSend}
           disabled={!text.trim()}
-          className="h-8 w-8 shrink-0 bg-amber-500 text-slate-950 hover:bg-amber-400"
+          className="h-8 w-8 shrink-0 bg-sky-500 text-slate-950 hover:bg-sky-400"
         >
           <Send className="h-3.5 w-3.5" />
         </Button>

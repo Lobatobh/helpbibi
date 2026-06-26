@@ -63,7 +63,7 @@ export function TripProgressBar({
 
   const etaMin = Math.max(0, Math.ceil(etaSec / 60))
   const etaSecRemain = etaSec % 60
-  const accent = variant === 'client' ? 'amber' : 'emerald'
+  const accent = variant === 'client' ? 'sky' : 'orange'
 
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
@@ -85,9 +85,9 @@ export function TripProgressBar({
       <div className="relative h-3 w-full overflow-hidden rounded-full bg-slate-800">
         <div
           className={`h-full rounded-full bg-gradient-to-r transition-all duration-500 ease-linear ${
-            accent === 'amber'
-              ? 'from-amber-500 to-amber-400'
-              : 'from-emerald-500 to-emerald-400'
+            accent === 'sky'
+              ? 'from-sky-500 to-sky-400'
+              : 'from-orange-500 to-orange-400'
           }`}
           style={{ width: `${progress}%` }}
         >
@@ -107,7 +107,7 @@ export function TripProgressBar({
       {/* Stats */}
       <div className="mt-2 flex items-center justify-between text-[10px] text-slate-400">
         <span className="flex items-center gap-1">
-          <MapPin className="h-2.5 w-2.5 text-amber-400" />
+          <MapPin className="h-2.5 w-2.5 text-sky-400" />
           {remainingKm.toFixed(2)} km restantes
         </span>
         <span className="flex items-center gap-1">

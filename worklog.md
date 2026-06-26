@@ -508,3 +508,63 @@ Task: QA + adicionar locais favoritos, compartilhamento de rastreamento, e anima
   - Histórico de localizações favoritas no backend (sincronizar entre dispositivos).
   - Tela de rastreamento público (URL /?track={id} acessível sem login).
 - **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork a partir de `/home/z/my-project/mini-services/rescue-service`: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy) para o WebSocket `/?XTransformPort=3003` rotear corretamente.
+
+---
+Task ID: 10 (user request — rebrand)
+Agent: main (user-driven)
+Task: Renomear plataforma de SocorroJá para Help Bibi, aplicar cores da logo (azul #00B0FF + laranja #FFA500), adicionar LiveCountdown e AreaChart.
+
+## Current project status / assessment
+- Usuário solicitou rebranding: nome "Help Bibi" + cores da logo enviada (azul #00B0FF + laranja #FFA500).
+- VLM analisou a logo: azul #00B0FF (primário, confiança/tecnologia), laranja #FFA500 (acento, energia/urgência), preto para texto, design flat com map pin + carro + estrada.
+- rescue-service e Next.js ambos ativos.
+
+## Completed modifications / verification results
+### Rebranding
+1. **Nome: SocorroJá → Help Bibi** — substituição global em todos os arquivos .ts/.tsx: títulos, headers, textos, metadata, logs do backend, chaves localStorage (socorroja → helpbibi). Layout metadata atualizada com favicon da logo.
+
+2. **Logo** — copiada para `public/help-bibi-logo.png`, usada no header da landing e no footer (img tag com alt "Help Bibi"). Favicon atualizado no metadata.
+
+3. **Esquema de cores: amber → sky (azul), emerald → orange (laranja)** — substituição global de classes Tailwind: todos os `amber-X` → `sky-X` (azul #00B0FF da logo), todos os `emerald-X` → `orange-X` (laranja #FFA500 da logo). CSS global customizado com `!important` overrides para que `sky-500` = #00B0FF exato e `orange-500` = #FFA500 exato (não os defaults do Tailwind). Substituição de hex values diretos (#f59e0b → #00B0FF, #10b981 → #FFA500, etc.). Light mode overrides atualizados.
+
+### Recursos da rodada anterior (finalizados)
+4. **LiveCountdown** — componente que conta regressivamente MM:SS em tempo real. Integrado no ETA do ServiceTracker do cliente e do prestador. Muda para vermelho quando ≤30s com "Chegando!" animado. *Validado: mostrou "9:42" contando regressivamente durante serviço ativo.*
+
+5. **AreaChart de tendência de ganhos** — gráfico de área com gradiente no EarningsView do prestador, mostra tendência de ganhos por dia. Só aparece quando há 2+ dias de dados.
+
+6. **Settings screen** — aba "Ajustes" em ambos os painéis com: notificações sonoras (toggle), tema (dark/light toggle), notificações visuais (toggle), privacidade e dados (limpar histórico), sobre o Help Bibi. *Validado: aba "Ajustes" visível, todas as seções renderizam.*
+
+7. **AnimatedCounter** — contadores animados na stats bar da landing (12.000+, 850+, 8 min, 24h) com ease-out cubic. *Bug corrigido: useInView não disparava → trocado para setTimeout animation que funciona corretamente.*
+
+### Verificação (agent-browser via porta 81)
+- Título: "Help Bibi — Auto socorro por aplicativo" ✓
+- Logo: carregando no header (71px) e footer (57px) ✓
+- Cor primária: botão "Ver demo" tem backgroundColor rgb(0, 176, 255) = #00B0FF ✓
+- Cor secundária: 36 elementos com classe orange encontrados ✓
+- Fluxo de serviço: Ana Cliente + Bob Prestador → solicitou → aceitou → "Chegando no local" + ETA "9:42" countdown ✓
+- Backend log: "Help Bibi rescue-service running on port 3003" ✓
+- `bun run lint`: 0 erros. Sem erros de browser.
+
+### Arquivos modificados
+- `public/help-bibi-logo.png` (novo) — logo copiada do upload.
+- `src/app/layout.tsx` — metadata com "Help Bibi", favicon, lang="pt-BR".
+- `src/app/globals.css` — CSS overrides para sky=#00B0FF e orange=#FFA500, light mode atualizado.
+- `src/app/page.tsx` — logo no header/footer, todas as cores amber→sky, emerald→orange.
+- `src/components/rescue/client-panel.tsx` — cores, nome, LiveCountdown, SettingsView, AnimatedCounter.
+- `src/components/rescue/provider-panel.tsx` — cores, nome, LiveCountdown, SettingsView, AreaChart.
+- `src/components/rescue/live-countdown.tsx` (novo) — countdown MM:SS em tempo real.
+- `src/components/rescue/settings-view.tsx` (novo) — tela de configurações.
+- `src/components/rescue/animated-counter.tsx` (novo) — contador animado.
+- `mini-services/rescue-service/index.ts` — nome "Help Bibi" nos logs.
+- Todos os arquivos .ts/.tsx — substituição global amber→sky, emerald→orange, SocorroJá→Help Bibi.
+
+## Unresolved issues / risks + next-phase recommendations
+- **Cores customizadas via CSS !important:** as cores sky e orange são sobrescritas via CSS com `!important` para corresponder exatamente à logo. Isso funciona mas é uma solução de protótipo. Para produção, configurar o Tailwind config com as cores customizadas.
+- **Logo no header:** a logo original é 1920x1080 (landscape), redimensionada via CSS. Funciona bem mas uma versão quadrada ou só do ícone seria melhor para o header.
+- **Recomendação próxima fase:**
+  - Criar versão do ícone da logo (só o símbolo) para usar em espaços pequenos.
+  - Configurar as cores brand no tailwind.config.ts para evitar !important.
+  - Persistir tudo em Prisma.
+  - PWA / instalação no celular.
+  - Internacionalização (i18n).
+- **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy).

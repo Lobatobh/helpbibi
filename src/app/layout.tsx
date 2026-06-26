@@ -16,22 +16,22 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "SocorroJá — Auto socorro por aplicativo",
+  title: "Help Bibi — Auto socorro por aplicativo",
   description: "Plataforma estilo Uber para socorro veicular. Cliente solicita, prestador mais próximo recebe a chamada e acompanha o serviço em tempo real até o destino final.",
-  keywords: ["auto socorro", "guincho", "reboque", "app de socorro", "socorro veicular", "socorroja"],
-  authors: [{ name: "SocorroJá" }],
+  keywords: ["auto socorro", "guincho", "reboque", "app de socorro", "socorro veicular", "help bibi", "ajuda carro"],
+  authors: [{ name: "Help Bibi" }],
   icons: {
-    icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
+    icon: "/help-bibi-logo.png",
   },
   openGraph: {
-    title: "SocorroJá — Auto socorro por aplicativo",
+    title: "Help Bibi — Auto socorro por aplicativo",
     description: "Socorro automotivo na palma da mão, em tempo real.",
-    siteName: "SocorroJá",
+    siteName: "Help Bibi",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "SocorroJá",
+    title: "Help Bibi",
     description: "Socorro automotivo na palma da mão, em tempo real.",
   },
 };
@@ -42,7 +42,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="pt-BR" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >

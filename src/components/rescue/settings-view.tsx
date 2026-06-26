@@ -15,19 +15,19 @@ export function SettingsView({ soundEnabled, onToggleSound }: { soundEnabled: bo
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setMounted(true)
-    const savedNotif = typeof window !== 'undefined' ? localStorage.getItem('socorroja:notif') : null
+    const savedNotif = typeof window !== 'undefined' ? localStorage.getItem('helpbibi:notif') : null
     if (savedNotif !== null) setNotifEnabled(savedNotif === 'true')
   }, [])
 
   const toggleNotif = (v: boolean) => {
     setNotifEnabled(v)
-    if (typeof window !== 'undefined') localStorage.setItem('socorroja:notif', String(v))
+    if (typeof window !== 'undefined') localStorage.setItem('helpbibi:notif', String(v))
   }
 
   const handleClearHistory = () => {
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('socorroja:history')
-      localStorage.removeItem('socorroja:favorites')
+      localStorage.removeItem('helpbibi:history')
+      localStorage.removeItem('helpbibi:favorites')
     }
     setClearHistoryFlash(true)
     setTimeout(() => setClearHistoryFlash(false), 2500)
@@ -52,7 +52,7 @@ export function SettingsView({ soundEnabled, onToggleSound }: { soundEnabled: bo
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${soundEnabled ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-800 text-slate-500'}`}>
+            <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${soundEnabled ? 'bg-sky-500/20 text-sky-400' : 'bg-slate-800 text-slate-500'}`}>
               {soundEnabled ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
             </div>
             <div>
@@ -68,7 +68,7 @@ export function SettingsView({ soundEnabled, onToggleSound }: { soundEnabled: bo
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${theme === 'dark' ? 'bg-slate-800 text-slate-300' : 'bg-amber-500/20 text-amber-400'}`}>
+            <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${theme === 'dark' ? 'bg-slate-800 text-slate-300' : 'bg-sky-500/20 text-sky-400'}`}>
               {theme === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
             </div>
             <div>
@@ -101,7 +101,7 @@ export function SettingsView({ soundEnabled, onToggleSound }: { soundEnabled: bo
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${notifEnabled ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-800 text-slate-500'}`}>
+            <div className={`flex h-8 w-8 items-center justify-center rounded-lg ${notifEnabled ? 'bg-orange-500/20 text-orange-400' : 'bg-slate-800 text-slate-500'}`}>
               {notifEnabled ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
             </div>
             <div>
@@ -140,7 +140,7 @@ export function SettingsView({ soundEnabled, onToggleSound }: { soundEnabled: bo
             <Info className="h-4 w-4" />
           </div>
           <div>
-            <p className="text-xs font-bold text-white">Sobre o SocorroJá</p>
+            <p className="text-xs font-bold text-white">Sobre o Help Bibi</p>
             <p className="mt-0.5 text-[10px] text-slate-400">
               Plataforma de auto socorro por aplicativo. Versão demo 1.0 — protótipo funcional
               com WebSocket em tempo real, multi-prestador, fidelidade, chat e mais.

@@ -96,7 +96,7 @@ export function RescueMap({
 
       {/* accent roads */}
       <div className="absolute inset-x-0 top-1/2 h-8 -translate-y-1/2 bg-gradient-to-r from-sky-500/10 via-sky-400/20 to-sky-500/10 blur-[1px]" />
-      <div className="absolute inset-y-0 left-1/3 w-6 bg-gradient-to-b from-amber-500/10 via-amber-400/15 to-amber-500/10 blur-[1px]" />
+      <div className="absolute inset-y-0 left-1/3 w-6 bg-gradient-to-b from-sky-500/10 via-sky-400/15 to-sky-500/10 blur-[1px]" />
 
       {/* route line pickup -> destination */}
       {route && (
@@ -106,7 +106,7 @@ export function RescueMap({
             y1={`${route.a.y}%`}
             x2={`${route.b.x}%`}
             y2={`${route.b.y}%`}
-            stroke="#f59e0b"
+            stroke="#00B0FF"
             strokeWidth="3"
             strokeDasharray="8 6"
             strokeLinecap="round"
@@ -123,7 +123,7 @@ export function RescueMap({
             y1={`${providerLine.a.y}%`}
             x2={`${providerLine.b.x}%`}
             y2={`${providerLine.b.y}%`}
-            stroke="#10b981"
+            stroke="#FFA500"
             strokeWidth="2.5"
             strokeDasharray="4 5"
             strokeLinecap="round"
@@ -143,12 +143,12 @@ export function RescueMap({
               style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
             >
               {m.active && (
-                <span className="absolute -inset-3 animate-ping rounded-full bg-emerald-400/40" />
+                <span className="absolute -inset-3 animate-ping rounded-full bg-orange-400/40" />
               )}
               <div
                 className={`relative flex h-9 w-9 items-center justify-center rounded-full border-2 shadow-lg ${
                   m.active
-                    ? 'border-emerald-300 bg-emerald-500 text-white'
+                    ? 'border-orange-300 bg-orange-500 text-white'
                     : 'border-slate-600 bg-slate-800 text-slate-300'
                 }`}
               >
@@ -165,10 +165,10 @@ export function RescueMap({
               style={{ left: `${pos.x}%`, top: `${pos.y}%` }}
             >
               <div className="flex flex-col items-center">
-                <div className="rounded-md bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white shadow">
+                <div className="rounded-md bg-sky-500 px-1.5 py-0.5 text-[10px] font-bold text-white shadow">
                   LOCAL
                 </div>
-                <MapPin className="h-7 w-7 -mt-1 text-amber-500 drop-shadow" fill="currentColor" />
+                <MapPin className="h-7 w-7 -mt-1 text-sky-500 drop-shadow" fill="currentColor" />
               </div>
             </div>
           )

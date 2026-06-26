@@ -182,8 +182,8 @@ export function ClientPanel() {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
         <div className="relative">
-          <div className="absolute -inset-3 animate-pulse rounded-3xl bg-amber-500/20 blur-xl" />
-          <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 shadow-lg shadow-amber-500/30">
+          <div className="absolute -inset-3 animate-pulse rounded-3xl bg-sky-500/20 blur-xl" />
+          <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-400 to-sky-600 text-slate-950 shadow-lg shadow-sky-500/30">
             <Shield className="h-8 w-8" />
           </div>
         </div>
@@ -204,7 +204,7 @@ export function ClientPanel() {
           <Button
             onClick={handleRegister}
             disabled={!name.trim() || !connected}
-            className="w-full bg-amber-500 text-slate-950 hover:bg-amber-400"
+            className="w-full bg-sky-500 text-slate-950 hover:bg-sky-400"
           >
             Entrar como cliente
           </Button>
@@ -224,11 +224,11 @@ export function ClientPanel() {
       {/* Header */}
       <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
         <div className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 shadow-md shadow-amber-500/20">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-sky-400 to-sky-600 text-slate-950 shadow-md shadow-sky-500/20">
             <Shield className="h-5 w-5" />
           </div>
           <div>
-            <p className="text-sm font-bold leading-tight">SocorroJá · Cliente</p>
+            <p className="text-sm font-bold leading-tight">Help Bibi · Cliente</p>
             <p className="text-[11px] text-slate-400">Olá, {name || 'motorista'}</p>
           </div>
         </div>
@@ -237,13 +237,13 @@ export function ClientPanel() {
             variant="ghost"
             size="icon"
             onClick={toggleSound}
-            className={`h-7 w-7 ${soundEnabled ? 'text-amber-400' : 'text-slate-500'} hover:bg-slate-800`}
+            className={`h-7 w-7 ${soundEnabled ? 'text-sky-400' : 'text-slate-500'} hover:bg-slate-800`}
             aria-label="Alternar som"
           >
             {soundEnabled ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
           </Button>
-          <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-400">
-            <span className="mr-1 h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+          <Badge variant="outline" className="border-orange-500/40 bg-orange-500/10 text-orange-400">
+            <span className="mr-1 h-1.5 w-1.5 animate-pulse rounded-full bg-orange-400" />
             Online
           </Badge>
         </div>
@@ -260,7 +260,7 @@ export function ClientPanel() {
           height="h-full"
         />
         <div className="absolute left-5 top-5 flex items-center gap-1.5 rounded-lg bg-slate-900/85 px-3 py-1.5 text-xs font-medium text-slate-300 backdrop-blur">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+          <span className="h-1.5 w-1.5 rounded-full bg-orange-400" />
           {nearby.length} prestador(es) por perto
         </div>
       </div>
@@ -283,7 +283,7 @@ export function ClientPanel() {
           <div className="space-y-4">
             <div className="rounded-xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-900/40 p-4">
               <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/15 text-amber-400">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-500/15 text-sky-400">
                   <Shield className="h-4 w-4" />
                 </div>
                 <p className="text-sm font-semibold text-white">Pronto para ajudar</p>
@@ -295,7 +295,7 @@ export function ClientPanel() {
             </div>
             <Button
               onClick={() => setView('form')}
-              className="w-full bg-amber-500 py-6 text-base font-bold text-slate-950 shadow-lg shadow-amber-500/20 hover:bg-amber-400"
+              className="w-full bg-sky-500 py-6 text-base font-bold text-slate-950 shadow-lg shadow-sky-500/20 hover:bg-sky-400"
             >
               <Shield className="mr-2 h-5 w-5" />
               Solicitar socorro
@@ -349,7 +349,7 @@ export function ClientPanel() {
                     key={p.id}
                     className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-900/60 p-2.5 transition hover:border-slate-700"
                   >
-                    <Avatar className="h-8 w-8 bg-gradient-to-br from-emerald-500 to-emerald-700">
+                    <Avatar className="h-8 w-8 bg-gradient-to-br from-orange-500 to-orange-700">
                       <AvatarFallback className="bg-transparent text-xs font-bold text-white">
                         {p.name.slice(0, 2).toUpperCase()}
                       </AvatarFallback>
@@ -359,7 +359,7 @@ export function ClientPanel() {
                       <p className="text-[11px] text-slate-400">{p.vehicle}</p>
                     </div>
                     <div className="flex flex-col items-end gap-0.5">
-                      <div className="flex items-center gap-1 text-amber-400">
+                      <div className="flex items-center gap-1 text-sky-400">
                         <Star className="h-3 w-3" fill="currentColor" />
                         <span className="text-[11px] font-semibold">{p.rating.toFixed(1)}</span>
                       </div>
@@ -403,7 +403,7 @@ export function ClientPanel() {
           />
         )}
         {view === 'form' && hasActive && (
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-center text-xs text-amber-300">
+          <div className="rounded-xl border border-sky-500/30 bg-sky-500/10 p-4 text-center text-xs text-sky-300">
             Você já tem um serviço em andamento. Acompanhe na aba Início.
           </div>
         )}
@@ -428,7 +428,7 @@ function TabBtn({ active, onClick, icon: Icon, label, badge }: { active: boolean
     <button
       onClick={onClick}
       className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 px-3 py-2.5 text-xs font-semibold transition ${
-        active ? 'border-amber-500 text-amber-400' : 'border-transparent text-slate-500 hover:text-slate-300'
+        active ? 'border-sky-500 text-sky-400' : 'border-transparent text-slate-500 hover:text-slate-300'
       }`}
     >
       <Icon className="h-3.5 w-3.5" />
@@ -527,10 +527,10 @@ function RequestForm(props: any) {
                 key={s.id}
                 onClick={() => setSvcType(s.id)}
                 className={`flex flex-col items-start gap-1 rounded-lg border p-2.5 text-left transition ${
-                  active ? 'border-amber-500 bg-amber-500/10 shadow-sm shadow-amber-500/10' : 'border-slate-800 bg-slate-900/60 hover:border-slate-700'
+                  active ? 'border-sky-500 bg-sky-500/10 shadow-sm shadow-sky-500/10' : 'border-slate-800 bg-slate-900/60 hover:border-slate-700'
                 }`}
               >
-                <Icon className={`h-4 w-4 ${active ? 'text-amber-400' : 'text-slate-400'}`} />
+                <Icon className={`h-4 w-4 ${active ? 'text-sky-400' : 'text-slate-400'}`} />
                 <span className="text-xs font-semibold text-white">{s.label}</span>
                 <span className="text-[10px] text-slate-500">a partir de R$ {s.base}</span>
               </button>
@@ -561,10 +561,10 @@ function RequestForm(props: any) {
                 key={m.id}
                 onClick={() => setPayment(m.id)}
                 className={`flex flex-col items-center gap-1 rounded-lg border p-2.5 transition ${
-                  active ? 'border-amber-500 bg-amber-500/10' : 'border-slate-800 bg-slate-900/60 hover:border-slate-700'
+                  active ? 'border-sky-500 bg-sky-500/10' : 'border-slate-800 bg-slate-900/60 hover:border-slate-700'
                 }`}
               >
-                <Icon className={`h-4 w-4 ${active ? 'text-amber-400' : 'text-slate-400'}`} />
+                <Icon className={`h-4 w-4 ${active ? 'text-sky-400' : 'text-slate-400'}`} />
                 <span className="text-[11px] font-semibold text-white">{m.label}</span>
                 <span className="text-[9px] text-slate-500">{m.desc}</span>
               </button>
@@ -576,7 +576,7 @@ function RequestForm(props: any) {
       {/* Promo code */}
       <div>
         <Label className="mb-1.5 block text-xs font-semibold uppercase text-slate-400">
-          <Tag className="mr-1 inline h-3 w-3 text-amber-400" />
+          <Tag className="mr-1 inline h-3 w-3 text-sky-400" />
           Cupom de desconto
         </Label>
         <div className="flex gap-2">
@@ -593,7 +593,7 @@ function RequestForm(props: any) {
         {effectiveResult && (
           <div className={`mt-1.5 flex items-center gap-1.5 rounded-lg border p-2 text-xs ${
             effectiveResult.valid
-              ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+              ? 'border-orange-500/40 bg-orange-500/10 text-orange-300'
               : 'border-rose-500/40 bg-rose-500/10 text-rose-300'
           }`}>
             {effectiveResult.valid ? <CheckCircle2 className="h-3.5 w-3.5" /> : <AlertTriangle className="h-3.5 w-3.5" />}
@@ -602,7 +602,7 @@ function RequestForm(props: any) {
         )}
         {!promoInput && (
           <p className="mt-1 text-[10px] text-slate-500">
-            Experimente: <span className="font-mono text-amber-400">SOCORRO10</span> · <span className="font-mono text-amber-400">BEMVINDO20</span> · <span className="font-mono text-amber-400">PROMO15</span>
+            Experimente: <span className="font-mono text-sky-400">SOCORRO10</span> · <span className="font-mono text-sky-400">BEMVINDO20</span> · <span className="font-mono text-sky-400">PROMO15</span>
           </p>
         )}
       </div>
@@ -619,7 +619,7 @@ function RequestForm(props: any) {
                   <div key={fav.id} className="group relative shrink-0">
                     <button
                       onClick={() => handleSelectFavorite(fav)}
-                      className="flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-[10px] font-semibold text-amber-400 transition hover:bg-amber-500/15"
+                      className="flex items-center gap-1.5 rounded-lg border border-sky-500/30 bg-sky-500/5 px-2.5 py-1.5 text-[10px] font-semibold text-sky-400 transition hover:bg-sky-500/15"
                     >
                       <FavIcon className="h-3 w-3" />
                       {fav.label}
@@ -640,19 +640,19 @@ function RequestForm(props: any) {
         <div>
           <div className="mb-1.5 flex items-center justify-between">
             <Label className="text-xs font-semibold uppercase text-slate-400">
-              <MapPin className="mr-1 inline h-3 w-3 text-amber-400" />
+              <MapPin className="mr-1 inline h-3 w-3 text-sky-400" />
               Local do atendimento
             </Label>
             {!pickupIsFav && !showSaveFav && (
               <button
                 onClick={() => setShowSaveFav(true)}
-                className="flex items-center gap-0.5 text-[10px] text-amber-400 hover:text-amber-300"
+                className="flex items-center gap-0.5 text-[10px] text-sky-400 hover:text-sky-300"
               >
                 <Star className="h-2.5 w-2.5" /> Salvar como favorito
               </button>
             )}
             {savedFlash && (
-              <span className="flex items-center gap-0.5 text-[10px] text-emerald-400">
+              <span className="flex items-center gap-0.5 text-[10px] text-orange-400">
                 <Check className="h-2.5 w-2.5" /> Salvo!
               </span>
             )}
@@ -660,7 +660,7 @@ function RequestForm(props: any) {
           <select
             value={pickupId}
             onChange={(e) => setPickupId(e.target.value)}
-            className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-amber-500"
+            className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-500"
           >
             {presets.map((p: any) => (<option key={p.id} value={p.id}>{p.label}</option>))}
           </select>
@@ -680,14 +680,14 @@ function RequestForm(props: any) {
                       key={icon}
                       onClick={() => setFavIcon(icon)}
                       className={`flex h-7 w-7 items-center justify-center rounded-lg border transition ${
-                        favIcon === icon ? 'border-amber-500 bg-amber-500/15 text-amber-400' : 'border-slate-700 text-slate-500'
+                        favIcon === icon ? 'border-sky-500 bg-sky-500/15 text-sky-400' : 'border-slate-700 text-slate-500'
                       }`}
                     >
                       <Icon className="h-3.5 w-3.5" />
                     </button>
                   )
                 })}
-                <Button onClick={handleSaveFavorite} disabled={!favLabel.trim()} size="sm" className="ml-auto h-7 bg-amber-500 px-3 text-[10px] font-bold text-slate-950 hover:bg-amber-400">
+                <Button onClick={handleSaveFavorite} disabled={!favLabel.trim()} size="sm" className="ml-auto h-7 bg-sky-500 px-3 text-[10px] font-bold text-slate-950 hover:bg-sky-400">
                   Salvar
                 </Button>
                 <Button onClick={() => setShowSaveFav(false)} variant="ghost" size="sm" className="h-7 px-2 text-[10px] text-slate-400">
@@ -705,7 +705,7 @@ function RequestForm(props: any) {
           <select
             value={destId}
             onChange={(e) => setDestId(e.target.value)}
-            className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-amber-500"
+            className="w-full rounded-md border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-sky-500"
           >
             {presets.map((p: any) => (<option key={p.id} value={p.id}>{p.label}</option>))}
           </select>
@@ -716,21 +716,21 @@ function RequestForm(props: any) {
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
         <div className="flex items-center justify-between text-xs">
           <span className="text-slate-400">Valor do serviço</span>
-          <span className={`font-bold ${discount > 0 ? 'text-slate-500 line-through' : 'text-amber-400'}`}>
+          <span className={`font-bold ${discount > 0 ? 'text-slate-500 line-through' : 'text-sky-400'}`}>
             R$ {basePrice}
           </span>
         </div>
         {discount > 0 && (
           <>
             <div className="mt-1 flex items-center justify-between text-xs">
-              <span className="flex items-center gap-1 text-emerald-400">
+              <span className="flex items-center gap-1 text-orange-400">
                 <Tag className="h-3 w-3" /> Desconto ({effectiveResult?.code})
               </span>
-              <span className="font-bold text-emerald-400">- R$ {discount}</span>
+              <span className="font-bold text-orange-400">- R$ {discount}</span>
             </div>
             <div className="mt-1.5 flex items-center justify-between border-t border-slate-800 pt-1.5">
               <span className="text-xs font-bold text-white">Total a pagar</span>
-              <span className="text-lg font-extrabold text-amber-400">R$ {finalPrice}</span>
+              <span className="text-lg font-extrabold text-sky-400">R$ {finalPrice}</span>
             </div>
           </>
         )}
@@ -739,7 +739,7 @@ function RequestForm(props: any) {
       <Button
         onClick={onSubmit}
         disabled={sameLoc}
-        className="w-full bg-amber-500 py-5 text-sm font-bold text-slate-950 shadow-lg shadow-amber-500/20 hover:bg-amber-400"
+        className="w-full bg-sky-500 py-5 text-sm font-bold text-slate-950 shadow-lg shadow-sky-500/20 hover:bg-sky-400"
       >
         Confirmar e procurar prestador
         <ArrowRight className="ml-2 h-4 w-4" />
@@ -776,14 +776,14 @@ function ServiceTracker({
       {/* Status banner */}
       <div
         className={`rounded-xl border p-3 ${
-          status === 'completed' ? 'border-emerald-500/40 bg-emerald-500/10'
+          status === 'completed' ? 'border-orange-500/40 bg-orange-500/10'
           : status === 'cancelled' || status === 'expired' ? 'border-rose-500/40 bg-rose-500/10'
-          : 'border-amber-500/40 bg-amber-500/10'
+          : 'border-sky-500/40 bg-sky-500/10'
         }`}
       >
         <div className="flex items-center gap-2">
-          {isLive && <Loader2 className="h-4 w-4 animate-spin text-amber-400" />}
-          {status === 'completed' && <CheckCircle2 className="h-4 w-4 text-emerald-400" />}
+          {isLive && <Loader2 className="h-4 w-4 animate-spin text-sky-400" />}
+          {status === 'completed' && <CheckCircle2 className="h-4 w-4 text-orange-400" />}
           {(status === 'cancelled' || status === 'expired') && <AlertTriangle className="h-4 w-4 text-rose-400" />}
           <p className="text-sm font-bold text-white">{statusMeta.label}</p>
         </div>
@@ -796,7 +796,7 @@ function ServiceTracker({
       {svc.provider && (
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
           <div className="flex items-center gap-3">
-            <Avatar className="h-11 w-11 bg-gradient-to-br from-emerald-500 to-emerald-700">
+            <Avatar className="h-11 w-11 bg-gradient-to-br from-orange-500 to-orange-700">
               <AvatarFallback className="bg-transparent text-sm font-bold text-white">
                 {svc.provider.name.slice(0, 2).toUpperCase()}
               </AvatarFallback>
@@ -806,13 +806,13 @@ function ServiceTracker({
               <p className="text-xs text-slate-400">{svc.provider.vehicle} · {svc.provider.plate}</p>
             </div>
             <div className="flex flex-col items-end gap-1">
-              <div className="flex items-center gap-1 text-amber-400">
+              <div className="flex items-center gap-1 text-sky-400">
                 <Star className="h-3.5 w-3.5" fill="currentColor" />
                 <span className="text-xs font-bold">{svc.provider.rating.toFixed(1)}</span>
               </div>
               {isLive && (
                 <div className="flex gap-1">
-                  <Button size="icon" variant="outline" className="h-7 w-7 border-slate-700 bg-slate-800 text-emerald-400 hover:bg-slate-700">
+                  <Button size="icon" variant="outline" className="h-7 w-7 border-slate-700 bg-slate-800 text-orange-400 hover:bg-slate-700">
                     <Phone className="h-3.5 w-3.5" />
                   </Button>
                   <Button
@@ -845,7 +845,7 @@ function ServiceTracker({
               </div>
               <div className="rounded-lg bg-slate-800/60 p-2">
                 <p className="text-[10px] uppercase text-slate-500">Valor</p>
-                <p className="text-sm font-bold text-amber-400">R$ {svc.price}</p>
+                <p className="text-sm font-bold text-sky-400">R$ {svc.price}</p>
               </div>
             </div>
           )}
@@ -892,7 +892,7 @@ function ServiceTracker({
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
         <div className="flex gap-3">
           <div className="flex flex-col items-center pt-1">
-            <div className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+            <div className="h-2.5 w-2.5 rounded-full bg-sky-500" />
             <div className="my-1 w-0.5 flex-1 bg-slate-700" />
             <div className="h-2.5 w-2.5 rounded-full bg-sky-500" />
           </div>
@@ -909,16 +909,16 @@ function ServiceTracker({
         </div>
         <div className="mt-2 flex items-center justify-between border-t border-slate-800 pt-2 text-xs">
           <span className="flex items-center gap-1.5 text-slate-400">
-            <PayIcon className="h-3.5 w-3.5 text-amber-400" />
+            <PayIcon className="h-3.5 w-3.5 text-sky-400" />
             {PAYMENT_METHODS.find((m) => m.id === svc.paymentMethod)?.label}
           </span>
           <div className="flex items-center gap-2">
             {svc.discount > 0 && (
-              <span className="text-[10px] text-emerald-400">
+              <span className="text-[10px] text-orange-400">
                 <Tag className="mr-0.5 inline h-3 w-3" />{svc.promoCode} -R${svc.discount}
               </span>
             )}
-            <span className="font-bold text-amber-400">R$ {svc.price}</span>
+            <span className="font-bold text-sky-400">R$ {svc.price}</span>
           </div>
         </div>
       </div>
@@ -970,7 +970,7 @@ function ServiceTracker({
         </>
       )}
       {isFinal && (
-        <Button onClick={onNewRequest} className="w-full bg-amber-500 py-5 text-sm font-bold text-slate-950 hover:bg-amber-400">
+        <Button onClick={onNewRequest} className="w-full bg-sky-500 py-5 text-sm font-bold text-slate-950 hover:bg-sky-400">
           <Shield className="mr-2 h-4 w-4" /> Nova solicitação
         </Button>
       )}
@@ -986,13 +986,13 @@ function RatingCard({ svc, rated, onRate }: { svc: ServiceData; rated: boolean; 
   if (svc.rating || rated) {
     const r = svc.rating
     return (
-      <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-center">
-        <CheckCircle2 className="mx-auto mb-1 h-6 w-6 text-emerald-400" />
+      <div className="rounded-xl border border-orange-500/40 bg-orange-500/10 p-3 text-center">
+        <CheckCircle2 className="mx-auto mb-1 h-6 w-6 text-orange-400" />
         <p className="text-sm font-bold text-white">Obrigado pela avaliação!</p>
         {r && (
           <div className="mt-1 flex items-center justify-center gap-1">
             {Array.from({ length: 5 }).map((_, i) => (
-              <Star key={i} className={`h-4 w-4 ${i < r.stars ? 'text-amber-400' : 'text-slate-700'}`} fill="currentColor" />
+              <Star key={i} className={`h-4 w-4 ${i < r.stars ? 'text-sky-400' : 'text-slate-700'}`} fill="currentColor" />
             ))}
           </div>
         )}
@@ -1002,7 +1002,7 @@ function RatingCard({ svc, rated, onRate }: { svc: ServiceData; rated: boolean; 
   }
 
   return (
-    <div className="rounded-xl border border-amber-500/40 bg-gradient-to-b from-amber-500/10 to-transparent p-4">
+    <div className="rounded-xl border border-sky-500/40 bg-gradient-to-b from-sky-500/10 to-transparent p-4">
       <p className="text-sm font-bold text-white">Avalie o atendimento</p>
       <p className="mt-0.5 text-xs text-slate-400">Sua avaliação ajuda outros motoristas.</p>
       <div className="mt-3 flex justify-center gap-1">
@@ -1017,7 +1017,7 @@ function RatingCard({ svc, rated, onRate }: { svc: ServiceData; rated: boolean; 
               onClick={() => setStars(val)}
               className="transition-transform hover:scale-110"
             >
-              <Star className={`h-7 w-7 ${active ? 'text-amber-400' : 'text-slate-700'}`} fill={active ? 'currentColor' : 'none'} />
+              <Star className={`h-7 w-7 ${active ? 'text-sky-400' : 'text-slate-700'}`} fill={active ? 'currentColor' : 'none'} />
             </button>
           )
         })}
@@ -1029,7 +1029,7 @@ function RatingCard({ svc, rated, onRate }: { svc: ServiceData; rated: boolean; 
         className="mt-3 border-slate-700 bg-slate-900 text-white placeholder:text-slate-500"
         rows={2}
       />
-      <Button onClick={() => onRate(stars, comment.trim())} className="mt-2 w-full bg-amber-500 py-4 text-sm font-bold text-slate-950 hover:bg-amber-400">
+      <Button onClick={() => onRate(stars, comment.trim())} className="mt-2 w-full bg-sky-500 py-4 text-sm font-bold text-slate-950 hover:bg-sky-400">
         <Send className="mr-1.5 h-4 w-4" /> Enviar avaliação
       </Button>
     </div>
@@ -1103,7 +1103,7 @@ function HistoryView({ history, role, onSelect }: { history: ServiceRecord[]; ro
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-sm font-bold text-amber-400">R$ {r.price}</span>
+                <span className="text-sm font-bold text-sky-400">R$ {r.price}</span>
                 <ChevronRight className="h-4 w-4 text-slate-600" />
               </div>
             </div>
@@ -1116,12 +1116,12 @@ function HistoryView({ history, role, onSelect }: { history: ServiceRecord[]; ro
               {r.rating && (
                 <div className="flex items-center gap-0.5">
                   {Array.from({ length: 5 }).map((_, i) => (
-                    <Star key={i} className={`h-2.5 w-2.5 ${i < r.rating!.stars ? 'text-amber-400' : 'text-slate-700'}`} fill="currentColor" />
+                    <Star key={i} className={`h-2.5 w-2.5 ${i < r.rating!.stars ? 'text-sky-400' : 'text-slate-700'}`} fill="currentColor" />
                   ))}
                 </div>
               )}
               {r.discount > 0 && (
-                <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-[9px] text-emerald-400">
+                <Badge variant="outline" className="border-orange-500/40 bg-orange-500/10 text-[9px] text-orange-400">
                   <Tag className="mr-0.5 h-2.5 w-2.5" /> {r.promoCode}
                 </Badge>
               )}
@@ -1145,7 +1145,7 @@ function ServiceDetailDialog({ record, onClose, role }: { record: ServiceRecord 
           <DialogTitle className="flex items-center gap-2 text-white">
             {record && (() => {
               const Icon = ICONS[record.icon] || CircleDot
-              return <Icon className="h-4 w-4 text-amber-400" />
+              return <Icon className="h-4 w-4 text-sky-400" />
             })()}
             Detalhes do serviço
           </DialogTitle>
@@ -1163,7 +1163,7 @@ function ServiceDetailDialog({ record, onClose, role }: { record: ServiceRecord 
               <p className="mb-2 text-xs font-semibold uppercase text-slate-500">Trajeto</p>
               <div className="flex gap-3">
                 <div className="flex flex-col items-center pt-1">
-                  <div className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                  <div className="h-2.5 w-2.5 rounded-full bg-sky-500" />
                   <div className="my-1 w-0.5 flex-1 bg-slate-700" />
                   <div className="h-2.5 w-2.5 rounded-full bg-sky-500" />
                 </div>
@@ -1188,14 +1188,14 @@ function ServiceDetailDialog({ record, onClose, role }: { record: ServiceRecord 
                   <span className="text-slate-300">R$ {record.originalPrice}</span>
                 </div>
                 {record.discount > 0 && (
-                  <div className="flex justify-between text-emerald-400">
+                  <div className="flex justify-between text-orange-400">
                     <span className="flex items-center gap-1"><Tag className="h-3 w-3" /> Desconto ({record.promoCode})</span>
                     <span>- R$ {record.discount}</span>
                   </div>
                 )}
                 <div className="flex justify-between border-t border-slate-800 pt-1.5">
                   <span className="font-bold text-white">Total</span>
-                  <span className="text-base font-extrabold text-amber-400">R$ {record.price}</span>
+                  <span className="text-base font-extrabold text-sky-400">R$ {record.price}</span>
                 </div>
               </div>
             </div>
@@ -1223,15 +1223,15 @@ function ServiceDetailDialog({ record, onClose, role }: { record: ServiceRecord 
             </div>
 
             {record.rating && (
-              <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3">
+              <div className="rounded-xl border border-sky-500/40 bg-sky-500/10 p-3">
                 <p className="mb-1 text-xs font-semibold uppercase text-slate-500">
                   {role === 'client' ? 'Sua avaliação do prestador' : 'Avaliação do cliente'}
                 </p>
                 <div className="flex items-center gap-1">
                   {Array.from({ length: 5 }).map((_, i) => (
-                    <Star key={i} className={`h-4 w-4 ${i < record.rating!.stars ? 'text-amber-400' : 'text-slate-700'}`} fill="currentColor" />
+                    <Star key={i} className={`h-4 w-4 ${i < record.rating!.stars ? 'text-sky-400' : 'text-slate-700'}`} fill="currentColor" />
                   ))}
-                  <span className="ml-1 text-xs font-bold text-amber-400">{record.rating.stars}.0</span>
+                  <span className="ml-1 text-xs font-bold text-sky-400">{record.rating.stars}.0</span>
                 </div>
                 {record.rating.comment && <p className="mt-1 text-xs italic text-slate-300">"{record.rating.comment}"</p>}
               </div>
@@ -1278,7 +1278,7 @@ function FilterChip({ active, onClick, label, small }: { active: boolean; onClic
       onClick={onClick}
       className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold transition ${
         active
-          ? 'border-amber-500 bg-amber-500/15 text-amber-400'
+          ? 'border-sky-500 bg-sky-500/15 text-sky-400'
           : 'border-slate-700 bg-slate-900/60 text-slate-400 hover:border-slate-600 hover:text-slate-300'
       } ${small ? 'text-[9px]' : ''}`}
     >
@@ -1302,18 +1302,18 @@ function ClientProfileView({ name, loyalty, history }: { name: string; loyalty: 
   return (
     <div className="space-y-4">
       {/* Profile header */}
-      <div className="relative overflow-hidden rounded-2xl border border-slate-800 bg-gradient-to-br from-amber-500/10 to-slate-900 p-4">
-        <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-amber-500/10 blur-2xl" />
+      <div className="relative overflow-hidden rounded-2xl border border-slate-800 bg-gradient-to-br from-sky-500/10 to-slate-900 p-4">
+        <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-sky-500/10 blur-2xl" />
         <div className="relative flex items-center gap-3">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 text-xl font-extrabold text-slate-950 shadow-lg shadow-amber-500/30">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-400 to-sky-600 text-xl font-extrabold text-slate-950 shadow-lg shadow-sky-500/30">
             {name.slice(0, 2).toUpperCase()}
           </div>
           <div className="flex-1">
             <p className="text-base font-extrabold text-white">{name}</p>
-            <p className="text-xs text-slate-400">Cliente SocorroJá</p>
+            <p className="text-xs text-slate-400">Cliente Help Bibi</p>
             {loyalty && (
               <div className="mt-1 flex items-center gap-2">
-                <Badge variant="outline" className="border-amber-500/40 bg-amber-500/10 text-amber-400">
+                <Badge variant="outline" className="border-sky-500/40 bg-sky-500/10 text-sky-400">
                   <Trophy className="mr-1 h-2.5 w-2.5" /> {loyalty.tier.name}
                 </Badge>
                 <span className="text-[10px] text-slate-500">{loyalty.points} pontos</span>
@@ -1327,19 +1327,19 @@ function ClientProfileView({ name, loyalty, history }: { name: string; loyalty: 
       <div className="grid grid-cols-2 gap-2">
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
           <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase text-slate-500">
-            <Shield className="h-3 w-3 text-amber-400" /> Serviços totais
+            <Shield className="h-3 w-3 text-sky-400" /> Serviços totais
           </div>
           <p className="text-xl font-extrabold text-white">{completedServices.length}</p>
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
           <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase text-slate-500">
-            <Wallet className="h-3 w-3 text-amber-400" /> Total gasto
+            <Wallet className="h-3 w-3 text-sky-400" /> Total gasto
           </div>
           <p className="text-xl font-extrabold text-white">R$ {totalSpent}</p>
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
           <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase text-slate-500">
-            <Star className="h-3 w-3 text-amber-400" /> Nota média dada
+            <Star className="h-3 w-3 text-sky-400" /> Nota média dada
           </div>
           <p className="text-xl font-extrabold text-white">{avgRatingGiven} ★</p>
         </div>
@@ -1394,7 +1394,7 @@ function ShareTrackingButton({ svcId }: { svcId: string }) {
     const url = `${window.location.origin}/?track=${svcId}`
     try {
       if (navigator.share) {
-        await navigator.share({ title: 'SocorroJá — Acompanhar serviço', url })
+        await navigator.share({ title: 'Help Bibi — Acompanhar serviço', url })
       } else {
         await navigator.clipboard.writeText(url)
         setCopied(true)

@@ -103,8 +103,8 @@ export function ProviderPanel() {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
         <div className="relative">
-          <div className="absolute -inset-3 animate-pulse rounded-3xl bg-emerald-500/20 blur-xl" />
-          <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 text-slate-950 shadow-lg shadow-emerald-500/30">
+          <div className="absolute -inset-3 animate-pulse rounded-3xl bg-orange-500/20 blur-xl" />
+          <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-400 to-orange-600 text-slate-950 shadow-lg shadow-orange-500/30">
             <Truck className="h-8 w-8" />
           </div>
         </div>
@@ -118,7 +118,7 @@ export function ProviderPanel() {
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome ou empresa" className="border-slate-700 bg-slate-900 text-white placeholder:text-slate-500" />
           <Input value={vehicle} onChange={(e) => setVehicle(e.target.value)} placeholder="Veículo / equipamento" className="border-slate-700 bg-slate-900 text-white placeholder:text-slate-500" />
           <Input value={plate} onChange={(e) => setPlate(e.target.value)} placeholder="Placa (EX: ABC1D23)" className="border-slate-700 bg-slate-900 text-white placeholder:text-slate-500 uppercase" />
-          <Button onClick={handleRegister} disabled={!name.trim() || !plate.trim() || !connected} className="w-full bg-emerald-500 text-slate-950 hover:bg-emerald-400">
+          <Button onClick={handleRegister} disabled={!name.trim() || !plate.trim() || !connected} className="w-full bg-orange-500 text-slate-950 hover:bg-orange-400">
             Entrar como prestador
           </Button>
         </div>
@@ -136,11 +136,11 @@ export function ProviderPanel() {
       {/* Header */}
       <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
         <div className="flex items-center gap-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-emerald-600 text-slate-950 shadow-md shadow-emerald-500/20">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-orange-400 to-orange-600 text-slate-950 shadow-md shadow-orange-500/20">
             <Truck className="h-5 w-5" />
           </div>
           <div>
-            <p className="text-sm font-bold leading-tight">SocorroJá · Prestador</p>
+            <p className="text-sm font-bold leading-tight">Help Bibi · Prestador</p>
             <p className="text-[11px] text-slate-400">{state?.name}</p>
           </div>
         </div>
@@ -149,12 +149,12 @@ export function ProviderPanel() {
             variant="ghost"
             size="icon"
             onClick={toggleSound}
-            className={`h-7 w-7 ${soundEnabled ? 'text-emerald-400' : 'text-slate-500'} hover:bg-slate-800`}
+            className={`h-7 w-7 ${soundEnabled ? 'text-orange-400' : 'text-slate-500'} hover:bg-slate-800`}
             aria-label="Alternar som"
           >
             {soundEnabled ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
           </Button>
-          <span className={`text-[11px] ${online ? 'text-emerald-400' : 'text-slate-500'}`}>{online ? 'Online' : 'Offline'}</span>
+          <span className={`text-[11px] ${online ? 'text-orange-400' : 'text-slate-500'}`}>{online ? 'Online' : 'Offline'}</span>
           <Switch checked={online} onCheckedChange={(v) => toggleOnline(v)} disabled={busy} />
         </div>
       </div>
@@ -162,17 +162,17 @@ export function ProviderPanel() {
       {/* Stats strip */}
       <div className="grid grid-cols-3 gap-2 border-b border-slate-800 px-4 py-3">
         <div className="rounded-lg bg-slate-900/60 p-2 text-center">
-          <Wallet className="mx-auto mb-0.5 h-3.5 w-3.5 text-amber-400" />
+          <Wallet className="mx-auto mb-0.5 h-3.5 w-3.5 text-sky-400" />
           <p className="text-[10px] uppercase text-slate-500">Hoje</p>
           <p className="text-xs font-bold text-white">R$ {state?.earningsToday ?? 0}</p>
         </div>
         <div className="rounded-lg bg-slate-900/60 p-2 text-center">
-          <TrendingUp className="mx-auto mb-0.5 h-3.5 w-3.5 text-emerald-400" />
+          <TrendingUp className="mx-auto mb-0.5 h-3.5 w-3.5 text-orange-400" />
           <p className="text-[10px] uppercase text-slate-500">Serviços</p>
           <p className="text-xs font-bold text-white">{state?.completedCount ?? 0}</p>
         </div>
         <div className="rounded-lg bg-slate-900/60 p-2 text-center">
-          <Star className="mx-auto mb-0.5 h-3.5 w-3.5 text-amber-400" />
+          <Star className="mx-auto mb-0.5 h-3.5 w-3.5 text-sky-400" />
           <p className="text-[10px] uppercase text-slate-500">Nota</p>
           <p className="text-xs font-bold text-white">{state?.rating.toFixed(1) ?? '—'}</p>
         </div>
@@ -227,9 +227,9 @@ export function ProviderPanel() {
             )}
             {!offer && !offerTaken && !svc && (
               <div className="space-y-4">
-                <div className={`rounded-xl border p-4 ${online ? 'border-emerald-500/40 bg-emerald-500/10' : 'border-slate-700 bg-slate-900/60'}`}>
+                <div className={`rounded-xl border p-4 ${online ? 'border-orange-500/40 bg-orange-500/10' : 'border-slate-700 bg-slate-900/60'}`}>
                   <div className="flex items-center gap-2">
-                    <Power className={`h-4 w-4 ${online ? 'text-emerald-400' : 'text-slate-500'}`} />
+                    <Power className={`h-4 w-4 ${online ? 'text-orange-400' : 'text-slate-500'}`} />
                     <p className="text-sm font-bold text-white">{online ? 'Disponível para chamadas' : 'Você está offline'}</p>
                   </div>
                   <p className="mt-1 text-xs text-slate-400">
@@ -238,7 +238,7 @@ export function ProviderPanel() {
                 </div>
                 <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
                   <div className="mb-3 flex items-center gap-2">
-                    <Award className="h-4 w-4 text-amber-400" />
+                    <Award className="h-4 w-4 text-sky-400" />
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Resumo</p>
                   </div>
                   <div className="space-y-2 text-xs">
@@ -296,7 +296,7 @@ function TabBtn({ active, onClick, icon: Icon, label, badge }: { active: boolean
     <button
       onClick={onClick}
       className={`flex flex-1 items-center justify-center gap-1.5 border-b-2 px-3 py-2.5 text-xs font-semibold transition ${
-        active ? 'border-emerald-500 text-emerald-400' : 'border-transparent text-slate-500 hover:text-slate-300'
+        active ? 'border-orange-500 text-orange-400' : 'border-transparent text-slate-500 hover:text-slate-300'
       }`}
     >
       <Icon className="h-3.5 w-3.5" />
@@ -318,16 +318,16 @@ function OfferCard({ offer, onAccept, onReject, notifiedCount }: { offer: Servic
 
   return (
     <div className="space-y-3">
-      <div className="overflow-hidden rounded-2xl border-2 border-amber-500/60 bg-gradient-to-b from-slate-900 to-slate-950 shadow-2xl shadow-amber-500/10">
+      <div className="overflow-hidden rounded-2xl border-2 border-sky-500/60 bg-gradient-to-b from-slate-900 to-slate-950 shadow-2xl shadow-sky-500/10">
         <div className="h-1.5 w-full bg-slate-800">
-          <div className="h-full bg-amber-500 transition-all duration-1000 ease-linear" style={{ width: `${pct}%` }} />
+          <div className="h-full bg-sky-500 transition-all duration-1000 ease-linear" style={{ width: `${pct}%` }} />
         </div>
         <div className="p-4">
           <div className="mb-3 flex items-center justify-between">
-            <Badge className="bg-amber-500 text-slate-950 hover:bg-amber-500">
+            <Badge className="bg-sky-500 text-slate-950 hover:bg-sky-500">
               <Loader2 className="mr-1 h-3 w-3 animate-spin" /> Nova chamada
             </Badge>
-            <span className={`text-sm font-bold ${seconds <= 4 ? 'text-rose-400' : 'text-amber-400'}`}>{seconds}s</span>
+            <span className={`text-sm font-bold ${seconds <= 4 ? 'text-rose-400' : 'text-sky-400'}`}>{seconds}s</span>
           </div>
 
           {notifiedCount && notifiedCount > 1 ? (
@@ -338,7 +338,7 @@ function OfferCard({ offer, onAccept, onReject, notifiedCount }: { offer: Servic
           ) : null}
 
           <div className="mb-3 flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-500/15 text-amber-400">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-sky-500/15 text-sky-400">
               <Icon className="h-5 w-5" />
             </div>
             <div className="flex-1">
@@ -346,7 +346,7 @@ function OfferCard({ offer, onAccept, onReject, notifiedCount }: { offer: Servic
               <p className="text-xs text-slate-400">{offer.clientName}</p>
             </div>
             <div className="flex items-center gap-1 rounded-md bg-slate-800 px-2 py-1 text-[10px] text-slate-300">
-              <PayIcon className="h-3 w-3 text-amber-400" />
+              <PayIcon className="h-3 w-3 text-sky-400" />
               {PAYMENT_METHODS.find((m) => m.id === offer.paymentMethod)?.label}
             </div>
           </div>
@@ -354,7 +354,7 @@ function OfferCard({ offer, onAccept, onReject, notifiedCount }: { offer: Servic
           <div className="mb-3 grid grid-cols-3 gap-2 text-center">
             <div className="rounded-lg bg-slate-800/60 p-2">
               <p className="text-[10px] uppercase text-slate-500">Valor</p>
-              <p className="text-base font-extrabold text-amber-400">R$ {offer.price}</p>
+              <p className="text-base font-extrabold text-sky-400">R$ {offer.price}</p>
             </div>
             <div className="rounded-lg bg-slate-800/60 p-2">
               <p className="text-[10px] uppercase text-slate-500">Distância</p>
@@ -368,7 +368,7 @@ function OfferCard({ offer, onAccept, onReject, notifiedCount }: { offer: Servic
 
           <div className="mb-3 space-y-1.5 rounded-lg bg-slate-800/40 p-2.5 text-xs">
             <div className="flex items-start gap-2">
-              <MapPin className="mt-0.5 h-3 w-3 shrink-0 text-amber-400" />
+              <MapPin className="mt-0.5 h-3 w-3 shrink-0 text-sky-400" />
               <span className="text-slate-300">{offer.pickupLabel}</span>
             </div>
             <div className="flex items-start gap-2">
@@ -381,7 +381,7 @@ function OfferCard({ offer, onAccept, onReject, notifiedCount }: { offer: Servic
             <Button onClick={onReject} variant="outline" className="flex-1 border-slate-700 text-slate-300 hover:bg-slate-800">
               <X className="mr-1 h-4 w-4" /> Recusar
             </Button>
-            <Button onClick={onAccept} className="flex-[2] bg-emerald-500 py-5 text-sm font-bold text-slate-950 hover:bg-emerald-400">
+            <Button onClick={onAccept} className="flex-[2] bg-orange-500 py-5 text-sm font-bold text-slate-950 hover:bg-orange-400">
               <CheckCircle2 className="mr-1 h-4 w-4" /> Aceitar (R$ {offer.price})
             </Button>
           </div>
@@ -415,13 +415,13 @@ function ProviderServiceCard({ svc, onArrived, onStart, onComplete, onDismiss, m
   return (
     <div className="space-y-3">
       <div className={`rounded-xl border p-3 ${
-        status === 'completed' ? 'border-emerald-500/40 bg-emerald-500/10'
+        status === 'completed' ? 'border-orange-500/40 bg-orange-500/10'
         : status === 'cancelled' || status === 'expired' ? 'border-rose-500/40 bg-rose-500/10'
         : 'border-sky-500/40 bg-sky-500/10'
       }`}>
         <div className="flex items-center gap-2">
           {!isFinal && <Loader2 className="h-4 w-4 animate-spin text-sky-400" />}
-          {status === 'completed' && <CheckCircle2 className="h-4 w-4 text-emerald-400" />}
+          {status === 'completed' && <CheckCircle2 className="h-4 w-4 text-orange-400" />}
           <p className="text-sm font-bold text-white">{statusMeta.label}</p>
         </div>
         <p className="mt-1 text-xs text-slate-400">{svc.typeLabel} · #{svc.id.slice(-6).toUpperCase()}</p>
@@ -441,7 +441,7 @@ function ProviderServiceCard({ svc, onArrived, onStart, onComplete, onDismiss, m
           </div>
           {!isFinal && (
             <div className="flex gap-1">
-              <Button size="icon" variant="outline" className="h-7 w-7 border-slate-700 bg-slate-800 text-emerald-400 hover:bg-slate-700">
+              <Button size="icon" variant="outline" className="h-7 w-7 border-slate-700 bg-slate-800 text-orange-400 hover:bg-slate-700">
                 <Phone className="h-3.5 w-3.5" />
               </Button>
               <Button
@@ -472,7 +472,7 @@ function ProviderServiceCard({ svc, onArrived, onStart, onComplete, onDismiss, m
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
         <div className="flex gap-3">
           <div className="flex flex-col items-center pt-1">
-            <div className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+            <div className="h-2.5 w-2.5 rounded-full bg-sky-500" />
             <div className="my-1 w-0.5 flex-1 bg-slate-700" />
             <div className="h-2.5 w-2.5 rounded-full bg-sky-500" />
           </div>
@@ -502,16 +502,16 @@ function ProviderServiceCard({ svc, onArrived, onStart, onComplete, onDismiss, m
           </div>
           <div>
             <p className="text-[10px] uppercase text-slate-500">Você recebe</p>
-            <p className="text-xs font-bold text-amber-400">R$ {svc.price}</p>
+            <p className="text-xs font-bold text-sky-400">R$ {svc.price}</p>
           </div>
         </div>
         <div className="mt-2 flex items-center justify-between border-t border-slate-800 pt-2 text-[11px] text-slate-400">
           <span className="flex items-center gap-1.5">
-            <PayIcon className="h-3 w-3 text-amber-400" />
+            <PayIcon className="h-3 w-3 text-sky-400" />
             {PAYMENT_METHODS.find((m) => m.id === svc.paymentMethod)?.label}
           </span>
           {svc.discount > 0 && (
-            <span className="flex items-center gap-0.5 text-emerald-400">
+            <span className="flex items-center gap-0.5 text-orange-400">
               <Tag className="h-3 w-3" /> {svc.promoCode} -R${svc.discount}
             </span>
           )}
@@ -540,13 +540,13 @@ function ProviderServiceCard({ svc, onArrived, onStart, onComplete, onDismiss, m
 
       {/* rating received */}
       {svc.rating && (
-        <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3">
+        <div className="rounded-xl border border-sky-500/40 bg-sky-500/10 p-3">
           <p className="text-xs font-bold text-white">Avaliação recebida do cliente</p>
           <div className="mt-1 flex items-center gap-1">
             {Array.from({ length: 5 }).map((_, i) => (
-              <Star key={i} className={`h-4 w-4 ${i < svc.rating!.stars ? 'text-amber-400' : 'text-slate-700'}`} fill="currentColor" />
+              <Star key={i} className={`h-4 w-4 ${i < svc.rating!.stars ? 'text-sky-400' : 'text-slate-700'}`} fill="currentColor" />
             ))}
-            <span className="ml-1 text-xs font-bold text-amber-400">{svc.rating.stars}.0</span>
+            <span className="ml-1 text-xs font-bold text-sky-400">{svc.rating.stars}.0</span>
           </div>
           {svc.rating.comment && <p className="mt-1 text-xs italic text-slate-300">"{svc.rating.comment}"</p>}
         </div>
@@ -559,7 +559,7 @@ function ProviderServiceCard({ svc, onArrived, onStart, onComplete, onDismiss, m
 
       {/* CTA */}
       {cta && (
-        <Button onClick={cta.onClick} className="w-full bg-emerald-500 py-5 text-sm font-bold text-slate-950 hover:bg-emerald-400">
+        <Button onClick={cta.onClick} className="w-full bg-orange-500 py-5 text-sm font-bold text-slate-950 hover:bg-orange-400">
           <cta.icon className="mr-2 h-4 w-4" /> {cta.label}
         </Button>
       )}
@@ -616,14 +616,14 @@ function EarningsView({ history, earningsToday, completedCount, rating }: {
   return (
     <div className="space-y-4">
       {/* Big earnings card */}
-      <div className="rounded-2xl border border-emerald-500/30 bg-gradient-to-br from-emerald-500/15 via-slate-900 to-slate-950 p-4">
+      <div className="rounded-2xl border border-orange-500/30 bg-gradient-to-br from-orange-500/15 via-slate-900 to-slate-950 p-4">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-400">Ganhos de hoje</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-orange-400">Ganhos de hoje</p>
             <p className="mt-1 text-3xl font-extrabold text-white">R$ {earningsToday}</p>
             <p className="mt-1 text-xs text-slate-400">{completedCount} serviço(s) concluído(s)</p>
           </div>
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400">
+          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-500/20 text-orange-400">
             <Wallet className="h-6 w-6" />
           </div>
         </div>
@@ -632,7 +632,7 @@ function EarningsView({ history, earningsToday, completedCount, rating }: {
       {/* Chart */}
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
         <div className="mb-3 flex items-center gap-2">
-          <BarChart3 className="h-4 w-4 text-emerald-400" />
+          <BarChart3 className="h-4 w-4 text-orange-400" />
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Ganhos por dia</p>
         </div>
         <div className="h-40 w-full">
@@ -647,7 +647,7 @@ function EarningsView({ history, earningsToday, completedCount, rating }: {
               />
               <Bar dataKey="total" radius={[6, 6, 0, 0]}>
                 {chartData.map((_, i) => (
-                  <Cell key={i} fill={i === chartData.length - 1 ? '#10b981' : '#334155'} />
+                  <Cell key={i} fill={i === chartData.length - 1 ? '#FFA500' : '#334155'} />
                 ))}
               </Bar>
             </BarChart>
@@ -659,11 +659,11 @@ function EarningsView({ history, earningsToday, completedCount, rating }: {
       <div className="grid grid-cols-2 gap-2">
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
           <p className="text-[10px] uppercase text-slate-500">Ticket médio</p>
-          <p className="text-lg font-bold text-amber-400">R$ {avgTicket}</p>
+          <p className="text-lg font-bold text-sky-400">R$ {avgTicket}</p>
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
           <p className="text-[10px] uppercase text-slate-500">Nota média</p>
-          <p className="text-lg font-bold text-amber-400">{rating.toFixed(1)} ★</p>
+          <p className="text-lg font-bold text-sky-400">{rating.toFixed(1)} ★</p>
         </div>
       </div>
 
@@ -671,7 +671,7 @@ function EarningsView({ history, earningsToday, completedCount, rating }: {
       {chartData.length > 1 && (
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
           <div className="mb-3 flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 text-emerald-400" />
+            <TrendingUp className="h-4 w-4 text-orange-400" />
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tendência de ganhos</p>
           </div>
           <div className="h-36 w-full">
@@ -679,8 +679,8 @@ function EarningsView({ history, earningsToday, completedCount, rating }: {
               <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
                 <defs>
                   <linearGradient id="earningsGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#10b981" stopOpacity={0.4} />
-                    <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
+                    <stop offset="0%" stopColor="#FFA500" stopOpacity={0.4} />
+                    <stop offset="100%" stopColor="#FFA500" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
@@ -693,11 +693,11 @@ function EarningsView({ history, earningsToday, completedCount, rating }: {
                 <Area
                   type="monotone"
                   dataKey="total"
-                  stroke="#10b981"
+                  stroke="#FFA500"
                   strokeWidth={2}
                   fill="url(#earningsGradient)"
-                  dot={{ fill: '#10b981', r: 3 }}
-                  activeDot={{ r: 5, fill: '#34d399' }}
+                  dot={{ fill: '#FFA500', r: 3 }}
+                  activeDot={{ r: 5, fill: '#ffbf00' }}
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -732,10 +732,10 @@ function ServiceTypeBreakdown({ history }: { history: ServiceRecord[] }) {
         <div key={it.label}>
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-300">{it.label}</span>
-            <span className="font-bold text-amber-400">R$ {it.total} <span className="text-slate-500">· {it.count}x</span></span>
+            <span className="font-bold text-sky-400">R$ {it.total} <span className="text-slate-500">· {it.count}x</span></span>
           </div>
           <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
-            <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400" style={{ width: `${(it.total / maxTotal) * 100}%` }} />
+            <div className="h-full rounded-full bg-gradient-to-r from-orange-500 to-orange-400" style={{ width: `${(it.total / maxTotal) * 100}%` }} />
           </div>
         </div>
       ))}
@@ -806,7 +806,7 @@ function HistoryView({ history, onSelect }: { history: ServiceRecord[]; onSelect
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-sm font-bold text-emerald-400">+R$ {r.price}</span>
+                <span className="text-sm font-bold text-orange-400">+R$ {r.price}</span>
                 <ChevronRight className="h-4 w-4 text-slate-600" />
               </div>
             </div>
@@ -819,12 +819,12 @@ function HistoryView({ history, onSelect }: { history: ServiceRecord[]; onSelect
               {r.rating && (
                 <div className="flex items-center gap-0.5">
                   {Array.from({ length: 5 }).map((_, i) => (
-                    <Star key={i} className={`h-2.5 w-2.5 ${i < r.rating!.stars ? 'text-amber-400' : 'text-slate-700'}`} fill="currentColor" />
+                    <Star key={i} className={`h-2.5 w-2.5 ${i < r.rating!.stars ? 'text-sky-400' : 'text-slate-700'}`} fill="currentColor" />
                   ))}
                 </div>
               )}
               {r.discount > 0 && (
-                <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-[9px] text-emerald-400">
+                <Badge variant="outline" className="border-orange-500/40 bg-orange-500/10 text-[9px] text-orange-400">
                   <Tag className="mr-0.5 h-2.5 w-2.5" /> {r.promoCode}
                 </Badge>
               )}
@@ -848,7 +848,7 @@ function ServiceDetailDialog({ record, onClose, role }: { record: ServiceRecord 
           <DialogTitle className="flex items-center gap-2 text-white">
             {record && (() => {
               const Icon = ICONS[record.icon] || CircleDot
-              return <Icon className="h-4 w-4 text-emerald-400" />
+              return <Icon className="h-4 w-4 text-orange-400" />
             })()}
             Detalhes do serviço
           </DialogTitle>
@@ -866,7 +866,7 @@ function ServiceDetailDialog({ record, onClose, role }: { record: ServiceRecord 
               <p className="mb-2 text-xs font-semibold uppercase text-slate-500">Trajeto</p>
               <div className="flex gap-3">
                 <div className="flex flex-col items-center pt-1">
-                  <div className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                  <div className="h-2.5 w-2.5 rounded-full bg-sky-500" />
                   <div className="my-1 w-0.5 flex-1 bg-slate-700" />
                   <div className="h-2.5 w-2.5 rounded-full bg-sky-500" />
                 </div>
@@ -891,14 +891,14 @@ function ServiceDetailDialog({ record, onClose, role }: { record: ServiceRecord 
                   <span className="text-slate-300">R$ {record.originalPrice}</span>
                 </div>
                 {record.discount > 0 && (
-                  <div className="flex justify-between text-emerald-400">
+                  <div className="flex justify-between text-orange-400">
                     <span className="flex items-center gap-1"><Tag className="h-3 w-3" /> Desconto ({record.promoCode})</span>
                     <span>- R$ {record.discount}</span>
                   </div>
                 )}
                 <div className="flex justify-between border-t border-slate-800 pt-1.5">
                   <span className="font-bold text-white">{role === 'provider' ? 'Você recebeu' : 'Total'}</span>
-                  <span className={`text-base font-extrabold ${role === 'provider' ? 'text-emerald-400' : 'text-amber-400'}`}>R$ {record.price}</span>
+                  <span className={`text-base font-extrabold ${role === 'provider' ? 'text-orange-400' : 'text-sky-400'}`}>R$ {record.price}</span>
                 </div>
               </div>
             </div>
@@ -926,15 +926,15 @@ function ServiceDetailDialog({ record, onClose, role }: { record: ServiceRecord 
             </div>
 
             {record.rating && (
-              <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3">
+              <div className="rounded-xl border border-sky-500/40 bg-sky-500/10 p-3">
                 <p className="mb-1 text-xs font-semibold uppercase text-slate-500">
                   {role === 'client' ? 'Sua avaliação do prestador' : 'Avaliação do cliente'}
                 </p>
                 <div className="flex items-center gap-1">
                   {Array.from({ length: 5 }).map((_, i) => (
-                    <Star key={i} className={`h-4 w-4 ${i < record.rating!.stars ? 'text-amber-400' : 'text-slate-700'}`} fill="currentColor" />
+                    <Star key={i} className={`h-4 w-4 ${i < record.rating!.stars ? 'text-sky-400' : 'text-slate-700'}`} fill="currentColor" />
                   ))}
-                  <span className="ml-1 text-xs font-bold text-amber-400">{record.rating.stars}.0</span>
+                  <span className="ml-1 text-xs font-bold text-sky-400">{record.rating.stars}.0</span>
                 </div>
                 {record.rating.comment && <p className="mt-1 text-xs italic text-slate-300">"{record.rating.comment}"</p>}
               </div>
@@ -979,7 +979,7 @@ function Row({ label, value, highlight }: { label: string; value: string; highli
   return (
     <div className="flex items-center justify-between">
       <span className="text-slate-400">{label}</span>
-      <span className={`font-semibold ${highlight ? 'text-amber-400' : 'text-white'}`}>{value}</span>
+      <span className={`font-semibold ${highlight ? 'text-sky-400' : 'text-white'}`}>{value}</span>
     </div>
   )
 }
@@ -990,7 +990,7 @@ function FilterChip({ active, onClick, label, small }: { active: boolean; onClic
       onClick={onClick}
       className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold transition ${
         active
-          ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400'
+          ? 'border-orange-500 bg-orange-500/15 text-orange-400'
           : 'border-slate-700 bg-slate-900/60 text-slate-400 hover:border-slate-600 hover:text-slate-300'
       } ${small ? 'text-[9px]' : ''}`}
     >
@@ -1015,34 +1015,34 @@ function ProfileView({ state, history }: { state: any; history: ServiceRecord[] 
 
   // Achievements based on milestones
   const achievements = [
-    { id: 'first', icon: Shield, label: 'Primeiro serviço', desc: 'Conclua seu primeiro atendimento', unlocked: completedCount >= 1, color: 'emerald' },
+    { id: 'first', icon: Shield, label: 'Primeiro serviço', desc: 'Conclua seu primeiro atendimento', unlocked: completedCount >= 1, color: 'orange' },
     { id: 'ten', icon: TrendingUp, label: '10 serviços', desc: 'Conclua 10 atendimentos', unlocked: completedCount >= 10, color: 'sky' },
-    { id: 'fifty', icon: Award, label: '50 serviços', desc: 'Conclua 50 atendimentos', unlocked: completedCount >= 50, color: 'amber' },
-    { id: 'fiveStar', icon: Star, label: 'Nota 5.0', desc: 'Alcance nota média 5.0', unlocked: rating >= 5.0, color: 'amber' },
-    { id: 'highRated', icon: Trophy, label: 'Bem avaliado', desc: 'Alcance nota 4.5+', unlocked: rating >= 4.5, color: 'emerald' },
-    { id: 'busy', icon: Zap, label: 'Movimentado', desc: 'Ganhe R$ 500+ hoje', unlocked: earningsToday >= 500, color: 'amber' },
+    { id: 'fifty', icon: Award, label: '50 serviços', desc: 'Conclua 50 atendimentos', unlocked: completedCount >= 50, color: 'sky' },
+    { id: 'fiveStar', icon: Star, label: 'Nota 5.0', desc: 'Alcance nota média 5.0', unlocked: rating >= 5.0, color: 'sky' },
+    { id: 'highRated', icon: Trophy, label: 'Bem avaliado', desc: 'Alcance nota 4.5+', unlocked: rating >= 4.5, color: 'orange' },
+    { id: 'busy', icon: Zap, label: 'Movimentado', desc: 'Ganhe R$ 500+ hoje', unlocked: earningsToday >= 500, color: 'sky' },
   ]
 
   const colorMap: Record<string, string> = {
-    emerald: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400',
+    orange: 'border-orange-500/40 bg-orange-500/10 text-orange-400',
     sky: 'border-sky-500/40 bg-sky-500/10 text-sky-400',
-    amber: 'border-amber-500/40 bg-amber-500/10 text-amber-400',
+    sky: 'border-sky-500/40 bg-sky-500/10 text-sky-400',
   }
 
   return (
     <div className="space-y-4">
       {/* Profile header */}
       <div className="relative overflow-hidden rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-4">
-        <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-emerald-500/10 blur-2xl" />
+        <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-orange-500/10 blur-2xl" />
         <div className="relative flex items-center gap-3">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 text-xl font-extrabold text-slate-950 shadow-lg shadow-emerald-500/30">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-400 to-orange-600 text-xl font-extrabold text-slate-950 shadow-lg shadow-orange-500/30">
             {state.name?.slice(0, 2).toUpperCase()}
           </div>
           <div className="flex-1">
             <p className="text-base font-extrabold text-white">{state.name}</p>
             <p className="text-xs text-slate-400">{state.vehicle}</p>
             <div className="mt-1 flex items-center gap-2">
-              <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-400">
+              <Badge variant="outline" className="border-orange-500/40 bg-orange-500/10 text-orange-400">
                 <Shield className="mr-1 h-2.5 w-2.5" /> Verificado
               </Badge>
               <span className="text-[10px] text-slate-500">Placa: {state.plate}</span>
@@ -1055,25 +1055,25 @@ function ProfileView({ state, history }: { state: any; history: ServiceRecord[] 
       <div className="grid grid-cols-2 gap-2">
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
           <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase text-slate-500">
-            <TrendingUp className="h-3 w-3 text-emerald-400" /> Serviços totais
+            <TrendingUp className="h-3 w-3 text-orange-400" /> Serviços totais
           </div>
           <p className="text-xl font-extrabold text-white">{completedCount}</p>
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
           <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase text-slate-500">
-            <Wallet className="h-3 w-3 text-amber-400" /> Ganhos hoje
+            <Wallet className="h-3 w-3 text-sky-400" /> Ganhos hoje
           </div>
-          <p className="text-xl font-extrabold text-amber-400">R$ {earningsToday}</p>
+          <p className="text-xl font-extrabold text-sky-400">R$ {earningsToday}</p>
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
           <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase text-slate-500">
-            <Star className="h-3 w-3 text-amber-400" /> Nota média
+            <Star className="h-3 w-3 text-sky-400" /> Nota média
           </div>
           <p className="text-xl font-extrabold text-white">{rating.toFixed(1)} ★</p>
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
           <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase text-slate-500">
-            <Wallet className="h-3 w-3 text-emerald-400" /> Total acumulado
+            <Wallet className="h-3 w-3 text-orange-400" /> Total acumulado
           </div>
           <p className="text-xl font-extrabold text-white">R$ {totalEarnings}</p>
         </div>
@@ -1098,7 +1098,7 @@ function ProfileView({ state, history }: { state: any; history: ServiceRecord[] 
                 <p className="text-[10px] font-bold text-white">{a.label}</p>
                 <p className="text-[8px] text-slate-500">{a.desc}</p>
                 {a.unlocked && (
-                  <CheckCircle2 className="absolute right-1 top-1 h-3 w-3 text-emerald-400" />
+                  <CheckCircle2 className="absolute right-1 top-1 h-3 w-3 text-orange-400" />
                 )}
               </div>
             )
@@ -1110,10 +1110,10 @@ function ProfileView({ state, history }: { state: any; history: ServiceRecord[] 
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
         <div className="flex items-center justify-between">
           <span className="flex items-center gap-1.5 text-xs text-slate-400">
-            <Power className={`h-3.5 w-3.5 ${state.online ? 'text-emerald-400' : 'text-slate-500'}`} />
+            <Power className={`h-3.5 w-3.5 ${state.online ? 'text-orange-400' : 'text-slate-500'}`} />
             Status atual
           </span>
-          <span className={`text-xs font-bold ${state.online ? 'text-emerald-400' : 'text-slate-500'}`}>
+          <span className={`text-xs font-bold ${state.online ? 'text-orange-400' : 'text-slate-500'}`}>
             {state.online ? 'Online' : 'Offline'}
           </span>
         </div>
@@ -1129,12 +1129,12 @@ function ClientRatingCard({ svc, onRate }: { svc: ServiceData; onRate: (stars: n
 
   if (svc.clientRating) {
     return (
-      <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 p-3 text-center">
-        <CheckCircle2 className="mx-auto mb-1 h-6 w-6 text-emerald-400" />
+      <div className="rounded-xl border border-orange-500/40 bg-orange-500/10 p-3 text-center">
+        <CheckCircle2 className="mx-auto mb-1 h-6 w-6 text-orange-400" />
         <p className="text-sm font-bold text-white">Cliente avaliado!</p>
         <div className="mt-1 flex items-center justify-center gap-1">
           {Array.from({ length: 5 }).map((_, i) => (
-            <Star key={i} className={`h-4 w-4 ${i < svc.clientRating!.stars ? 'text-amber-400' : 'text-slate-700'}`} fill="currentColor" />
+            <Star key={i} className={`h-4 w-4 ${i < svc.clientRating!.stars ? 'text-sky-400' : 'text-slate-700'}`} fill="currentColor" />
           ))}
         </div>
         {svc.clientRating.comment && <p className="mt-1 text-xs italic text-slate-400">"{svc.clientRating.comment}"</p>}

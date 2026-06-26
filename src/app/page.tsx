@@ -50,11 +50,9 @@ export default function Home() {
       <header className="sticky top-0 z-40 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-lg">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-slate-950 shadow-lg shadow-amber-500/20">
-              <Shield className="h-5 w-5" />
-            </div>
+            <img src="/help-bibi-logo.png" alt="Help Bibi" className="h-10 w-auto rounded-lg" />
             <div className="leading-tight">
-              <p className="text-base font-extrabold tracking-tight">SocorroJá</p>
+              <p className="text-base font-extrabold tracking-tight">Help Bibi</p>
               <p className="text-[10px] text-slate-400">auto socorro por aplicativo</p>
             </div>
           </div>
@@ -70,7 +68,7 @@ export default function Home() {
             <ThemeToggle />
             <Button
               onClick={() => document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth' })}
-              className="bg-amber-500 text-slate-950 hover:bg-amber-400"
+              className="bg-sky-500 text-slate-950 hover:bg-sky-400"
             >
               Ver demo
             </Button>
@@ -82,8 +80,8 @@ export default function Home() {
       <section className="relative overflow-hidden">
         {/* glow background */}
         <div className="pointer-events-none absolute inset-0">
-          <div className="absolute -left-40 top-0 h-96 w-96 rounded-full bg-amber-500/20 blur-[120px]" />
-          <div className="absolute right-0 top-40 h-96 w-96 rounded-full bg-emerald-500/15 blur-[120px]" />
+          <div className="absolute -left-40 top-0 h-96 w-96 rounded-full bg-sky-500/20 blur-[120px]" />
+          <div className="absolute right-0 top-40 h-96 w-96 rounded-full bg-orange-500/15 blur-[120px]" />
           <div className="absolute bottom-0 left-1/3 h-72 w-72 rounded-full bg-sky-500/10 blur-[100px]" />
         </div>
         {/* grid pattern */}
@@ -103,7 +101,7 @@ export default function Home() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
             >
-              <Badge className="mb-4 border-amber-500/40 bg-amber-500/10 text-amber-400 hover:bg-amber-500/10">
+              <Badge className="mb-4 border-sky-500/40 bg-sky-500/10 text-sky-400 hover:bg-sky-500/10">
                 <Sparkles className="mr-1 h-3 w-3" /> Plataforma estilo Uber para socorro veicular
               </Badge>
             </motion.div>
@@ -114,7 +112,7 @@ export default function Home() {
               className="text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl"
             >
               Socorro automotivo
-              <span className="block bg-gradient-to-r from-amber-300 via-amber-400 to-amber-500 bg-clip-text text-transparent">
+              <span className="block bg-gradient-to-r from-sky-300 via-sky-400 to-sky-500 bg-clip-text text-transparent">
                 na palma da mão
               </span>
             </motion.h1>
@@ -132,7 +130,7 @@ export default function Home() {
               <Button
                 size="lg"
                 onClick={() => document.getElementById('demo')?.scrollIntoView({ behavior: 'smooth' })}
-                className="bg-amber-500 px-7 py-6 text-base font-bold text-slate-950 hover:bg-amber-400"
+                className="bg-sky-500 px-7 py-6 text-base font-bold text-slate-950 hover:bg-sky-400"
               >
                 Experimentar a demo
                 <ArrowRight className="ml-2 h-5 w-5" />
@@ -150,16 +148,16 @@ export default function Home() {
             {/* trust row */}
             <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-3 text-xs text-slate-400">
               <span className="flex items-center gap-1.5">
-                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" /> Prestadores verificados
+                <CheckCircle2 className="h-3.5 w-3.5 text-orange-400" /> Prestadores verificados
               </span>
               <span className="flex items-center gap-1.5">
-                <Clock className="h-3.5 w-3.5 text-amber-400" /> Atendimento 24h
+                <Clock className="h-3.5 w-3.5 text-sky-400" /> Atendimento 24h
               </span>
               <span className="flex items-center gap-1.5">
                 <Lock className="h-3.5 w-3.5 text-sky-400" /> Pagamento protegido
               </span>
               <span className="flex items-center gap-1.5">
-                <Star className="h-3.5 w-3.5 text-amber-400" /> Avaliação média 4.9
+                <Star className="h-3.5 w-3.5 text-sky-400" /> Avaliação média 4.9
               </span>
             </div>
           </div>
@@ -185,7 +183,7 @@ export default function Home() {
       <section id="como-funciona" className="mx-auto w-full max-w-7xl px-4 py-16 sm:px-6 lg:py-24">
         <SectionHead
           eyebrow="Fluxo simples"
-          title="Como funciona o SocorroJá"
+          title="Como funciona o Help Bibi"
           subtitle="Da solicitação ao destino final, tudo rastreado em tempo real — cliente e prestador na mesma página."
         />
         <div className="mt-12 grid gap-6 md:grid-cols-3">
@@ -195,7 +193,7 @@ export default function Home() {
               icon={Zap}
               title="Cliente solicita"
               desc="Escolhe o tipo de socorro (reboque, pneu, bateria...), informa local e destino. O preço é calculado na hora."
-              color="amber"
+              color="sky"
             />
           </RevealSection>
           <RevealSection delay={0.1}>
@@ -204,7 +202,7 @@ export default function Home() {
               icon={Navigation}
               title="Prestador mais próximo recebe"
               desc="O sistema localiza o prestador mais próximo e envia a chamada. Ele confere o valor, distância e dá o aceite."
-              color="emerald"
+              color="orange"
             />
           </RevealSection>
           <RevealSection delay={0.2}>
@@ -224,7 +222,7 @@ export default function Home() {
         <div className="mx-auto grid max-w-7xl gap-8 px-4 py-16 sm:px-6 lg:grid-cols-2 lg:py-24">
           <FeatureColumn
             tag="Para clientes"
-            tagColor="amber"
+            tagColor="sky"
             title="Socorro rápido, sem stress"
             features={[
               { icon: MapPin, title: 'Localização em tempo real', desc: 'Veja o prestador se aproximando no mapa.' },
@@ -235,7 +233,7 @@ export default function Home() {
           />
           <FeatureColumn
             tag="Para prestadores"
-            tagColor="emerald"
+            tagColor="orange"
             title="Renda extra no seu tempo"
             features={[
               { icon: Navigation, title: 'Chamadas próximas', desc: 'Receba solicitações na sua região.' },
@@ -263,8 +261,8 @@ export default function Home() {
           <PriceCard icon={Wrench} name="Pane Mecânica" base="R$ 110" desc="Outro problema mecânico" />
         </div>
         <div className="mx-auto mt-8 flex max-w-2xl items-center justify-center gap-6 rounded-2xl border border-slate-800 bg-slate-900/50 p-4 text-center text-xs text-slate-400">
-          <span className="flex items-center gap-1.5"><CreditCard className="h-3.5 w-3.5 text-amber-400" /> PIX, cartão ou dinheiro</span>
-          <span className="flex items-center gap-1.5"><Lock className="h-3.5 w-3.5 text-emerald-400" /> Pagamento protegido</span>
+          <span className="flex items-center gap-1.5"><CreditCard className="h-3.5 w-3.5 text-sky-400" /> PIX, cartão ou dinheiro</span>
+          <span className="flex items-center gap-1.5"><Lock className="h-3.5 w-3.5 text-orange-400" /> Pagamento protegido</span>
           <span className="flex items-center gap-1.5"><TrendingUp className="h-3.5 w-3.5 text-sky-400" /> +R$ 4,50/km até destino</span>
         </div>
       </section>
@@ -298,7 +296,7 @@ export default function Home() {
               initials="MP"
               text="Como prestador, consigo ver o valor e o destino antes de aceitar. Em 3 meses virei minha principal renda. Recomendo."
               stars={5}
-              color="emerald"
+              color="orange"
             />
           </div>
         </div>
@@ -309,7 +307,7 @@ export default function Home() {
         <div className="mx-auto max-w-4xl px-4 py-16 sm:px-6 lg:py-24">
           <SectionHead
             eyebrow="Ranking ao vivo"
-            title="Top prestadores SocorroJá"
+            title="Top prestadores Help Bibi"
             subtitle="Ranking em tempo real dos prestadores mais ativos. Atualiza automaticamente conforme serviços são concluídos."
           />
           <div className="mt-10">
@@ -323,7 +321,7 @@ export default function Home() {
         <SectionHead
           eyebrow="Dúvidas frequentes"
           title="Perguntas e respostas"
-          subtitle="Tudo o que você precisa saber antes de usar o SocorroJá."
+          subtitle="Tudo o que você precisa saber antes de usar o Help Bibi."
         />
         <div className="mt-10 space-y-3">
           <FaqItem q="Como o prestador mais próximo é escolhido?" a="Calculamos a distância em linha reta (haversine) entre cada prestador online e o local do atendimento. O mais próximo recebe a chamada primeiro; se não responder em 12 segundos, reofertamos automaticamente ao próximo." />
@@ -345,7 +343,7 @@ export default function Home() {
 
         {!demoOpen ? (
           <div className="mx-auto mt-10 max-w-xl rounded-2xl border border-slate-800 bg-slate-900/50 p-8 text-center">
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-500/15 text-amber-400">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-sky-500/15 text-sky-400">
               <Zap className="h-7 w-7" />
             </div>
             <h3 className="text-xl font-bold">Pronto para começar?</h3>
@@ -355,7 +353,7 @@ export default function Home() {
             </p>
             <Button
               onClick={() => setDemoOpen(true)}
-              className="mt-5 bg-amber-500 px-6 py-5 text-sm font-bold text-slate-950 hover:bg-amber-400"
+              className="mt-5 bg-sky-500 px-6 py-5 text-sm font-bold text-slate-950 hover:bg-sky-400"
             >
               Iniciar demo ao vivo
               <ChevronDown className="ml-2 h-4 w-4" />
@@ -373,14 +371,14 @@ export default function Home() {
             Leve o socorro para a palma da mão
           </h2>
           <p className="mx-auto mt-4 max-w-2xl text-slate-400">
-            Junte-se a milhares de motoristas e prestadores que já usam o SocorroJá para resolver
+            Junte-se a milhares de motoristas e prestadores que já usam o Help Bibi para resolver
             imprevistos na estrada com agilidade e segurança.
           </p>
           <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
-            <Button size="lg" className="bg-amber-500 px-7 py-6 text-base font-bold text-slate-950 hover:bg-amber-400">
+            <Button size="lg" className="bg-sky-500 px-7 py-6 text-base font-bold text-slate-950 hover:bg-sky-400">
               <Shield className="mr-2 h-5 w-5" /> Sou cliente
             </Button>
-            <Button size="lg" variant="outline" className="border-emerald-600 bg-emerald-600/10 px-7 py-6 text-base font-bold text-emerald-400 hover:bg-emerald-600/20">
+            <Button size="lg" variant="outline" className="border-orange-600 bg-orange-600/10 px-7 py-6 text-base font-bold text-orange-400 hover:bg-orange-600/20">
               <Truck className="mr-2 h-5 w-5" /> Quero ser prestador
             </Button>
           </div>
@@ -393,10 +391,8 @@ export default function Home() {
           <div className="grid gap-8 md:grid-cols-4">
             <div>
               <div className="flex items-center gap-2">
-                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500 text-slate-950">
-                  <Shield className="h-4 w-4" />
-                </div>
-                <p className="text-sm font-extrabold">SocorroJá</p>
+                <img src="/help-bibi-logo.png" alt="Help Bibi" className="h-8 w-auto rounded-md" />
+                <p className="text-sm font-extrabold">Help Bibi</p>
               </div>
               <p className="mt-3 text-xs text-slate-500">
                 Plataforma de auto socorro por aplicativo. Conectando motoristas e prestadores em tempo real.
@@ -407,7 +403,7 @@ export default function Home() {
             <FooterCol title="Suporte" links={['Central de ajuda', 'Contato', 'Termos', 'Privacidade']} />
           </div>
           <div className="mt-8 flex flex-col items-center justify-between gap-3 border-t border-slate-800 pt-6 text-xs text-slate-500 sm:flex-row">
-            <p>© 2025 SocorroJá · Protótipo demonstrativo</p>
+            <p>© 2025 Help Bibi · Protótipo demonstrativo</p>
             <p>Feito com Next.js + Socket.IO · Tempo real</p>
           </div>
         </div>
@@ -421,7 +417,7 @@ export default function Home() {
 function Stat({ icon: Icon, value, label, numeric, suffix }: { icon: any; value: string; label: string; numeric?: number; suffix?: string }) {
   return (
     <div className="px-4 py-5 text-center">
-      <Icon className="mx-auto mb-1.5 h-5 w-5 text-amber-400" />
+      <Icon className="mx-auto mb-1.5 h-5 w-5 text-sky-400" />
       <p className="text-2xl font-extrabold text-white">
         {numeric !== undefined ? <AnimatedCounter value={numeric} suffix={suffix} /> : value}
       </p>
@@ -439,7 +435,7 @@ function SectionHead({ eyebrow, title, subtitle }: { eyebrow: string; title: str
       transition={{ duration: 0.5 }}
       className="mx-auto max-w-2xl text-center"
     >
-      <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-amber-400">{eyebrow}</p>
+      <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-sky-400">{eyebrow}</p>
       <h2 className="text-3xl font-extrabold tracking-tight sm:text-4xl">{title}</h2>
       <p className="mt-3 text-slate-400">{subtitle}</p>
     </motion.div>
@@ -470,11 +466,11 @@ function StepCard({
   icon: any
   title: string
   desc: string
-  color: 'amber' | 'emerald' | 'sky'
+  color: 'sky' | 'orange' | 'sky'
 }) {
   const colorMap = {
-    amber: 'from-amber-500/20 to-amber-500/5 text-amber-400 border-amber-500/30',
-    emerald: 'from-emerald-500/20 to-emerald-500/5 text-emerald-400 border-emerald-500/30',
+    sky: 'from-sky-500/20 to-sky-500/5 text-sky-400 border-sky-500/30',
+    orange: 'from-orange-500/20 to-orange-500/5 text-orange-400 border-orange-500/30',
     sky: 'from-sky-500/20 to-sky-500/5 text-sky-400 border-sky-500/30',
   }
   return (
@@ -498,11 +494,11 @@ function FeatureColumn({
   features,
 }: {
   tag: string
-  tagColor: 'amber' | 'emerald'
+  tagColor: 'sky' | 'orange'
   title: string
   features: { icon: any; title: string; desc: string }[]
 }) {
-  const cm = tagColor === 'amber' ? 'border-amber-500/40 bg-amber-500/10 text-amber-400' : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+  const cm = tagColor === 'sky' ? 'border-sky-500/40 bg-sky-500/10 text-sky-400' : 'border-orange-500/40 bg-orange-500/10 text-orange-400'
   return (
     <div>
       <Badge className={`mb-3 ${cm} hover:${cm}`}>{tag}</Badge>
@@ -542,7 +538,7 @@ function FooterCol({ title, links }: { title: string; links: string[] }) {
 function HeroPhoneMock() {
   return (
     <div className="relative">
-      <div className="absolute -inset-6 rounded-[2.5rem] bg-gradient-to-tr from-amber-500/20 via-transparent to-emerald-500/20 blur-2xl" />
+      <div className="absolute -inset-6 rounded-[2.5rem] bg-gradient-to-tr from-sky-500/20 via-transparent to-orange-500/20 blur-2xl" />
       <div className="relative mx-auto h-[560px] w-[280px] rounded-[2.5rem] border-[8px] border-slate-800 bg-slate-950 shadow-2xl">
         {/* notch */}
         <div className="absolute left-1/2 top-2 h-5 w-24 -translate-x-1/2 rounded-full bg-slate-800" />
@@ -550,10 +546,10 @@ function HeroPhoneMock() {
           {/* mini header */}
           <div className="flex items-center justify-between px-2 py-2">
             <div className="flex items-center gap-1.5">
-              <div className="h-6 w-6 rounded-md bg-amber-500" />
-              <span className="text-[11px] font-bold">SocorroJá</span>
+              <div className="h-6 w-6 rounded-md bg-sky-500" />
+              <span className="text-[11px] font-bold">Help Bibi</span>
             </div>
-            <div className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+            <div className="h-2 w-2 animate-pulse rounded-full bg-orange-400" />
           </div>
           {/* map */}
           <div className="relative mt-1 flex-1 overflow-hidden rounded-2xl bg-slate-900">
@@ -568,29 +564,29 @@ function HeroPhoneMock() {
               </svg>
             </div>
             <div className="absolute left-1/3 top-1/2 h-6 w-6 -translate-x-1/2 -translate-y-1/2">
-              <div className="absolute -inset-3 animate-ping rounded-full bg-amber-400/40" />
-              <div className="relative flex h-6 w-6 items-center justify-center rounded-full bg-amber-500 text-slate-950">
+              <div className="absolute -inset-3 animate-ping rounded-full bg-sky-400/40" />
+              <div className="relative flex h-6 w-6 items-center justify-center rounded-full bg-sky-500 text-slate-950">
                 <MapPin className="h-3.5 w-3.5" />
               </div>
             </div>
-            <div className="absolute right-6 top-10 flex h-6 w-6 items-center justify-center rounded-full border-2 border-emerald-300 bg-emerald-500 text-white">
+            <div className="absolute right-6 top-10 flex h-6 w-6 items-center justify-center rounded-full border-2 border-orange-300 bg-orange-500 text-white">
               <Truck className="h-3 w-3" />
             </div>
             <svg className="absolute inset-0 h-full w-full" preserveAspectRatio="none">
-              <line x1="33%" y1="50%" x2="75%" y2="20%" stroke="#10b981" strokeWidth="2" strokeDasharray="4 4" />
+              <line x1="33%" y1="50%" x2="75%" y2="20%" stroke="#FFA500" strokeWidth="2" strokeDasharray="4 4" />
             </svg>
           </div>
           {/* card */}
           <div className="mt-2 rounded-2xl border border-slate-800 bg-slate-900/80 p-3">
             <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500 text-xs font-bold text-white">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-orange-500 text-xs font-bold text-white">
                 JM
               </div>
               <div className="flex-1">
                 <p className="text-[11px] font-bold">João Mecânico</p>
                 <p className="text-[9px] text-slate-400">Guincho · ABC1D23</p>
               </div>
-              <div className="flex items-center gap-0.5 text-amber-400">
+              <div className="flex items-center gap-0.5 text-sky-400">
                 <Star className="h-2.5 w-2.5" fill="currentColor" />
                 <span className="text-[9px] font-bold">4.9</span>
               </div>
@@ -598,7 +594,7 @@ function HeroPhoneMock() {
             <div className="mt-2 grid grid-cols-3 gap-1 text-center">
               <div className="rounded bg-slate-800/60 py-1">
                 <p className="text-[8px] text-slate-500">ETA</p>
-                <p className="text-[10px] font-bold text-emerald-400">8 min</p>
+                <p className="text-[10px] font-bold text-orange-400">8 min</p>
               </div>
               <div className="rounded bg-slate-800/60 py-1">
                 <p className="text-[8px] text-slate-500">DIST</p>
@@ -606,7 +602,7 @@ function HeroPhoneMock() {
               </div>
               <div className="rounded bg-slate-800/60 py-1">
                 <p className="text-[8px] text-slate-500">VALOR</p>
-                <p className="text-[10px] font-bold text-amber-400">R$180</p>
+                <p className="text-[10px] font-bold text-sky-400">R$180</p>
               </div>
             </div>
           </div>
@@ -622,7 +618,7 @@ function DemoLive() {
     <div className="mt-10">
       <div className="mb-6 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
         <div className="flex items-center gap-2 text-sm text-slate-400">
-          <span className="flex h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+          <span className="flex h-2 w-2 animate-pulse rounded-full bg-orange-400" />
           Conexão em tempo real ativa · WebSocket na porta 3003
         </div>
         <button
@@ -639,7 +635,7 @@ function DemoLive() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <PhoneFrame label="App do Cliente" color="amber">
+          <PhoneFrame label="App do Cliente" color="sky">
             <ClientPanel />
           </PhoneFrame>
         </motion.div>
@@ -648,7 +644,7 @@ function DemoLive() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.1 }}
         >
-          <PhoneFrame label="App do Prestador 1" color="emerald">
+          <PhoneFrame label="App do Prestador 1" color="orange">
             <ProviderPanel />
           </PhoneFrame>
         </motion.div>
@@ -660,7 +656,7 @@ function DemoLive() {
               exit={{ opacity: 0, scale: 0.8, y: 30 }}
               transition={{ duration: 0.4 }}
             >
-              <PhoneFrame label="App do Prestador 2" color="emerald">
+              <PhoneFrame label="App do Prestador 2" color="orange">
                 <ProviderPanel />
               </PhoneFrame>
             </motion.div>
@@ -681,14 +677,14 @@ function PhoneFrame({
   children,
 }: {
   label: string
-  color: 'amber' | 'emerald'
+  color: 'sky' | 'orange'
   children: React.ReactNode
 }) {
-  const cm = color === 'amber' ? 'from-amber-500/20 text-amber-400' : 'from-emerald-500/20 text-emerald-400'
+  const cm = color === 'sky' ? 'from-sky-500/20 text-sky-400' : 'from-orange-500/20 text-orange-400'
   return (
     <div className="flex flex-col items-center">
       <div className="mb-3 flex items-center gap-2">
-        <span className={`h-2 w-2 rounded-full ${color === 'amber' ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+        <span className={`h-2 w-2 rounded-full ${color === 'sky' ? 'bg-sky-500' : 'bg-orange-500'}`} />
         <span className="text-sm font-semibold text-white">{label}</span>
       </div>
       <div className="relative w-full max-w-[380px]">
@@ -707,18 +703,18 @@ function PriceCard({ icon: Icon, name, base, desc, featured }: { icon: any; name
     <div
       className={`relative overflow-hidden rounded-2xl border p-5 transition hover:-translate-y-0.5 ${
         featured
-          ? 'border-amber-500/50 bg-gradient-to-br from-amber-500/10 to-slate-900/40 shadow-lg shadow-amber-500/10'
+          ? 'border-sky-500/50 bg-gradient-to-br from-sky-500/10 to-slate-900/40 shadow-lg shadow-sky-500/10'
           : 'border-slate-800 bg-slate-900/40 hover:border-slate-700'
       }`}
     >
       {featured && (
-        <span className="absolute right-3 top-3 rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-bold text-slate-950">
+        <span className="absolute right-3 top-3 rounded-full bg-sky-500 px-2 py-0.5 text-[10px] font-bold text-slate-950">
           MAIS PEDIDO
         </span>
       )}
       <div
         className={`mb-3 inline-flex h-11 w-11 items-center justify-center rounded-xl ${
-          featured ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-800 text-slate-300'
+          featured ? 'bg-sky-500/20 text-sky-400' : 'bg-slate-800 text-slate-300'
         }`}
       >
         <Icon className="h-5 w-5" />
@@ -734,18 +730,18 @@ function PriceCard({ icon: Icon, name, base, desc, featured }: { icon: any; name
 }
 
 function Testimonial({
-  name, role, initials, text, stars, color = 'amber',
+  name, role, initials, text, stars, color = 'sky',
 }: {
-  name: string; role: string; initials: string; text: string; stars: number; color?: 'amber' | 'emerald'
+  name: string; role: string; initials: string; text: string; stars: number; color?: 'sky' | 'orange'
 }) {
-  const grad = color === 'amber' ? 'from-amber-500 to-amber-700' : 'from-emerald-500 to-emerald-700'
+  const grad = color === 'sky' ? 'from-sky-500 to-sky-700' : 'from-orange-500 to-orange-700'
   return (
     <div className="relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
       <Quote className="absolute -right-2 -top-2 h-16 w-16 text-slate-800/60" />
       <div className="relative">
         <div className="mb-3 flex gap-0.5">
           {Array.from({ length: stars }).map((_, i) => (
-            <Star key={i} className="h-3.5 w-3.5 text-amber-400" fill="currentColor" />
+            <Star key={i} className="h-3.5 w-3.5 text-sky-400" fill="currentColor" />
           ))}
         </div>
         <p className="text-sm leading-relaxed text-slate-200">&ldquo;{text}&rdquo;</p>
@@ -772,7 +768,7 @@ function FaqItem({ q, a }: { q: string; a: string }) {
         className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition hover:bg-slate-900/60"
       >
         <span className="flex items-center gap-2 text-sm font-semibold text-white">
-          <HelpCircle className="h-4 w-4 shrink-0 text-amber-400" />
+          <HelpCircle className="h-4 w-4 shrink-0 text-sky-400" />
           {q}
         </span>
         <span className={`shrink-0 rounded-full bg-slate-800 p-1 text-slate-300 transition ${open ? 'rotate-180' : ''}`}>

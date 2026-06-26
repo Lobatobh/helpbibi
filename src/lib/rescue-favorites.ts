@@ -2,7 +2,7 @@
 
 import type { LatLng } from '@/lib/rescue-types'
 
-const KEY = 'socorroja:favorites'
+const KEY = 'helpbibi:favorites'
 
 export type FavoriteLocation = {
   id: string

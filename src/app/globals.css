@@ -121,7 +121,7 @@
   }
 }
 
-/* Light mode overrides for the dark-themed SocorroJá app.
+/* Light mode overrides for the dark-themed Help Bibi app.
    When html has class "light" (set by next-themes), override the
    slate-950/900 backgrounds and white text to light variants. */
 html.light {
@@ -142,6 +142,42 @@ html.dark, html:not(.light) {
   --sj-text-muted: #94a3b8;
   --sj-text-subtle: #64748b;
 }
+
+/* Help Bibi brand colors: Blue #00B0FF (primary) + Orange #FFA500 (accent) */
+/* Override Tailwind sky to match brand blue */
+.bg-sky-500 { background-color: #00B0FF !important; }
+.bg-sky-400 { background-color: #38bdf8 !important; }
+.bg-sky-600 { background-color: #0096e0 !important; }
+.text-sky-500 { color: #00B0FF !important; }
+.text-sky-400 { color: #38bdf8 !important; }
+.border-sky-500\/40 { border-color: rgba(0, 176, 255, 0.4) !important; }
+.border-sky-500\/60 { border-color: rgba(0, 176, 255, 0.6) !important; }
+.border-sky-500\/30 { border-color: rgba(0, 176, 255, 0.3) !important; }
+.bg-sky-500\/10 { background-color: rgba(0, 176, 255, 0.1) !important; }
+.bg-sky-500\/15 { background-color: rgba(0, 176, 255, 0.15) !important; }
+.bg-sky-500\/20 { background-color: rgba(0, 176, 255, 0.2) !important; }
+.ring-sky-500 { --tw-ring-color: #00B0FF !important; }
+.from-sky-400 { --tw-gradient-from: #38bdf8 !important; }
+.from-sky-500 { --tw-gradient-from: #00B0FF !important; }
+.to-sky-600 { --tw-gradient-to: #0096e0 !important; }
+.to-sky-700 { --tw-gradient-to: #0078b8 !important; }
+
+/* Override Tailwind orange to match brand orange #FFA500 */
+.bg-orange-500 { background-color: #FFA500 !important; }
+.bg-orange-400 { background-color: #ffb733 !important; }
+.bg-orange-600 { background-color: #e09000 !important; }
+.text-orange-400 { color: #ffb733 !important; }
+.text-orange-500 { color: #FFA500 !important; }
+.border-orange-500\/40 { border-color: rgba(255, 165, 0, 0.4) !important; }
+.border-orange-500\/60 { border-color: rgba(255, 165, 0, 0.6) !important; }
+.border-orange-500\/30 { border-color: rgba(255, 165, 0, 0.3) !important; }
+.bg-orange-500\/10 { background-color: rgba(255, 165, 0, 0.1) !important; }
+.bg-orange-500\/15 { background-color: rgba(255, 165, 0, 0.15) !important; }
+.bg-orange-500\/20 { background-color: rgba(255, 165, 0, 0.2) !important; }
+.from-orange-400 { --tw-gradient-from: #ffb733 !important; }
+.from-orange-500 { --tw-gradient-from: #FFA500 !important; }
+.to-orange-600 { --tw-gradient-to: #e09000 !important; }
+.to-orange-700 { --tw-gradient-to: #b87800 !important; }
 
 /* Apply light-mode background/text to the root wrapper */
 html.light body {
@@ -171,10 +207,9 @@ html.light .border-slate-800 { border-color: var(--sj-border) !important; }
 html.light .border-slate-800\/60 { border-color: var(--sj-border) !important; }
 html.light .border-slate-700 { border-color: #cbd5e1 !important; }
 
-/* Keep accent colors (amber, emerald, sky, rose) vibrant in both modes */
-html.light .bg-amber-500 { background-color: #f59e0b !important; }
-html.light .bg-emerald-500 { background-color: #10b981 !important; }
-html.light .bg-sky-500 { background-color: #0ea5e9 !important; }
+/* Keep accent colors (sky=blue, orange, rose) vibrant in both modes */
+html.light .bg-sky-500 { background-color: #00B0FF !important; }
+html.light .bg-orange-500 { background-color: #FFA500 !important; }
 
 /* Inputs and selects in light mode */
 html.light select,

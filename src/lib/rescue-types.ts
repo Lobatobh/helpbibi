@@ -1,4 +1,4 @@
-// Shared types for the SocorroJá rescue platform
+// Shared types for the Help Bibi rescue platform
 
 export type Role = 'client' | 'provider'
 
@@ -174,13 +174,13 @@ export const PAYMENT_METHODS: { id: PaymentMethod; label: string; desc: string; 
 ]
 
 export const STATUS_LABELS: Record<ServiceStatus, { label: string; color: string }> = {
-  searching: { label: 'Procurando prestador', color: 'amber' },
-  offered: { label: 'Chamada enviada', color: 'amber' },
-  accepted: { label: 'Prestador a caminho', color: 'emerald' },
-  arriving: { label: 'Chegando no local', color: 'emerald' },
-  arrived: { label: 'No local do atendimento', color: 'emerald' },
+  searching: { label: 'Procurando prestador', color: 'sky' },
+  offered: { label: 'Chamada enviada', color: 'sky' },
+  accepted: { label: 'Prestador a caminho', color: 'orange' },
+  arriving: { label: 'Chegando no local', color: 'orange' },
+  arrived: { label: 'No local do atendimento', color: 'orange' },
   in_progress: { label: 'Serviço em andamento', color: 'sky' },
-  completed: { label: 'Concluído', color: 'emerald' },
+  completed: { label: 'Concluído', color: 'orange' },
   cancelled: { label: 'Cancelado', color: 'rose' },
   expired: { label: 'Sem prestadores', color: 'rose' },
 }

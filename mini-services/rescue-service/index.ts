@@ -2,7 +2,7 @@ import { createServer } from 'http'
 import { Server } from 'socket.io'
 
 // ============================================================
-// SocorroJá — Real-time rescue orchestration service
+// Help Bibi — Real-time rescue orchestration service
 // Handles: provider presence, service requests, live tracking,
 //          ratings, payment method, provider stats, chat, promos.
 // ============================================================
@@ -14,7 +14,7 @@ const httpServer = createServer((req, res) => {
     return
   }
   res.writeHead(200, { 'Content-Type': 'text/plain' })
-  res.end('SocorroJá rescue-service running')
+  res.end('Help Bibi rescue-service running')
 })
 
 const io = new Server(httpServer, {
@@ -820,7 +820,7 @@ setInterval(() => {
 
 const PORT = 3003
 httpServer.listen(PORT, () => {
-  console.log(`🚑 SocorroJá rescue-service running on port ${PORT}`)
+  console.log(`🚑 Help Bibi rescue-service running on port ${PORT}`)
 })
 
 process.on('SIGTERM', () => httpServer.close(() => process.exit(0)))
