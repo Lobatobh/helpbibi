@@ -669,3 +669,148 @@ Task: Consolidar identidade Help Bibi no código, corrigir cores exatas (#00BFFF
   - Sistema de ranking semanal/mensal.
   - Configurar cores brand no tailwind.config.ts para evitar CSS !important.
 - **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy).
+
+---
+Task ID: 12 (FASE 12 — Fundação Real do Backend e Persistência)
+Agent: main (user-driven)
+Task: Sair do protótipo em memória/localStorage e preparar a Help Bibi para MVP com banco de dados, modelos persistentes e camada de domínio.
+
+## Diagnóstico técnico inicial
+### Dados em memória (rescue-service/index.ts)
+- `providers` Map: todos os prestadores ativos (id, name, vehicle, plate, rating, position, etc.)
+- `clients` Map: clientes registrados (id, socketId, name)
+- `services` Map: todas as solicitações de serviço ativas/históricas
+- `chats` Map: mensagens de chat por serviceId
+- `clientLoyalty` Map: pontos de fidelidade por nome de cliente
+- `socketToRole` Map: mapeamento socket → role
+
+### Dados em localStorage (frontend)
+- `helpbibi:history` — histórico de serviços do cliente/prestador
+- `helpbibi:favorites` — locais favoritos
+- `socorroja:notif` (legado) — configuração de notificações
+
+### Riscos se o servidor reiniciar
+- TODOS os serviços ativos são perdidos (em memória)
+- TODO o chat é perdido
+- TODOS os pontos de fidelidade resetam
+- TODOS os prestadores precisam re-registrar
+- Links de rastreamento público param de funcionar
+
+## Completed modifications / verification results
+
+### 1. Modelo de dados Prisma (schema.prisma)
+Criado schema completo com 13 entidades:
+- **User** — base com role (CLIENT/PROVIDER/ADMIN), email, name, phone
+- **ClientProfile** — perfil de cliente vinculado ao User (1:1)
+- **ProviderProfile** — perfil de prestador com vehicle, plate, rating, isAvailable, isVerified, documentStatus, vehicleStatus
+- **Vehicle** — veículo do prestador
+- **ServiceRequest** — solicitação com type, status, price, locations (JSON), paymentMethod, loyaltyPoints, timestamps
+- **ServiceTimelineEvent** — eventos da timeline (persistente)
+- **ServiceChatMessage** — mensagens de chat (persistente)
+- **ServiceRating** — avaliação bidirecional (unique por serviceId+targetRole)
+- **PromoCode** — cupons de desconto
+- **LoyaltyAccount** — pontos e tier de fidelidade
+- **TrackingShare** — links de rastreamento público com token e expiry
+
+Enums: UserRole, VerificationStatus, ServiceType, ServiceStatus, PaymentMethod.
+
+Status lifecycle formal:
+REQUESTED → OFFERED → ACCEPTED → PROVIDER_EN_ROUTE → ARRIVED → IN_PROGRESS → COMPLETED
+             ↓                                                      ↓
+          CANCELED                                               CANCELED
+          EXPIRED                                                EXPIRED
+          FAILED                                                 FAILED
+
+### 2. Banco configurado
+- Prisma + SQLite (desenvolvimento), preparado para Postgres (produção)
+- `prisma/schema.prisma` — schema completo validado ✅
+- `.env.example` — template de variáveis de ambiente
+- Scripts já existem: `db:push`, `db:generate`, `db:migrate`
+- `bunx prisma validate` ✅
+- `bunx prisma generate` ✅
+- `bunx prisma db push` ✅ — tabelas criadas no SQLite
+
+### 3. Camada de repositórios (src/server/)
+- `src/server/db/prisma.ts` — cliente Prisma singleton
+- `src/server/repositories/users.repository.ts` — findOrCreateUser, findUserById, updateLoyaltyPoints, getLoyaltyInfo
+- `src/server/repositories/providers.repository.ts` — createProviderProfile, updateProviderRating, incrementProviderStats, getLeaderboard
+- `src/server/repositories/service-requests.repository.ts` — createServiceRequest, findServiceById, updateServiceStatus, addTimelineEvent, updateProviderPosition, getActiveServices
+- `src/server/repositories/tracking.repository.ts` — getPublicTracking (seguro, sem dados sensíveis), createTrackingShare
+- `src/server/repositories/ratings.repository.ts` — createRating, getRatingsForService, hasRated
+- `src/server/repositories/chat.repository.ts` — getChatMessages, addChatMessage
+
+### 4. API Route para rastreamento público
+- `src/app/api/track/[serviceId]/route.ts` — GET endpoint que busca do banco via tracking.repository
+- Retorna apenas dados seguros: status, type, provider (nome+veículo+nota), ETA, trajeto, timeline
+- NÃO retorna: nome do cliente, telefone, placa, pagamento, chat, preço
+
+### 5. Rastreamento público com fallback
+- `public-tracking.tsx` atualizado para tentar API (banco) primeiro, com fallback para socket.io (memória)
+- Serviços em memória (demo) ainda funcionam via fallback socket
+- Serviços persistidos no banco funcionam via API
+- Polling a cada 3s para atualizações em tempo real
+
+### 6. Segurança do rastreamento público
+Validado no browser:
+- ❌ Nome do cliente (Carlos DB) — NÃO exibido ✓
+- ❌ Método de pagamento (PIX) — NÃO exibido ✓
+- ❌ Placa do veículo (DB1A23) — NÃO exibido ✓
+- ❌ Preço (R$ 204) — NÃO exibido ✓
+- ✅ Status, tipo, prestador (nome+veículo+nota), ETA, trajeto, timeline — exibidos ✓
+
+### 7. Base para autenticação futura
+- User com role (CLIENT/PROVIDER/ADMIN)
+- ClientProfile e ProviderProfile separados, vinculados ao User
+- ProviderProfile com campos de verificação: documentStatus, vehicleStatus, isVerified, isAvailable
+- Estrutura permite que um User tenha ambos perfis no futuro
+
+### Arquivos criados
+- `prisma/schema.prisma` — schema completo reescrito (13 entidades + 5 enums)
+- `.env.example` — template de variáveis
+- `src/server/db/prisma.ts` — cliente Prisma
+- `src/server/repositories/users.repository.ts`
+- `src/server/repositories/providers.repository.ts`
+- `src/server/repositories/service-requests.repository.ts`
+- `src/server/repositories/tracking.repository.ts`
+- `src/server/repositories/ratings.repository.ts`
+- `src/server/repositories/chat.repository.ts`
+- `src/app/api/track/[serviceId]/route.ts` — API route para tracking público
+
+### Arquivos modificados
+- `src/components/rescue/public-tracking.tsx` — agora usa API route (banco) com fallback socket.io
+
+### O que foi persistido de verdade
+- **Schema Prisma criado e validado** — todas as 13 entidades no banco SQLite
+- **API route de tracking** funciona e busca do banco (retorna "indisponível" para serviços só em memória)
+- **Repositórios** prontos para integração com o rescue-service
+
+### O que ainda ficou em memória
+- O rescue-service (mini-services/rescue-service/index.ts) ainda opera 100% em memória
+- A migração parcial do rescue-service para usar os repositórios ficou como pendência para não quebrar a demo
+- Chat, loyalty, providers — ainda em memória no rescue-service
+- Histórico e favoritos — ainda em localStorage no frontend
+
+### Verificação (agent-browser via porta 81)
+- Landing: abre com "Help Bibi" ✓
+- Demo: abre, registra cliente e prestador ✓
+- Serviço: solicitado → aceito → "Chegando no local" com ETA ✓
+- Rastreamento público: link `/?track=svc_x19lw4fa` → API (banco) retorna "indisponível" → fallback socket.io → mostra serviço ativo com status, prestador, ETA, timeline ✓
+- Segurança: nome do cliente, pagamento, placa, preço — NÃO exibidos ✓
+- `bun run lint`: 0 erros ✓
+- `bunx prisma validate`: schema válido ✓
+- `bunx prisma generate`: client gerado ✓
+- `bunx prisma db push`: tabelas criadas ✓
+- Sem erros no console ✓
+
+## Unresolved issues / risks + next-phase recommendations
+- **Rescue-service ainda 100% em memória:** os repositórios foram criados mas o rescue-service ainda não os usa. A migração parcial (ServiceRequest, timeline, tracking, chat) precisa ser feita com cuidado para não quebrar a demo.
+- **Resgate de pontos via socket:** o rescue-service usa `clientLoyalty` Map em memória. Quando integrar com o banco, usar `users.repository.ts → updateLoyaltyPoints`.
+- **Frontend localStorage:** histórico e favoritos ainda em localStorage. Migrar para o banco quando auth estiver pronta.
+- **Recomendação próxima fase (FASE 13):**
+  - Migrar rescue-service para usar repositórios: createServiceRequest → banco, updateServiceStatus → banco, addTimelineEvent → banco, chat → banco.
+  - Implementar auth básica (login/registro) com NextAuth.js.
+  - Migrar histórico do frontend do localStorage para o banco.
+  - Seed de dados iniciais (promos, providers demo).
+  - Migração do leaderboard para buscar do banco.
+  - Testes de integração com banco real.
+- **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy). Banco SQLite em `db/custom.db`.

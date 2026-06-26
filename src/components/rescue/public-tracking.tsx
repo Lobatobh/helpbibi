@@ -54,35 +54,96 @@ const SOCKET_URL = '/?XTransformPort=3003'
 export function PublicTracking({ serviceId }: { serviceId: string }) {
   const [data, setData] = useState<PublicService | null>(null)
   const [loading, setLoading] = useState(true)
-  const socketRef = useRef<Socket | null>(null)
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
-    const s = io(SOCKET_URL, {
-      transports: ['websocket', 'polling'],
-      forceNew: true,
-      reconnection: true,
-      reconnectionAttempts: 5,
-      timeout: 10000,
-    })
-    socketRef.current = s
+    let cancelled = false
 
-    s.on('connect', () => {
-      s.emit('public:track', { serviceId })
-    })
+    const fetchTracking = async () => {
+      let found = false
 
-    s.on('public:track-result', (result: PublicService) => {
-      setData(result)
-      setLoading(false)
-    })
+      // Primary: API route (database-persisted)
+      try {
+        const res = await fetch(`/api/track/${serviceId}`)
+        if (res.ok) {
+          const d = (await res.json()) as PublicService
+          if (d.available) {
+            if (!cancelled) {
+              setData(d)
+              setLoading(false)
+              found = true
+              if (d.status && ['completed', 'cancelled', 'expired'].includes(d.status)) {
+                if (timerRef.current) clearInterval(timerRef.current)
+              }
+            }
+            return
+          }
+        }
+      } catch {
+        // Fall through to socket fallback
+      }
 
-    // Poll for updates every 2 seconds while connected
-    const pollInterval = setInterval(() => {
-      if (s.connected) s.emit('public:track', { serviceId })
-    }, 2000)
+      if (found) return
+
+      // Fallback: socket.io (in-memory, for services not yet in DB)
+      // Only try socket once per fetch — don't create multiple connections
+      await new Promise<void>((resolve) => {
+        try {
+          const s = io(SOCKET_URL, {
+            transports: ['websocket', 'polling'],
+            forceNew: true,
+            reconnection: false,
+            timeout: 4000,
+          })
+          let resolved = false
+
+          s.on('connect', () => s.emit('public:track', { serviceId }))
+          s.on('public:track-result', (result: PublicService) => {
+            if (!resolved && !cancelled) {
+              resolved = true
+              if (result.available) {
+                setData(result)
+                found = true
+              }
+              setLoading(false)
+              s.disconnect()
+              resolve()
+            }
+          })
+          s.on('connect_error', () => {
+            if (!resolved) {
+              resolved = true
+              s.disconnect()
+              resolve()
+            }
+          })
+          // Timeout
+          setTimeout(() => {
+            if (!resolved) {
+              resolved = true
+              s.disconnect()
+              resolve()
+            }
+          }, 4000)
+        } catch {
+          resolve()
+        }
+      })
+
+      // If neither API nor socket found the service, show unavailable
+      if (!found && !cancelled) {
+        setData({ available: false, message: 'Rastreamento indisponível ou encerrado.' })
+        setLoading(false)
+        if (timerRef.current) clearInterval(timerRef.current)
+      }
+    }
+
+    fetchTracking()
+    timerRef.current = setInterval(fetchTracking, 3000)
 
     return () => {
-      clearInterval(pollInterval)
-      s.disconnect()
+      cancelled = true
+      if (timerRef.current) clearInterval(timerRef.current)
     }
   }, [serviceId])
 
