@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { io, Socket } from 'socket.io-client'
 import type {
   ProviderState, ProviderPublic, ServiceData, PaymentMethod,
-  ChatMessage, PromoResult,
+  ChatMessage, PromoResult, LoyaltyInfo,
 } from '@/lib/rescue-types'
 
 type ClientState = {
@@ -16,6 +16,7 @@ type ClientState = {
   messages: ChatMessage[]
   newMessage: ChatMessage | null
   promoResult: PromoResult | null
+  loyalty: LoyaltyInfo | null
 }
 
 type ProviderSession = {
@@ -27,6 +28,7 @@ type ProviderSession = {
   currentService: ServiceData | null
   messages: ChatMessage[]
   newMessage: ChatMessage | null
+  offerTaken: { serviceId: string; acceptedBy: string | null; cancelled: boolean } | null
 }
 
 const SOCKET_URL = '/?XTransformPort=3003'
@@ -42,6 +44,7 @@ export function useClientSocket() {
     messages: [],
     newMessage: null,
     promoResult: null,
+    loyalty: null,
   })
 
   useEffect(() => {
@@ -80,6 +83,10 @@ export function useClientSocket() {
 
     s.on('promo:result', (result: PromoResult) => {
       setState((p) => ({ ...p, promoResult: result }))
+    })
+
+    s.on('client:loyalty', (loyalty: LoyaltyInfo) => {
+      setState((p) => ({ ...p, loyalty }))
     })
 
     return () => {
@@ -157,6 +164,7 @@ export function useProviderSocket() {
     currentService: null,
     messages: [],
     newMessage: null,
+    offerTaken: null,
   })
 
   useEffect(() => {
@@ -195,6 +203,10 @@ export function useProviderSocket() {
 
     s.on('chat:new', (msg: ChatMessage) => {
       setState((p) => ({ ...p, newMessage: msg, messages: [...p.messages, msg] }))
+    })
+
+    s.on('service:offer-taken', (data: { serviceId: string; acceptedBy: string | null; cancelled: boolean }) => {
+      setState((p) => ({ ...p, offerTaken: data, offer: null }))
     })
 
     return () => {
@@ -241,13 +253,17 @@ export function useProviderSocket() {
     setState((p) => ({ ...p, newMessage: null }))
   }, [])
 
+  const clearOfferTaken = useCallback(() => {
+    setState((p) => ({ ...p, offerTaken: null }))
+  }, [])
+
   const clearCurrent = useCallback(() => {
-    setState((p) => ({ ...p, currentService: null, offer: null, messages: [], newMessage: null }))
+    setState((p) => ({ ...p, currentService: null, offer: null, messages: [], newMessage: null, offerTaken: null }))
   }, [])
 
   return {
     ...state,
     register, toggleOnline, accept, reject, arrived, start, complete,
-    sendChat, clearNewMessage, clearCurrent,
+    sendChat, clearNewMessage, clearOfferTaken, clearCurrent,
   }
 }

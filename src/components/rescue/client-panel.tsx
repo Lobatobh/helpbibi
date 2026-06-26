@@ -25,6 +25,8 @@ import {
 import { getHistoryForRole, addRecord, recordFromService, updateRecord } from '@/lib/rescue-history'
 import { RescueMap } from './rescue-map'
 import { ChatPanel } from './chat-panel'
+import { TripProgressBar } from './trip-progress-bar'
+import { LoyaltyCard } from './loyalty-card'
 
 const ICONS: Record<string, any> = {
   'tow-truck': Truck, tire: CircleDot, battery: Battery, fuel: Fuel, key: Key, wrench: Wrench,
@@ -53,7 +55,7 @@ const haversineKm = (a: LatLng, b: LatLng) => {
 
 export function ClientPanel() {
   const {
-    connected, registered, nearby, currentService, messages, newMessage, promoResult,
+    connected, registered, nearby, currentService, messages, newMessage, promoResult, loyalty,
     register, requestService, cancelService, rateService,
     validatePromo, clearPromo, sendChat, clearNewMessage, clearCurrent,
   } = useClientSocket()
@@ -277,6 +279,8 @@ export function ClientPanel() {
               <Shield className="mr-2 h-5 w-5" />
               Solicitar socorro
             </Button>
+
+            {loyalty && <LoyaltyCard loyalty={loyalty} />}
 
             <div>
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -675,6 +679,31 @@ function ServiceTracker({
         </div>
       )}
 
+      {/* Notified providers indicator (multi-provider) */}
+      {(status === 'searching' || status === 'offered') && svc.notifiedCount > 1 && (
+        <div className="flex items-center gap-2 rounded-xl border border-sky-500/30 bg-sky-500/10 p-2.5 text-xs">
+          <div className="flex -space-x-1.5">
+            {Array.from({ length: Math.min(svc.notifiedCount, 4) }).map((_, i) => (
+              <div key={i} className="flex h-5 w-5 items-center justify-center rounded-full border-2 border-slate-950 bg-gradient-to-br from-sky-500 to-sky-700 text-[8px] font-bold text-white">
+                <Truck className="h-2.5 w-2.5" />
+              </div>
+            ))}
+          </div>
+          <span className="text-sky-300">
+            <span className="font-bold">{svc.notifiedCount} prestadores</span> sendo notificados simultaneamente
+          </span>
+        </div>
+      )}
+
+      {/* Live trip progress bar */}
+      {svc.provider && (status === 'accepted' || status === 'arriving' || status === 'in_progress') && (
+        <TripProgressBar
+          provider={svc.provider}
+          label={status === 'in_progress' ? 'Rumo ao destino final' : 'Prestador a caminho do local'}
+          variant="client"
+        />
+      )}
+
       {/* Chat panel (collapsible) */}
       {canChat && chatOpen && (
         <ChatPanel
@@ -818,6 +847,15 @@ function RatingCard({ svc, rated, onRate }: { svc: ServiceData; rated: boolean; 
 }
 
 function HistoryView({ history, role, onSelect }: { history: ServiceRecord[]; role: 'client' | 'provider'; onSelect: (r: ServiceRecord) => void }) {
+  const [typeFilter, setTypeFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+
+  const filtered = history.filter((r) => {
+    if (typeFilter !== 'all' && r.type !== typeFilter) return false
+    if (statusFilter !== 'all' && r.status !== statusFilter) return false
+    return true
+  })
+
   if (history.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-slate-800 p-8 text-center">
@@ -830,11 +868,30 @@ function HistoryView({ history, role, onSelect }: { history: ServiceRecord[]; ro
     )
   }
   return (
-    <div className="space-y-2">
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-        {history.length} serviço(s) registrado(s)
+    <div className="space-y-3">
+      {/* Filters */}
+      <div className="space-y-2">
+        <div className="flex gap-1.5 overflow-x-auto pb-1">
+          <FilterChip active={typeFilter === 'all'} onClick={() => setTypeFilter('all')} label="Todos" />
+          {SERVICE_TYPES.map((s) => (
+            <FilterChip key={s.id} active={typeFilter === s.id} onClick={() => setTypeFilter(s.id)} label={s.label.split(' ')[0]} />
+          ))}
+        </div>
+        <div className="flex gap-1.5">
+          <FilterChip active={statusFilter === 'all'} onClick={() => setStatusFilter('all')} label="Qualquer status" small />
+          <FilterChip active={statusFilter === 'completed'} onClick={() => setStatusFilter('completed')} label="Concluídos" small />
+          <FilterChip active={statusFilter === 'cancelled'} onClick={() => setStatusFilter('cancelled')} label="Cancelados" small />
+        </div>
+      </div>
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {filtered.length} de {history.length} serviço(s)
       </p>
-      {history.map((r) => {
+      {filtered.length === 0 && (
+        <div className="rounded-lg border border-dashed border-slate-800 p-4 text-center text-xs text-slate-500">
+          Nenhum serviço corresponde aos filtros.
+        </div>
+      )}
+      {filtered.map((r) => {
         const Icon = ICONS[r.icon] || CircleDot
         const PayIcon = PAY_ICONS[PAYMENT_METHODS.find((m) => m.id === r.paymentMethod)?.icon || 'zap']
         return (
@@ -1005,5 +1062,20 @@ function InfoBox({ label, value }: { label: string; value: string }) {
       <p className="text-[10px] uppercase text-slate-500">{label}</p>
       <p className="text-xs font-semibold text-white">{value}</p>
     </div>
+  )
+}
+
+function FilterChip({ active, onClick, label, small }: { active: boolean; onClick: () => void; label: string; small?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold transition ${
+        active
+          ? 'border-amber-500 bg-amber-500/15 text-amber-400'
+          : 'border-slate-700 bg-slate-900/60 text-slate-400 hover:border-slate-600 hover:text-slate-300'
+      } ${small ? 'text-[9px]' : ''}`}
+    >
+      {label}
+    </button>
   )
 }

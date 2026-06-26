@@ -59,6 +59,11 @@ type Provider = {
   position: LatLng
   destination?: LatLng | null
   currentServiceId?: string | null
+  // trip progress tracking
+  tripStartPos?: LatLng | null
+  tripTarget?: LatLng | null
+  tripStartedAt?: number | null
+  tripTotalKm?: number
 }
 
 type ServiceRequest = {
@@ -80,11 +85,14 @@ type ServiceRequest = {
   status: ServiceStatus
   paymentMethod: PaymentMethod
   providerId?: string | null
+  notifiedProviderIds: string[]
   createdAt: number
   acceptedAt?: number | null
   completedAt?: number | null
   timeline: TimelineEvent[]
   rating?: Rating | null
+  // loyalty
+  loyaltyPoints: number
 }
 
 type TimelineEvent = { status: ServiceStatus; label: string; at: number }
@@ -107,6 +115,28 @@ const PROMO_CODES: Record<string, PromoDef> = {
   BEMVINDO20: { type: 'fixed', value: 20, label: 'R$ 20 OFF' },
   PROMO15: { type: 'percent', value: 15, label: '15% OFF' },
 }
+
+// Loyalty: clients earn 1 point per R$ 1 spent. Tiers based on total points.
+const LOYALTY_TIERS = [
+  { name: 'Bronze', min: 0, color: '#a16207', perk: '5% OFF no próximo' },
+  { name: 'Prata', min: 200, color: '#94a3b8', perk: '8% OFF + prioridade' },
+  { name: 'Ouro', min: 500, color: '#f59e0b', perk: '12% OFF + suporte VIP' },
+  { name: 'Diamante', min: 1000, color: '#38bdf8', perk: '15% OFF + benefícios exclusivos' },
+]
+const loyaltyTier = (points: number) => {
+  let tier = LOYALTY_TIERS[0]
+  for (const t of LOYALTY_TIERS) if (points >= t.min) tier = t
+  return tier
+}
+const nextTierMin = (points: number): number | null => {
+  for (const t of LOYALTY_TIERS) if (points < t.min) return t.min
+  return null
+}
+// client loyalty points (in-memory; keyed by clientName for demo persistence across sessions)
+const clientLoyalty = new Map<string, number>()
+
+// How many nearby providers to notify simultaneously for a new request
+const MULTI_NOTIFY_COUNT = 3
 
 // ----------------------- State -----------------------
 const providers = new Map<string, Provider>()
@@ -174,6 +204,10 @@ const emitProvider = (p: Provider) => {
     rating: p.rating, online: p.online, position: p.position,
     currentServiceId: p.currentServiceId, completedCount: p.completedCount,
     earningsToday: p.earningsToday,
+    tripStartPos: p.tripStartPos || null,
+    tripTarget: p.tripTarget || null,
+    tripStartedAt: p.tripStartedAt || null,
+    tripTotalKm: p.tripTotalKm || 0,
   } as any)
   io.emit('providers:nearby', Array.from(providers.values()).filter((x) => x.online).map(providerPublic))
 }
@@ -187,9 +221,12 @@ const sanitizeService = (svc: ServiceRequest) => ({
   distanceKm: svc.distanceKm, etaMin: svc.etaMin, status: svc.status,
   paymentMethod: svc.paymentMethod,
   providerId: svc.providerId,
+  notifiedProviderIds: svc.notifiedProviderIds,
+  notifiedCount: svc.notifiedProviderIds.length,
   provider: svc.providerId ? providers.get(svc.providerId) : null,
   createdAt: svc.createdAt, acceptedAt: svc.acceptedAt, completedAt: svc.completedAt,
   timeline: svc.timeline, rating: svc.rating || null,
+  loyaltyPoints: svc.loyaltyPoints,
 })
 
 const emitService = (svc: ServiceRequest) => {
@@ -238,9 +275,12 @@ io.on('connection', (socket) => {
     const id = uid('cli_')
     clients.set(id, { id, socketId: socket.id })
     socketToRole.set(socket.id, { role: 'client', id })
+    const points = clientLoyalty.get(data.name) || 0
+    const tier = loyaltyTier(points)
     socket.emit('client:registered', { id, name: data.name })
+    socket.emit('client:loyalty', { points, tier: { name: tier.name, color: tier.color, perk: tier.perk }, nextTierMin: nextTierMin(points) })
     socket.emit('providers:nearby', Array.from(providers.values()).filter((x) => x.online).map(providerPublic))
-    console.log(`[client] registered ${id} (${data.name})`)
+    console.log(`[client] registered ${id} (${data.name}) — loyalty ${points}pts (${tier.name})`)
   })
 
   socket.on('provider:register', (data: { name: string; vehicle: string; plate: string }) => {
@@ -322,9 +362,11 @@ io.on('connection', (socket) => {
       status: 'searching',
       paymentMethod: data.paymentMethod || 'pix',
       providerId: null,
+      notifiedProviderIds: [],
       createdAt: Date.now(),
       timeline: [{ status: 'searching', label: 'Solicitação enviada — procurando prestador próximo', at: Date.now() }],
       rating: null,
+      loyaltyPoints: 0,
     }
     if (promoResult.valid) {
       svc.timeline.push({ status: 'searching', label: `Cupom ${svc.promoCode} aplicado: -R$ ${promoResult.discount}`, at: Date.now() })
@@ -332,6 +374,7 @@ io.on('connection', (socket) => {
     services.set(svc.id, svc)
     emitService(svc)
 
+    // --- Multi-provider notification: notify up to MULTI_NOTIFY_COUNT nearest providers ---
     const candidates = Array.from(providers.values()).filter((p) => p.online && !p.currentServiceId)
     if (candidates.length === 0) {
       setTimeout(() => {
@@ -344,31 +387,49 @@ io.on('connection', (socket) => {
       return
     }
     candidates.sort((a, b) => haversineKm(a.position, data.pickup) - haversineKm(b.position, data.pickup))
-    const chosen = candidates[0]
-    svc.providerId = chosen.id
-    chosen.currentServiceId = svc.id
-    pushTimeline(svc, 'offered', `Chamada enviada para ${chosen.name} (${chosen.vehicle})`)
+    const toNotify = candidates.slice(0, Math.min(MULTI_NOTIFY_COUNT, candidates.length))
+    svc.notifiedProviderIds = toNotify.map((p) => p.id)
+    // The primary (nearest) provider "claims" the service but all notified can accept (first-accept wins)
+    const primary = toNotify[0]
+    svc.providerId = primary.id
+    primary.currentServiceId = svc.id
+    const names = toNotify.map((p) => p.name).join(', ')
+    pushTimeline(svc, 'offered', `Chamada enviada para ${toNotify.length} prestador(es) próximo(s): ${names}`)
     emitService(svc)
-    emitProvider(chosen)
+    emitProvider(primary)
 
-    io.to(chosen.socketId).emit('service:offer', sanitizeService(svc))
+    // Send offer to ALL notified providers simultaneously
+    toNotify.forEach((p) => {
+      io.to(p.socketId).emit('service:offer', sanitizeService(svc))
+    })
 
     const expireTimer = setTimeout(() => {
       const s = services.get(svc.id)
       if (s && s.status === 'offered') {
-        pushTimeline(s, 'expired', `${chosen.name} não respondeu a tempo — reofertando...`)
-        chosen.currentServiceId = null
-        emitProvider(chosen)
-        const next = Array.from(providers.values())
-          .filter((p) => p.online && !p.currentServiceId && p.id !== chosen.id)
-          .sort((a, b) => haversineKm(a.position, s.pickup) - haversineKm(b.position, s.pickup))[0]
-        if (next) {
-          s.providerId = next.id
-          next.currentServiceId = s.id
-          pushTimeline(s, 'offered', `Chamada enviada para ${next.name} (${next.vehicle})`)
+        pushTimeline(s, 'expired', `Prestador(es) não respondeu(ram) a tempo — reofertando...`)
+        // free up all notified providers
+        s.notifiedProviderIds.forEach((pid) => {
+          const np = providers.get(pid)
+          if (np && np.currentServiceId === s.id) {
+            np.currentServiceId = null
+            emitProvider(np)
+          }
+        })
+        // try next batch of providers
+        const nextBatch = Array.from(providers.values())
+          .filter((p) => p.online && !p.currentServiceId && !s.notifiedProviderIds.includes(p.id))
+          .sort((a, b) => haversineKm(a.position, s.pickup) - haversineKm(b.position, s.pickup))
+          .slice(0, MULTI_NOTIFY_COUNT)
+        if (nextBatch.length > 0) {
+          s.notifiedProviderIds = nextBatch.map((p) => p.id)
+          const np = nextBatch[0]
+          s.providerId = np.id
+          np.currentServiceId = s.id
+          const nextNames = nextBatch.map((p) => p.name).join(', ')
+          pushTimeline(s, 'offered', `Chamada enviada para ${nextBatch.length} prestador(es): ${nextNames}`)
           emitService(s)
-          emitProvider(next)
-          io.to(next.socketId).emit('service:offer', sanitizeService(s))
+          emitProvider(np)
+          nextBatch.forEach((p) => io.to(p.socketId).emit('service:offer', sanitizeService(s)))
         } else {
           pushTimeline(s, 'expired', 'Nenhum prestador disponível')
           emitService(s)
@@ -382,42 +443,84 @@ io.on('connection', (socket) => {
     const role = socketToRole.get(socket.id)
     if (!role || role.role !== 'provider') return
     const svc = services.get(data.serviceId)
-    if (!svc || svc.providerId !== role.id || svc.status !== 'offered') return
+    if (!svc || svc.status !== 'offered') return
+    // First-accept-wins: any notified provider can accept
+    if (!svc.notifiedProviderIds.includes(role.id)) return
     if ((svc as any)._expireTimer) clearTimeout((svc as any)._expireTimer)
-    const p = providers.get(role.id)!
-    p.online = false
+    const winner = providers.get(role.id)!
+    // Free up all other notified providers (they didn't win)
+    svc.notifiedProviderIds.forEach((pid) => {
+      if (pid !== role.id) {
+        const np = providers.get(pid)
+        if (np && np.currentServiceId === svc.id) {
+          np.currentServiceId = null
+          emitProvider(np)
+          // notify them the offer was taken
+          io.to(np.socketId).emit('service:offer-taken', { serviceId: svc.id, acceptedBy: winner.name })
+        }
+      }
+    })
+    // Assign to winner
+    svc.providerId = winner.id
+    winner.currentServiceId = svc.id
+    winner.online = false
     svc.acceptedAt = Date.now()
-    pushTimeline(svc, 'accepted', `${p.name} aceitou a chamada e está a caminho`)
-    p.destination = svc.pickup
-    emitProvider(p)
+    pushTimeline(svc, 'accepted', `${winner.name} aceitou a chamada e está a caminho`)
+    // Start trip progress tracking (provider -> pickup)
+    winner.tripStartPos = { ...winner.position }
+    winner.tripTarget = svc.pickup
+    winner.tripStartedAt = Date.now()
+    winner.tripTotalKm = haversineKm(winner.position, svc.pickup)
+    winner.destination = svc.pickup
+    emitProvider(winner)
     emitService(svc)
-    // send existing chat history to provider (if any)
     emitChatToService(svc.id)
+    console.log(`[service] accepted ${svc.id} by ${winner.name} (first-accept-wins among ${svc.notifiedProviderIds.length})`)
   })
 
   socket.on('service:reject', (data: { serviceId: string }) => {
     const role = socketToRole.get(socket.id)
     if (!role || role.role !== 'provider') return
     const svc = services.get(data.serviceId)
-    if (!svc || svc.providerId !== role.id || svc.status !== 'offered') return
-    if ((svc as any)._expireTimer) clearTimeout((svc as any)._expireTimer)
+    if (!svc || svc.status !== 'offered') return
+    if (!svc.notifiedProviderIds.includes(role.id)) return
     const p = providers.get(role.id)!
-    p.currentServiceId = null
+    if (p.currentServiceId === svc.id) p.currentServiceId = null
+    // remove this provider from notified list
+    svc.notifiedProviderIds = svc.notifiedProviderIds.filter((id) => id !== role.id)
     emitProvider(p)
-    pushTimeline(svc, 'searching', `${p.name} recusou — procurando outro prestador`)
-    const next = Array.from(providers.values())
-      .filter((x) => x.online && !x.currentServiceId && x.id !== p.id)
-      .sort((a, b) => haversineKm(a.position, svc.pickup) - haversineKm(b.position, svc.pickup))[0]
-    if (next) {
-      svc.providerId = next.id
-      next.currentServiceId = svc.id
-      pushTimeline(svc, 'offered', `Chamada enviada para ${next.name} (${next.vehicle})`)
-      emitService(svc)
-      emitProvider(next)
-      io.to(next.socketId).emit('service:offer', sanitizeService(svc))
-    } else {
-      pushTimeline(svc, 'expired', 'Nenhum prestador disponível')
-      emitService(svc)
+    // If the rejecting provider was the primary, reassign primary to next notified
+    if (svc.providerId === role.id && svc.notifiedProviderIds.length > 0) {
+      svc.providerId = svc.notifiedProviderIds[0]
+      const np = providers.get(svc.providerId)
+      if (np) {
+        np.currentServiceId = svc.id
+        emitProvider(np)
+      }
+    }
+    pushTimeline(svc, 'searching', `${p.name} recusou — ${svc.notifiedProviderIds.length} prestador(es) ainda notificado(s)`)
+    emitService(svc)
+    // If no notified providers left, try to find more
+    if (svc.notifiedProviderIds.length === 0) {
+      const nextBatch = Array.from(providers.values())
+        .filter((x) => x.online && !x.currentServiceId)
+        .sort((a, b) => haversineKm(a.position, svc.pickup) - haversineKm(b.position, svc.pickup))
+        .slice(0, MULTI_NOTIFY_COUNT)
+      if (nextBatch.length > 0) {
+        svc.notifiedProviderIds = nextBatch.map((x) => x.id)
+        svc.providerId = nextBatch[0].id
+        nextBatch[0].currentServiceId = svc.id
+        const names = nextBatch.map((x) => x.name).join(', ')
+        pushTimeline(svc, 'offered', `Chamada enviada para ${nextBatch.length} prestador(es): ${names}`)
+        emitService(svc)
+        nextBatch.forEach((x) => {
+          emitProvider(x)
+          io.to(x.socketId).emit('service:offer', sanitizeService(svc))
+        })
+      } else {
+        pushTimeline(svc, 'expired', 'Nenhum prestador disponível')
+        emitService(svc)
+      }
     }
   })
 
@@ -430,6 +533,11 @@ io.on('connection', (socket) => {
     p.position = { ...svc.pickup }
     pushTimeline(svc, 'arrived', `${p.name} chegou ao local do atendimento`)
     p.destination = svc.destination
+    // reset trip tracking for the next leg (pickup -> destination)
+    p.tripStartPos = { ...svc.pickup }
+    p.tripTarget = svc.destination
+    p.tripStartedAt = Date.now()
+    p.tripTotalKm = haversineKm(svc.pickup, svc.destination)
     emitProvider(p)
     emitService(svc)
   })
@@ -441,6 +549,11 @@ io.on('connection', (socket) => {
     if (!svc || svc.providerId !== role.id) return
     const p = providers.get(role.id)!
     p.destination = svc.destination
+    // ensure trip tracking is for the destination leg
+    p.tripStartPos = { ...p.position }
+    p.tripTarget = svc.destination
+    p.tripStartedAt = Date.now()
+    p.tripTotalKm = haversineKm(p.position, svc.destination)
     pushTimeline(svc, 'in_progress', 'Serviço em andamento — rumo ao destino final')
     emitProvider(p)
     emitService(svc)
@@ -458,11 +571,41 @@ io.on('connection', (socket) => {
     p.online = true
     p.completedCount += 1
     p.earningsToday += svc.price
+    // clear trip tracking
+    p.tripStartPos = null
+    p.tripTarget = null
+    p.tripStartedAt = null
+    p.tripTotalKm = 0
     svc.completedAt = Date.now()
+    // Award loyalty points to client (1 point per R$ 1 spent)
+    const earned = Math.round(svc.price)
+    const prevPoints = clientLoyalty.get(svc.clientName) || 0
+    const newPoints = prevPoints + earned
+    clientLoyalty.set(svc.clientName, newPoints)
+    svc.loyaltyPoints = earned
+    const prevTier = loyaltyTier(prevPoints)
+    const newTier = loyaltyTier(newPoints)
     pushTimeline(svc, 'completed', 'Serviço concluído com sucesso. Avalie o atendimento!')
+    if (earned > 0) {
+      svc.timeline.push({ status: 'completed', label: `+${earned} pontos de fidelidade (${newTier.name})`, at: Date.now() })
+    }
+    if (newTier.name !== prevTier.name) {
+      svc.timeline.push({ status: 'completed', label: `🎉 Subiu para o tier ${newTier.name}! ${newTier.perk}`, at: Date.now() })
+    }
     emitProvider(p)
     emitService(svc)
-    console.log(`[service] completed ${svc.id} — provider ${p.name} earned R$ ${svc.price}`)
+    // Send updated loyalty to client
+    const client = clients.get(svc.clientId)
+    if (client) {
+      io.to(client.socketId).emit('client:loyalty', {
+        points: newPoints,
+        tier: { name: newTier.name, color: newTier.color, perk: newTier.perk },
+        nextTierMin: nextTierMin(newPoints),
+        earnedThisService: earned,
+        tierUpgraded: newTier.name !== prevTier.name,
+      })
+    }
+    console.log(`[service] completed ${svc.id} — provider ${p.name} earned R$ ${svc.price}, client ${svc.clientName} +${earned}pts (total ${newPoints})`)
   })
 
   socket.on('service:rate', (data: { serviceId: string; stars: number; comment: string }) => {
@@ -494,15 +637,21 @@ io.on('connection', (socket) => {
     if (!svc || svc.clientId !== role.id) return
     if (svc.status === 'completed' || svc.status === 'cancelled') return
     if ((svc as any)._expireTimer) clearTimeout((svc as any)._expireTimer)
-    if (svc.providerId) {
-      const p = providers.get(svc.providerId)
-      if (p) {
-        p.currentServiceId = null
-        p.destination = null
-        p.online = true
-        emitProvider(p)
+    // free all notified providers
+    svc.notifiedProviderIds.forEach((pid) => {
+      const np = providers.get(pid)
+      if (np) {
+        if (np.currentServiceId === svc.id) np.currentServiceId = null
+        np.destination = null
+        np.tripStartPos = null
+        np.tripTarget = null
+        np.tripStartedAt = null
+        np.tripTotalKm = 0
+        np.online = true
+        emitProvider(np)
+        io.to(np.socketId).emit('service:offer-taken', { serviceId: svc.id, acceptedBy: null, cancelled: true })
       }
-    }
+    })
     pushTimeline(svc, 'cancelled', 'Solicitação cancelada pelo cliente')
     svc.completedAt = Date.now()
     emitService(svc)

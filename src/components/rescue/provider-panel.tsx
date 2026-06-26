@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Truck, Star, Power, MapPin, Navigation, Flag, Clock, CheckCircle2, X, Loader2,
   Wallet, TrendingUp, Battery, Fuel, Key, Wrench, CircleDot, Phone, MessageCircle,
-  History, Home, BarChart3, Award, Tag, Eye, ChevronRight, Send,
+  History, Home, BarChart3, Award, Tag, Eye, ChevronRight, Send, Users,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,6 +24,7 @@ import { PAYMENT_METHODS, SERVICE_TYPES, STATUS_LABELS, type ServiceData, type S
 import { getHistoryForRole, addRecord, recordFromService } from '@/lib/rescue-history'
 import { RescueMap } from './rescue-map'
 import { ChatPanel } from './chat-panel'
+import { TripProgressBar } from './trip-progress-bar'
 
 const ICONS: Record<string, any> = {
   'tow-truck': Truck, tire: CircleDot, battery: Battery, fuel: Fuel, key: Key, wrench: Wrench,
@@ -32,9 +33,9 @@ const PAY_ICONS: Record<string, any> = { zap: Power, 'credit-card': Wallet, wall
 
 export function ProviderPanel() {
   const {
-    connected, registered, state, offer, currentService, messages, newMessage,
+    connected, registered, state, offer, currentService, messages, newMessage, offerTaken,
     register, toggleOnline, accept, reject, arrived, start, complete,
-    sendChat, clearNewMessage, clearCurrent,
+    sendChat, clearNewMessage, clearOfferTaken, clearCurrent,
   } = useProviderSocket()
 
   useServiceToasts(currentService, 'provider')
@@ -185,9 +186,29 @@ export function ProviderPanel() {
         {view === 'home' && (
           <>
             {offer && offer.status === 'offered' && (
-              <OfferCard offer={offer} onAccept={() => accept(offer.id)} onReject={() => reject(offer.id)} />
+              <OfferCard offer={offer} onAccept={() => accept(offer.id)} onReject={() => reject(offer.id)} notifiedCount={offer.notifiedCount} />
             )}
-            {!offer && !svc && (
+            {offerTaken && !svc && (
+              <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-4 text-center">
+                <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-full bg-slate-800 text-slate-400">
+                  <X className="h-5 w-5" />
+                </div>
+                <p className="text-sm font-bold text-white">
+                  {offerTaken.cancelled
+                    ? 'Solicitação cancelada pelo cliente'
+                    : `Chamada aceita por ${offerTaken.acceptedBy}`}
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  {offerTaken.cancelled
+                    ? 'O cliente cancelou antes de você aceitar.'
+                    : 'Outro prestador aceitou a chamada primeiro.'}
+                </p>
+                <Button onClick={clearOfferTaken} variant="outline" className="mt-3 w-full border-slate-700 text-slate-300 hover:bg-slate-800">
+                  Entendido
+                </Button>
+              </div>
+            )}
+            {!offer && !offerTaken && !svc && (
               <div className="space-y-4">
                 <div className={`rounded-xl border p-4 ${online ? 'border-emerald-500/40 bg-emerald-500/10' : 'border-slate-700 bg-slate-900/60'}`}>
                   <div className="flex items-center gap-2">
@@ -259,7 +280,7 @@ function TabBtn({ active, onClick, icon: Icon, label, badge }: { active: boolean
   )
 }
 
-function OfferCard({ offer, onAccept, onReject }: { offer: ServiceData; onAccept: () => void; onReject: () => void }) {
+function OfferCard({ offer, onAccept, onReject, notifiedCount }: { offer: ServiceData; onAccept: () => void; onReject: () => void; notifiedCount?: number }) {
   const [seconds, setSeconds] = useState(12)
   useEffect(() => {
     const t = setInterval(() => setSeconds((s) => (s > 0 ? s - 1 : 0)), 1000)
@@ -282,6 +303,13 @@ function OfferCard({ offer, onAccept, onReject }: { offer: ServiceData; onAccept
             </Badge>
             <span className={`text-sm font-bold ${seconds <= 4 ? 'text-rose-400' : 'text-amber-400'}`}>{seconds}s</span>
           </div>
+
+          {notifiedCount && notifiedCount > 1 ? (
+            <div className="mb-3 flex items-center gap-1.5 rounded-lg bg-sky-500/10 px-2 py-1 text-[10px] text-sky-300">
+              <Users className="h-3 w-3" />
+              {notifiedCount} prestadores recebendo esta chamada — primeiro a aceitar leva!
+            </div>
+          ) : null}
 
           <div className="mb-3 flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-500/15 text-amber-400">
@@ -459,6 +487,15 @@ function ProviderServiceCard({ svc, onArrived, onStart, onComplete, onDismiss, m
         </div>
       </div>
 
+      {/* Live trip progress bar */}
+      {svc.provider && (status === 'accepted' || status === 'arriving' || status === 'in_progress') && (
+        <TripProgressBar
+          provider={svc.provider}
+          label={status === 'in_progress' ? 'Rumo ao destino final' : 'Você está a caminho do local'}
+          variant="provider"
+        />
+      )}
+
       {/* Chat panel (collapsible) */}
       {canChat && chatOpen && (
         <ChatPanel
@@ -633,6 +670,15 @@ function ServiceTypeBreakdown({ history }: { history: ServiceRecord[] }) {
 }
 
 function HistoryView({ history, onSelect }: { history: ServiceRecord[]; onSelect: (r: ServiceRecord) => void }) {
+  const [typeFilter, setTypeFilter] = useState<string>('all')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+
+  const filtered = history.filter((r) => {
+    if (typeFilter !== 'all' && r.type !== typeFilter) return false
+    if (statusFilter !== 'all' && r.status !== statusFilter) return false
+    return true
+  })
+
   if (history.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-slate-800 p-8 text-center">
@@ -643,9 +689,30 @@ function HistoryView({ history, onSelect }: { history: ServiceRecord[]; onSelect
     )
   }
   return (
-    <div className="space-y-2">
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{history.length} serviço(s)</p>
-      {history.map((r) => {
+    <div className="space-y-3">
+      {/* Filters */}
+      <div className="space-y-2">
+        <div className="flex gap-1.5 overflow-x-auto pb-1">
+          <FilterChip active={typeFilter === 'all'} onClick={() => setTypeFilter('all')} label="Todos" />
+          {SERVICE_TYPES.map((s) => (
+            <FilterChip key={s.id} active={typeFilter === s.id} onClick={() => setTypeFilter(s.id)} label={s.label.split(' ')[0]} />
+          ))}
+        </div>
+        <div className="flex gap-1.5">
+          <FilterChip active={statusFilter === 'all'} onClick={() => setStatusFilter('all')} label="Qualquer status" small />
+          <FilterChip active={statusFilter === 'completed'} onClick={() => setStatusFilter('completed')} label="Concluídos" small />
+          <FilterChip active={statusFilter === 'cancelled'} onClick={() => setStatusFilter('cancelled')} label="Cancelados" small />
+        </div>
+      </div>
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+        {filtered.length} de {history.length} serviço(s)
+      </p>
+      {filtered.length === 0 && (
+        <div className="rounded-lg border border-dashed border-slate-800 p-4 text-center text-xs text-slate-500">
+          Nenhum serviço corresponde aos filtros.
+        </div>
+      )}
+      {filtered.map((r) => {
         const Icon = ICONS[r.icon] || CircleDot
         const PayIcon = PAY_ICONS[PAYMENT_METHODS.find((m) => m.id === r.paymentMethod)?.icon || 'zap']
         return (
@@ -823,5 +890,20 @@ function Row({ label, value, highlight }: { label: string; value: string; highli
       <span className="text-slate-400">{label}</span>
       <span className={`font-semibold ${highlight ? 'text-amber-400' : 'text-white'}`}>{value}</span>
     </div>
+  )
+}
+
+function FilterChip({ active, onClick, label, small }: { active: boolean; onClick: () => void; label: string; small?: boolean }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-semibold transition ${
+        active
+          ? 'border-emerald-500 bg-emerald-500/15 text-emerald-400'
+          : 'border-slate-700 bg-slate-900/60 text-slate-400 hover:border-slate-600 hover:text-slate-300'
+      } ${small ? 'text-[9px]' : ''}`}
+    >
+      {label}
+    </button>
   )
 }

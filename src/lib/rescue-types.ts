@@ -32,6 +32,18 @@ export type ProviderPublic = {
 export type ProviderState = ProviderPublic & {
   plate: string
   currentServiceId?: string | null
+  tripStartPos?: LatLng | null
+  tripTarget?: LatLng | null
+  tripStartedAt?: number | null
+  tripTotalKm?: number
+}
+
+export type LoyaltyInfo = {
+  points: number
+  tier: { name: string; color: string; perk: string }
+  nextTierMin: number | null
+  earnedThisService?: number
+  tierUpgraded?: boolean
 }
 
 export type TimelineEvent = {
@@ -89,12 +101,15 @@ export type ServiceData = {
   status: ServiceStatus
   paymentMethod: PaymentMethod
   providerId?: string | null
+  notifiedProviderIds: string[]
+  notifiedCount: number
   provider: ProviderState | null
   createdAt: number
   acceptedAt?: number | null
   completedAt?: number | null
   timeline: TimelineEvent[]
   rating?: Rating | null
+  loyaltyPoints: number
 }
 
 // History record persisted in localStorage
