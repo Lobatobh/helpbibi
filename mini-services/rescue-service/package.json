@@ -1,0 +1,6 @@
+{
+  "name": "rescue-service",
+  "scripts": {
+    "dev": "bun index.ts"
+  }
+}
