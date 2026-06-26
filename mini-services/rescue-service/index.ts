@@ -1,83 +1,26 @@
 import { createServer } from 'http'
 import { Server } from 'socket.io'
+import { PrismaClient } from '@prisma/client'
 
 // ============================================================
 // Help Bibi — Real-time rescue orchestration service
 // Handles: provider presence, service requests, live tracking,
 //          ratings, payment method, provider stats, chat, promos.
+// Now with Prisma persistence (Phase 13).
 // ============================================================
 
+const db = new PrismaClient({ log: ['error'] })
+
 const httpServer = createServer((req, res) => {
-  // CORS headers for all responses
   res.setHeader('Access-Control-Allow-Origin', '*')
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
-
-  if (req.method === 'OPTIONS') {
-    res.writeHead(204)
-    res.end()
-    return
-  }
-
+  if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
   if (req.url === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ ok: true, name: 'Help Bibi', providers: providers.size, activeServices: services.size }))
     return
   }
-
-  // Public tracking endpoint: GET /track/:serviceId
-  const trackMatch = req.url?.match(/^\/track\/(.+)$/)
-  if (trackMatch && req.method === 'GET') {
-    const serviceId = decodeURIComponent(trackMatch[1])
-    const svc = services.get(serviceId)
-    if (!svc) {
-      res.writeHead(404, { 'Content-Type': 'application/json' })
-      res.end(JSON.stringify({ available: false, message: 'Rastreamento indisponível ou encerrado.' }))
-      return
-    }
-    // Return public-safe data (no client personal info, no payment details)
-    const publicData = {
-      available: true,
-      serviceId: svc.id,
-      status: svc.status,
-      type: svc.type,
-      typeLabel: SERVICE_TYPES[svc.type]?.label || svc.type,
-      icon: SERVICE_TYPES[svc.type]?.icon || 'wrench',
-      pickupLabel: svc.pickupLabel,
-      destinationLabel: svc.destinationLabel,
-      distanceKm: svc.distanceKm,
-      etaMin: svc.etaMin,
-      createdAt: svc.createdAt,
-      acceptedAt: svc.acceptedAt || null,
-      completedAt: svc.completedAt || null,
-      timeline: svc.timeline,
-      // Provider public info (name + vehicle only, no plate)
-      provider: svc.providerId ? (() => {
-        const p = providers.get(svc.providerId)
-        return p ? { name: p.name, vehicle: p.vehicle, rating: p.rating } : null
-      })() : null,
-      // Provider position for map (if available)
-      providerPosition: svc.providerId ? (() => {
-        const p = providers.get(svc.providerId)
-        return p ? p.position : null
-      })() : null,
-      pickup: svc.pickup,
-      destination: svc.destination,
-      tripProgress: svc.providerId ? (() => {
-        const p = providers.get(svc.providerId)
-        return p ? {
-          startPos: p.tripStartPos || null,
-          target: p.tripTarget || null,
-          startedAt: p.tripStartedAt || null,
-          totalKm: p.tripTotalKm || 0,
-        } : null
-      })() : null,
-    }
-    res.writeHead(200, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify(publicData))
-    return
-  }
-
   res.writeHead(200, { 'Content-Type': 'text/plain' })
   res.end('Help Bibi rescue-service running')
 })
@@ -99,66 +42,29 @@ type ServiceStatus =
   | 'in_progress' | 'completed' | 'cancelled' | 'expired'
 
 type Rating = { stars: number; comment: string; at: number; from: string }
-
 type ChatMessage = {
-  id: string
-  serviceId: string
-  from: 'client' | 'provider'
-  fromName: string
-  text: string
-  at: number
+  id: string; serviceId: string; from: 'client' | 'provider'; fromName: string; text: string; at: number
 }
 
 type Provider = {
-  id: string
-  socketId: string
-  name: string
-  vehicle: string
-  plate: string
-  rating: number
-  ratingSum: number
-  ratingCount: number
-  completedCount: number
-  earningsToday: number
-  online: boolean
-  position: LatLng
-  destination?: LatLng | null
-  currentServiceId?: string | null
-  // trip progress tracking
-  tripStartPos?: LatLng | null
-  tripTarget?: LatLng | null
-  tripStartedAt?: number | null
-  tripTotalKm?: number
+  id: string; socketId: string; name: string; vehicle: string; plate: string;
+  rating: number; ratingSum: number; ratingCount: number; completedCount: number; earningsToday: number;
+  online: boolean; position: LatLng; destination?: LatLng | null; currentServiceId?: string | null;
+  tripStartPos?: LatLng | null; tripTarget?: LatLng | null; tripStartedAt?: number | null; tripTotalKm?: number;
+  // DB linkage
+  dbUserId?: string; dbProviderProfileId?: string;
 }
 
 type ServiceRequest = {
-  id: string
-  clientId: string
-  clientName: string
-  type: ServiceType
-  description: string
-  pickup: LatLng
-  pickupLabel: string
-  destination: LatLng
-  destinationLabel: string
-  price: number
-  originalPrice: number
-  discount: number
-  promoCode: string | null
-  distanceKm: number
-  etaMin: number
-  status: ServiceStatus
-  paymentMethod: PaymentMethod
-  providerId?: string | null
-  notifiedProviderIds: string[]
-  createdAt: number
-  acceptedAt?: number | null
-  completedAt?: number | null
-  timeline: TimelineEvent[]
-  rating?: Rating | null
-  clientRating?: Rating | null
-  // loyalty
-  loyaltyPoints: number
+  id: string; clientId: string; clientName: string; type: ServiceType; description: string;
+  pickup: LatLng; pickupLabel: string; destination: LatLng; destinationLabel: string;
+  price: number; originalPrice: number; discount: number; promoCode: string | null;
+  distanceKm: number; etaMin: number; status: ServiceStatus; paymentMethod: PaymentMethod;
+  providerId?: string | null; notifiedProviderIds: string[];
+  createdAt: number; acceptedAt?: number | null; completedAt?: number | null;
+  timeline: TimelineEvent[]; rating?: Rating | null; clientRating?: Rating | null; loyaltyPoints: number;
+  // DB linkage
+  dbServiceId?: string;
 }
 
 type TimelineEvent = { status: ServiceStatus; label: string; at: number }
@@ -174,15 +80,37 @@ const SERVICE_TYPES: Record<ServiceType, ServiceTypeMeta> = {
   pane: { label: 'Pane Seca / Mecânica', basePrice: 110, icon: 'wrench' },
 }
 
-// Promo codes (demo): code -> { type, value, label }
+// Map frontend status to Prisma enum
+const STATUS_MAP: Record<ServiceStatus, string> = {
+  searching: 'REQUESTED',
+  offered: 'OFFERED',
+  accepted: 'ACCEPTED',
+  arriving: 'PROVIDER_EN_ROUTE',
+  arrived: 'ARRIVED',
+  in_progress: 'IN_PROGRESS',
+  completed: 'COMPLETED',
+  cancelled: 'CANCELED',
+  expired: 'EXPIRED',
+}
+
+// Map frontend service type to Prisma enum
+const TYPE_MAP: Record<ServiceType, string> = {
+  reboque: 'REBOQUE', pneu: 'PNEU', bateria: 'BATERIA',
+  combustivel: 'COMBUSTIVEL', chaveiro: 'CHAVEIRO', pane: 'PANE',
+}
+
+// Map frontend payment method to Prisma enum
+const PAYMENT_MAP: Record<PaymentMethod, string> = {
+  pix: 'PIX', card: 'CARD', cash: 'CASH',
+}
+
 type PromoDef = { type: 'percent' | 'fixed'; value: number; label: string }
 const PROMO_CODES: Record<string, PromoDef> = {
-  SOCORRO10: { type: 'percent', value: 10, label: '10% OFF' },
+  HELPBIBI10: { type: 'percent', value: 10, label: '10% OFF' },
   BEMVINDO20: { type: 'fixed', value: 20, label: 'R$ 20 OFF' },
   PROMO15: { type: 'percent', value: 15, label: '15% OFF' },
 }
 
-// Loyalty rewards: spend points to get a one-time promo code
 const LOYALTY_REWARDS = [
   { id: 'reward_5pct', cost: 100, code: 'FIDEL5', type: 'percent' as const, value: 5, label: '5% OFF', desc: 'Cupom de 5% de desconto' },
   { id: 'reward_10pct', cost: 200, code: 'FIDEL10', type: 'percent' as const, value: 10, label: '10% OFF', desc: 'Cupom de 10% de desconto' },
@@ -190,11 +118,10 @@ const LOYALTY_REWARDS = [
   { id: 'reward_15pct', cost: 500, code: 'FIDEL15', type: 'percent' as const, value: 15, label: '15% OFF', desc: 'Cupom de 15% de desconto' },
 ]
 
-// Loyalty: clients earn 1 point per R$ 1 spent. Tiers based on total points.
 const LOYALTY_TIERS = [
   { name: 'Bronze', min: 0, color: '#a16207', perk: '5% OFF no próximo' },
   { name: 'Prata', min: 200, color: '#94a3b8', perk: '8% OFF + prioridade' },
-  { name: 'Ouro', min: 500, color: '#f59e0b', perk: '12% OFF + suporte VIP' },
+  { name: 'Ouro', min: 500, color: '#00BFFF', perk: '12% OFF + suporte VIP' },
   { name: 'Diamante', min: 1000, color: '#38bdf8', perk: '15% OFF + benefícios exclusivos' },
 ]
 const loyaltyTier = (points: number) => {
@@ -206,17 +133,14 @@ const nextTierMin = (points: number): number | null => {
   for (const t of LOYALTY_TIERS) if (points < t.min) return t.min
   return null
 }
-// client loyalty points (in-memory; keyed by clientName for demo persistence across sessions)
 const clientLoyalty = new Map<string, number>()
-
-// How many nearby providers to notify simultaneously for a new request
 const MULTI_NOTIFY_COUNT = 3
 
-// ----------------------- State -----------------------
+// ----------------------- State (in-memory for realtime) -----------------------
 const providers = new Map<string, Provider>()
-const clients = new Map<string, { id: string; socketId: string; name: string }>()
+const clients = new Map<string, { id: string; socketId: string; name: string; dbUserId?: string }>()
 const services = new Map<string, ServiceRequest>()
-const chats = new Map<string, ChatMessage[]>() // serviceId -> messages
+const chats = new Map<string, ChatMessage[]>()
 const socketToRole = new Map<string, { role: Role; id: string }>()
 
 const CITY = { center: { lat: -23.5505, lng: -46.6333 }, span: 0.05 }
@@ -236,8 +160,7 @@ const haversineKm = (a: LatLng, b: LatLng) => {
 
 const calcPrice = (type: ServiceType, distanceKm: number) => {
   const meta = SERVICE_TYPES[type]
-  const perKm = 4.5
-  return Math.round(meta.basePrice + distanceKm * perKm)
+  return Math.round(meta.basePrice + distanceKm * 4.5)
 }
 
 const applyPromo = (price: number, code: string | null): { final: number; discount: number; valid: boolean } => {
@@ -255,6 +178,42 @@ const calcEta = (distanceKm: number) => Math.max(3, Math.round(distanceKm / 0.5)
 const pushTimeline = (svc: ServiceRequest, status: ServiceStatus, label: string) => {
   svc.status = status
   svc.timeline.push({ status, label, at: Date.now() })
+  // Persist timeline event to DB (fire-and-forget)
+  if (svc.dbServiceId) {
+    db.serviceTimelineEvent.create({
+      data: {
+        serviceId: svc.dbServiceId,
+        status: STATUS_MAP[status] as any,
+        label,
+      }
+    }).catch(() => {})
+  }
+}
+
+// Persist service status update to DB (fire-and-forget, non-blocking)
+const persistServiceStatus = (svc: ServiceRequest) => {
+  if (!svc.dbServiceId) return
+  db.serviceRequest.update({
+    where: { id: svc.dbServiceId },
+    data: {
+      status: STATUS_MAP[svc.status] as any,
+      ...(svc.acceptedAt && { acceptedAt: new Date(svc.acceptedAt) }),
+      ...(svc.completedAt && { completedAt: new Date(svc.completedAt) }),
+    },
+  }).catch(() => {})
+}
+
+// Throttled position persistence
+let lastPositionSave = 0
+const persistProviderPosition = (svc: ServiceRequest, p: Provider) => {
+  if (!svc.dbServiceId) return
+  const now = Date.now()
+  if (now - lastPositionSave < 3000) return // throttle: max once per 3s
+  lastPositionSave = now
+  db.serviceRequest.update({
+    where: { id: svc.dbServiceId },
+    data: { providerLat: p.position.lat, providerLng: p.position.lng },
+  }).catch(() => {})
 }
 
 const stepToward = (from: LatLng, to: LatLng, stepKm: number): { pos: LatLng; arrived: boolean } => {
@@ -278,10 +237,8 @@ const emitProvider = (p: Provider) => {
     rating: p.rating, online: p.online, position: p.position,
     currentServiceId: p.currentServiceId, completedCount: p.completedCount,
     earningsToday: p.earningsToday,
-    tripStartPos: p.tripStartPos || null,
-    tripTarget: p.tripTarget || null,
-    tripStartedAt: p.tripStartedAt || null,
-    tripTotalKm: p.tripTotalKm || 0,
+    tripStartPos: p.tripStartPos || null, tripTarget: p.tripTarget || null,
+    tripStartedAt: p.tripStartedAt || null, tripTotalKm: p.tripTotalKm || 0,
   } as any)
   io.emit('providers:nearby', Array.from(providers.values()).filter((x) => x.online).map(providerPublic))
 }
@@ -293,14 +250,11 @@ const sanitizeService = (svc: ServiceRequest) => ({
   destination: svc.destination, destinationLabel: svc.destinationLabel,
   price: svc.price, originalPrice: svc.originalPrice, discount: svc.discount, promoCode: svc.promoCode,
   distanceKm: svc.distanceKm, etaMin: svc.etaMin, status: svc.status,
-  paymentMethod: svc.paymentMethod,
-  providerId: svc.providerId,
-  notifiedProviderIds: svc.notifiedProviderIds,
-  notifiedCount: svc.notifiedProviderIds.length,
+  paymentMethod: svc.paymentMethod, providerId: svc.providerId,
+  notifiedProviderIds: svc.notifiedProviderIds, notifiedCount: svc.notifiedProviderIds.length,
   provider: svc.providerId ? providers.get(svc.providerId) : null,
   createdAt: svc.createdAt, acceptedAt: svc.acceptedAt, completedAt: svc.completedAt,
-  timeline: svc.timeline, rating: svc.rating || null,
-  clientRating: svc.clientRating || null,
+  timeline: svc.timeline, rating: svc.rating || null, clientRating: svc.clientRating || null,
   loyaltyPoints: svc.loyaltyPoints,
 })
 
@@ -312,20 +266,25 @@ const emitService = (svc: ServiceRequest) => {
     const p = providers.get(svc.providerId)
     if (p) io.to(p.socketId).emit('service:update', payload)
   }
-  io.emit('service:public', {
-    id: svc.id, status: svc.status, clientId: svc.clientId, providerId: svc.providerId,
-    pickup: svc.pickup, destination: svc.destination,
-  })
 }
 
-// Send chat history + emit to both parties
 const emitChatToService = (serviceId: string, msg?: ChatMessage) => {
   const svc = services.get(serviceId)
   if (!svc) return
-  const msgs = chats.get(serviceId) || []
   if (msg) {
     if (!chats.has(serviceId)) chats.set(serviceId, [])
     chats.get(serviceId)!.push(msg)
+    // Persist chat message to DB (fire-and-forget)
+    if (svc.dbServiceId) {
+      db.serviceChatMessage.create({
+        data: {
+          serviceId: svc.dbServiceId,
+          authorRole: msg.from,
+          authorName: msg.fromName,
+          text: msg.text,
+        }
+      }).catch(() => {})
+    }
   }
   const payload = { serviceId, messages: chats.get(serviceId) || [] }
   const client = clients.get(svc.clientId)
@@ -346,9 +305,31 @@ const emitChatToService = (serviceId: string, msg?: ChatMessage) => {
 io.on('connection', (socket) => {
   console.log(`[socket] connected ${socket.id}`)
 
-  socket.on('client:register', (data: { name: string }) => {
+  socket.on('client:register', async (data: { name: string }) => {
     const id = uid('cli_')
-    clients.set(id, { id, socketId: socket.id, name: data.name })
+    // Persist user to DB
+    let dbUserId: string | undefined
+    try {
+      const user = await db.user.upsert({
+        where: { email: `demo_${data.name}@helpbibi.com` },
+        update: { name: data.name },
+        create: {
+          name: data.name,
+          email: `demo_${data.name}@helpbibi.com`,
+          role: 'CLIENT',
+          clientProfile: { create: {} },
+          loyaltyAccount: { create: { points: 0, tier: 'Bronze' } },
+        },
+        include: { loyaltyAccount: true },
+      })
+      dbUserId = user.id
+      const points = user.loyaltyAccount?.points || 0
+      clientLoyalty.set(data.name, points)
+    } catch (e) {
+      console.error('[db] client register error:', e)
+    }
+
+    clients.set(id, { id, socketId: socket.id, name: data.name, dbUserId })
     socketToRole.set(socket.id, { role: 'client', id })
     const points = clientLoyalty.get(data.name) || 0
     const tier = loyaltyTier(points)
@@ -356,10 +337,9 @@ io.on('connection', (socket) => {
     socket.emit('client:loyalty', { points, tier: { name: tier.name, color: tier.color, perk: tier.perk }, nextTierMin: nextTierMin(points) })
     socket.emit('loyalty:rewards', LOYALTY_REWARDS.map(r => ({ ...r, affordable: points >= r.cost })))
     socket.emit('providers:nearby', Array.from(providers.values()).filter((x) => x.online).map(providerPublic))
-    console.log(`[client] registered ${id} (${data.name}) — loyalty ${points}pts (${tier.name})`)
+    console.log(`[client] registered ${id} (${data.name}) — loyalty ${points}pts (${tier.name}) dbUser=${dbUserId}`)
   })
 
-  // Redeem loyalty points for a promo code
   socket.on('loyalty:redeem', (data: { rewardId: string }) => {
     const role = socketToRole.get(socket.id)
     if (!role || role.role !== 'client') return
@@ -367,54 +347,62 @@ io.on('connection', (socket) => {
     if (!client) return
     const name = client.name
     const reward = LOYALTY_REWARDS.find(r => r.id === data.rewardId)
-    if (!reward) {
-      socket.emit('loyalty:redeem-result', { success: false, message: 'Recompensa não encontrada' })
-      return
-    }
+    if (!reward) { socket.emit('loyalty:redeem-result', { success: false, message: 'Recompensa não encontrada' }); return }
     const points = clientLoyalty.get(name) || 0
-    if (points < reward.cost) {
-      socket.emit('loyalty:redeem-result', { success: false, message: `Pontos insuficientes. Necessário: ${reward.cost}` })
-      return
-    }
-    // Deduct points and grant the promo code (add to PROMO_CODES so it's valid)
+    if (points < reward.cost) { socket.emit('loyalty:redeem-result', { success: false, message: `Pontos insuficientes. Necessário: ${reward.cost}` }); return }
     const newPoints = points - reward.cost
     clientLoyalty.set(name, newPoints)
     PROMO_CODES[reward.code] = { type: reward.type, value: reward.value, label: reward.label }
     const tier = loyaltyTier(newPoints)
-    socket.emit('loyalty:redeem-result', {
-      success: true,
-      code: reward.code,
-      label: reward.label,
-      pointsSpent: reward.cost,
-      pointsRemaining: newPoints,
-      message: `Cupom ${reward.code} resgatado! Use no próximo serviço.`,
-    })
-    socket.emit('client:loyalty', {
-      points: newPoints,
-      tier: { name: tier.name, color: tier.color, perk: tier.perk },
-      nextTierMin: nextTierMin(newPoints),
-    })
+    socket.emit('loyalty:redeem-result', { success: true, code: reward.code, label: reward.label, pointsSpent: reward.cost, pointsRemaining: newPoints, message: `Cupom ${reward.code} resgatado!` })
+    socket.emit('client:loyalty', { points: newPoints, tier: { name: tier.name, color: tier.color, perk: tier.perk }, nextTierMin: nextTierMin(newPoints) })
     socket.emit('loyalty:rewards', LOYALTY_REWARDS.map(r => ({ ...r, affordable: newPoints >= r.cost })))
+    // Persist loyalty deduction
+    if (client.dbUserId) {
+      db.loyaltyAccount.update({ where: { userId: client.dbUserId }, data: { points: newPoints } }).catch(() => {})
+    }
     console.log(`[loyalty] ${name} redeemed ${reward.code} for ${reward.cost}pts (remaining ${newPoints})`)
   })
 
-  socket.on('provider:register', (data: { name: string; vehicle: string; plate: string }) => {
+  socket.on('provider:register', async (data: { name: string; vehicle: string; plate: string }) => {
     const id = uid('prv_')
+    // Persist user + provider profile to DB
+    let dbUserId: string | undefined
+    let dbProviderProfileId: string | undefined
+    try {
+      const user = await db.user.upsert({
+        where: { email: `demo_${data.name}@helpbibi.com` },
+        update: { name: data.name, role: 'PROVIDER' },
+        create: {
+          name: data.name,
+          email: `demo_${data.name}@helpbibi.com`,
+          role: 'PROVIDER',
+          providerProfile: {
+            create: { vehicle: data.vehicle, plate: data.plate, isAvailable: true },
+          },
+          loyaltyAccount: { create: { points: 0, tier: 'Bronze' } },
+        },
+        include: { providerProfile: true },
+      })
+      dbUserId = user.id
+      dbProviderProfileId = user.providerProfile?.id
+    } catch (e) {
+      console.error('[db] provider register error:', e)
+    }
+
     const provider: Provider = {
       id, socketId: socket.id, name: data.name, vehicle: data.vehicle, plate: data.plate,
       rating: 4.8, ratingSum: 48, ratingCount: 10, completedCount: 0, earningsToday: 0,
       online: true,
-      position: {
-        lat: CITY.center.lat + (Math.random() - 0.5) * CITY.span,
-        lng: CITY.center.lng + (Math.random() - 0.5) * CITY.span,
-      },
+      position: { lat: CITY.center.lat + (Math.random() - 0.5) * CITY.span, lng: CITY.center.lng + (Math.random() - 0.5) * CITY.span },
       currentServiceId: null,
+      dbUserId, dbProviderProfileId,
     }
     providers.set(id, provider)
     socketToRole.set(socket.id, { role: 'provider', id })
     emitProvider(provider)
     socket.emit('provider:registered', { id })
-    console.log(`[provider] registered ${id} (${data.name})`)
+    console.log(`[provider] registered ${id} (${data.name}) dbUser=${dbUserId}`)
   })
 
   socket.on('provider:toggle-online', (data: { online: boolean }) => {
@@ -424,38 +412,29 @@ io.on('connection', (socket) => {
     if (!p) return
     p.online = data.online
     emitProvider(p)
+    if (p.dbProviderProfileId) {
+      db.providerProfile.update({ where: { id: p.dbProviderProfileId }, data: { isAvailable: data.online } }).catch(() => {})
+    }
   })
 
-  // Validate a promo code (returns discount preview without creating a service)
   socket.on('promo:validate', (data: { code: string; type: ServiceType; distanceKm: number }) => {
     const code = (data.code || '').trim().toUpperCase()
     const promo = PROMO_CODES[code]
-    if (!promo) {
-      socket.emit('promo:result', { valid: false, code, message: 'Cupom inválido ou expirado' })
-      return
-    }
+    if (!promo) { socket.emit('promo:result', { valid: false, code, message: 'Cupom inválido ou expirado' }); return }
     const base = calcPrice(data.type, data.distanceKm)
     const { final, discount } = applyPromo(base, code)
-    socket.emit('promo:result', {
-      valid: true, code, label: promo.label, type: promo.type, value: promo.value,
-      originalPrice: base, discount, finalPrice: final,
-      message: `Cupom aplicado: ${promo.label}`,
-    })
+    socket.emit('promo:result', { valid: true, code, label: promo.label, type: promo.type, value: promo.value, originalPrice: base, discount, finalPrice: final, message: `Cupom aplicado: ${promo.label}` })
   })
 
-  socket.on('service:request', (data: {
-    clientName: string
-    type: ServiceType
-    description: string
-    pickup: LatLng
-    pickupLabel: string
-    destination: LatLng
-    destinationLabel: string
-    paymentMethod: PaymentMethod
-    promoCode?: string | null
+  socket.on('service:request', async (data: {
+    clientName: string; type: ServiceType; description: string;
+    pickup: LatLng; pickupLabel: string; destination: LatLng; destinationLabel: string;
+    paymentMethod: PaymentMethod; promoCode?: string | null
   }) => {
     const role = socketToRole.get(socket.id)
     if (!role || role.role !== 'client') return
+    const client = clients.get(role.id)
+    if (!client) return
 
     const distanceKm = haversineKm(data.pickup, data.destination)
     const originalPrice = calcPrice(data.type, distanceKm)
@@ -464,91 +443,97 @@ io.on('connection', (socket) => {
     const etaMin = calcEta(distanceKm)
 
     const svc: ServiceRequest = {
-      id: uid('svc_'),
-      clientId: role.id,
-      clientName: data.clientName,
-      type: data.type,
-      description: data.description,
+      id: uid('svc_'), clientId: role.id, clientName: data.clientName,
+      type: data.type, description: data.description,
       pickup: data.pickup, pickupLabel: data.pickupLabel,
       destination: data.destination, destinationLabel: data.destinationLabel,
       price, originalPrice, discount: promoResult.discount,
       promoCode: promoResult.valid ? (data.promoCode || '').trim().toUpperCase() : null,
       distanceKm: Number(distanceKm.toFixed(2)), etaMin,
-      status: 'searching',
-      paymentMethod: data.paymentMethod || 'pix',
-      providerId: null,
-      notifiedProviderIds: [],
+      status: 'searching', paymentMethod: data.paymentMethod || 'pix',
+      providerId: null, notifiedProviderIds: [],
       createdAt: Date.now(),
       timeline: [{ status: 'searching', label: 'Solicitação enviada — procurando prestador próximo', at: Date.now() }],
-      rating: null,
-      loyaltyPoints: 0,
+      rating: null, loyaltyPoints: 0,
     }
     if (promoResult.valid) {
       svc.timeline.push({ status: 'searching', label: `Cupom ${svc.promoCode} aplicado: -R$ ${promoResult.discount}`, at: Date.now() })
     }
+
+    // Persist ServiceRequest to DB
+    try {
+      if (client.dbUserId) {
+        const dbSvc = await db.serviceRequest.create({
+          data: {
+            clientId: client.dbUserId,
+            type: TYPE_MAP[data.type] as any,
+            description: data.description,
+            status: 'REQUESTED',
+            pickup: JSON.stringify(data.pickup),
+            pickupLabel: data.pickupLabel,
+            destination: JSON.stringify(data.destination),
+            destinationLabel: data.destinationLabel,
+            distanceKm: svc.distanceKm,
+            etaMin,
+            price, originalPrice, discount: promoResult.discount,
+            promoCode: svc.promoCode,
+            paymentMethod: PAYMENT_MAP[data.paymentMethod || 'pix'] as any,
+            loyaltyPoints: 0,
+            timeline: { create: { status: 'REQUESTED', label: 'Solicitação enviada — procurando prestador próximo' } },
+          },
+        })
+        svc.dbServiceId = dbSvc.id
+        if (promoResult.valid) {
+          await db.serviceTimelineEvent.create({
+            data: { serviceId: dbSvc.id, status: 'REQUESTED', label: `Cupom ${svc.promoCode} aplicado: -R$ ${promoResult.discount}` }
+          })
+        }
+        // Create tracking share
+        await db.trackingShare.create({ data: { serviceId: dbSvc.id } }).catch(() => {})
+        console.log(`[db] service persisted ${svc.id} → dbId=${dbSvc.id}`)
+      }
+    } catch (e) {
+      console.error('[db] service create error:', e)
+    }
+
     services.set(svc.id, svc)
     emitService(svc)
 
-    // --- Multi-provider notification: notify up to MULTI_NOTIFY_COUNT nearest providers ---
+    // Multi-provider notification
     const candidates = Array.from(providers.values()).filter((p) => p.online && !p.currentServiceId)
     if (candidates.length === 0) {
       setTimeout(() => {
         const s = services.get(svc.id)
-        if (s && s.status === 'searching') {
-          pushTimeline(s, 'expired', 'Nenhum prestador disponível no momento')
-          emitService(s)
-        }
+        if (s && s.status === 'searching') { pushTimeline(s, 'expired', 'Nenhum prestador disponível no momento'); persistServiceStatus(s); emitService(s) }
       }, 8000)
       return
     }
     candidates.sort((a, b) => haversineKm(a.position, data.pickup) - haversineKm(b.position, data.pickup))
     const toNotify = candidates.slice(0, Math.min(MULTI_NOTIFY_COUNT, candidates.length))
     svc.notifiedProviderIds = toNotify.map((p) => p.id)
-    // The primary (nearest) provider "claims" the service but all notified can accept (first-accept wins)
     const primary = toNotify[0]
     svc.providerId = primary.id
     primary.currentServiceId = svc.id
     const names = toNotify.map((p) => p.name).join(', ')
     pushTimeline(svc, 'offered', `Chamada enviada para ${toNotify.length} prestador(es) próximo(s): ${names}`)
+    persistServiceStatus(svc)
     emitService(svc)
     emitProvider(primary)
-
-    // Send offer to ALL notified providers simultaneously
-    toNotify.forEach((p) => {
-      io.to(p.socketId).emit('service:offer', sanitizeService(svc))
-    })
+    toNotify.forEach((p) => io.to(p.socketId).emit('service:offer', sanitizeService(svc)))
 
     const expireTimer = setTimeout(() => {
       const s = services.get(svc.id)
       if (s && s.status === 'offered') {
         pushTimeline(s, 'expired', `Prestador(es) não respondeu(ram) a tempo — reofertando...`)
-        // free up all notified providers
-        s.notifiedProviderIds.forEach((pid) => {
-          const np = providers.get(pid)
-          if (np && np.currentServiceId === s.id) {
-            np.currentServiceId = null
-            emitProvider(np)
-          }
-        })
-        // try next batch of providers
-        const nextBatch = Array.from(providers.values())
-          .filter((p) => p.online && !p.currentServiceId && !s.notifiedProviderIds.includes(p.id))
-          .sort((a, b) => haversineKm(a.position, s.pickup) - haversineKm(b.position, s.pickup))
-          .slice(0, MULTI_NOTIFY_COUNT)
+        persistServiceStatus(s)
+        s.notifiedProviderIds.forEach((pid) => { const np = providers.get(pid); if (np && np.currentServiceId === s.id) { np.currentServiceId = null; emitProvider(np) } })
+        const nextBatch = Array.from(providers.values()).filter((p) => p.online && !p.currentServiceId && !s.notifiedProviderIds.includes(p.id)).sort((a, b) => haversineKm(a.position, s.pickup) - haversineKm(b.position, s.pickup)).slice(0, MULTI_NOTIFY_COUNT)
         if (nextBatch.length > 0) {
-          s.notifiedProviderIds = nextBatch.map((p) => p.id)
-          const np = nextBatch[0]
-          s.providerId = np.id
-          np.currentServiceId = s.id
-          const nextNames = nextBatch.map((p) => p.name).join(', ')
-          pushTimeline(s, 'offered', `Chamada enviada para ${nextBatch.length} prestador(es): ${nextNames}`)
-          emitService(s)
-          emitProvider(np)
+          s.notifiedProviderIds = nextBatch.map((p) => p.id); const np = nextBatch[0]; s.providerId = np.id; np.currentServiceId = s.id
+          pushTimeline(s, 'offered', `Chamada enviada para ${nextBatch.length} prestador(es): ${nextBatch.map((p) => p.name).join(', ')}`)
+          persistServiceStatus(s); emitService(s); emitProvider(np)
           nextBatch.forEach((p) => io.to(p.socketId).emit('service:offer', sanitizeService(s)))
-        } else {
-          pushTimeline(s, 'expired', 'Nenhum prestador disponível')
-          emitService(s)
-        }
+        } else { pushTimeline(s, 'expired', 'Nenhum prestador disponível'); persistServiceStatus(s); emitService(s) }
       }
     }, 12000)
     ;(svc as any)._expireTimer = expireTimer
@@ -559,39 +544,26 @@ io.on('connection', (socket) => {
     if (!role || role.role !== 'provider') return
     const svc = services.get(data.serviceId)
     if (!svc || svc.status !== 'offered') return
-    // First-accept-wins: any notified provider can accept
     if (!svc.notifiedProviderIds.includes(role.id)) return
     if ((svc as any)._expireTimer) clearTimeout((svc as any)._expireTimer)
     const winner = providers.get(role.id)!
-    // Free up all other notified providers (they didn't win)
     svc.notifiedProviderIds.forEach((pid) => {
       if (pid !== role.id) {
         const np = providers.get(pid)
-        if (np) {
-          // Clear currentServiceId if it was set (for the primary provider)
-          if (np.currentServiceId === svc.id) np.currentServiceId = null
-          emitProvider(np)
-          // Notify ALL other notified providers that the offer was taken
-          io.to(np.socketId).emit('service:offer-taken', { serviceId: svc.id, acceptedBy: winner.name, cancelled: false })
-        }
+        if (np) { if (np.currentServiceId === svc.id) np.currentServiceId = null; emitProvider(np); io.to(np.socketId).emit('service:offer-taken', { serviceId: svc.id, acceptedBy: winner.name, cancelled: false }) }
       }
     })
-    // Assign to winner
-    svc.providerId = winner.id
-    winner.currentServiceId = svc.id
-    winner.online = false
+    svc.providerId = winner.id; winner.currentServiceId = svc.id; winner.online = false
     svc.acceptedAt = Date.now()
     pushTimeline(svc, 'accepted', `${winner.name} aceitou a chamada e está a caminho`)
-    // Start trip progress tracking (provider -> pickup)
-    winner.tripStartPos = { ...winner.position }
-    winner.tripTarget = svc.pickup
-    winner.tripStartedAt = Date.now()
-    winner.tripTotalKm = haversineKm(winner.position, svc.pickup)
-    winner.destination = svc.pickup
-    emitProvider(winner)
-    emitService(svc)
-    emitChatToService(svc.id)
-    console.log(`[service] accepted ${svc.id} by ${winner.name} (first-accept-wins among ${svc.notifiedProviderIds.length})`)
+    persistServiceStatus(svc)
+    // Link provider to service in DB
+    if (svc.dbServiceId && winner.dbProviderProfileId) {
+      db.serviceRequest.update({ where: { id: svc.dbServiceId }, data: { providerId: winner.dbProviderProfileId, status: 'ACCEPTED', acceptedAt: new Date() } }).catch(() => {})
+    }
+    winner.tripStartPos = { ...winner.position }; winner.tripTarget = svc.pickup; winner.tripStartedAt = Date.now(); winner.tripTotalKm = haversineKm(winner.position, svc.pickup); winner.destination = svc.pickup
+    emitProvider(winner); emitService(svc); emitChatToService(svc.id)
+    console.log(`[service] accepted ${svc.id} by ${winner.name}`)
   })
 
   socket.on('service:reject', (data: { serviceId: string }) => {
@@ -602,41 +574,20 @@ io.on('connection', (socket) => {
     if (!svc.notifiedProviderIds.includes(role.id)) return
     const p = providers.get(role.id)!
     if (p.currentServiceId === svc.id) p.currentServiceId = null
-    // remove this provider from notified list
     svc.notifiedProviderIds = svc.notifiedProviderIds.filter((id) => id !== role.id)
     emitProvider(p)
-    // If the rejecting provider was the primary, reassign primary to next notified
     if (svc.providerId === role.id && svc.notifiedProviderIds.length > 0) {
-      svc.providerId = svc.notifiedProviderIds[0]
-      const np = providers.get(svc.providerId)
-      if (np) {
-        np.currentServiceId = svc.id
-        emitProvider(np)
-      }
+      svc.providerId = svc.notifiedProviderIds[0]; const np = providers.get(svc.providerId); if (np) { np.currentServiceId = svc.id; emitProvider(np) }
     }
     pushTimeline(svc, 'searching', `${p.name} recusou — ${svc.notifiedProviderIds.length} prestador(es) ainda notificado(s)`)
-    emitService(svc)
-    // If no notified providers left, try to find more
+    persistServiceStatus(svc); emitService(svc)
     if (svc.notifiedProviderIds.length === 0) {
-      const nextBatch = Array.from(providers.values())
-        .filter((x) => x.online && !x.currentServiceId)
-        .sort((a, b) => haversineKm(a.position, svc.pickup) - haversineKm(b.position, svc.pickup))
-        .slice(0, MULTI_NOTIFY_COUNT)
+      const nextBatch = Array.from(providers.values()).filter((x) => x.online && !x.currentServiceId).sort((a, b) => haversineKm(a.position, svc.pickup) - haversineKm(b.position, svc.pickup)).slice(0, MULTI_NOTIFY_COUNT)
       if (nextBatch.length > 0) {
-        svc.notifiedProviderIds = nextBatch.map((x) => x.id)
-        svc.providerId = nextBatch[0].id
-        nextBatch[0].currentServiceId = svc.id
-        const names = nextBatch.map((x) => x.name).join(', ')
-        pushTimeline(svc, 'offered', `Chamada enviada para ${nextBatch.length} prestador(es): ${names}`)
-        emitService(svc)
-        nextBatch.forEach((x) => {
-          emitProvider(x)
-          io.to(x.socketId).emit('service:offer', sanitizeService(svc))
-        })
-      } else {
-        pushTimeline(svc, 'expired', 'Nenhum prestador disponível')
-        emitService(svc)
-      }
+        svc.notifiedProviderIds = nextBatch.map((x) => x.id); svc.providerId = nextBatch[0].id; nextBatch[0].currentServiceId = svc.id
+        pushTimeline(svc, 'offered', `Chamada enviada para ${nextBatch.length} prestador(es): ${nextBatch.map((x) => x.name).join(', ')}`)
+        persistServiceStatus(svc); emitService(svc); nextBatch.forEach((x) => { emitProvider(x); io.to(x.socketId).emit('service:offer', sanitizeService(svc)) })
+      } else { pushTimeline(svc, 'expired', 'Nenhum prestador disponível'); persistServiceStatus(svc); emitService(svc) }
     }
   })
 
@@ -648,14 +599,9 @@ io.on('connection', (socket) => {
     const p = providers.get(role.id)!
     p.position = { ...svc.pickup }
     pushTimeline(svc, 'arrived', `${p.name} chegou ao local do atendimento`)
-    p.destination = svc.destination
-    // reset trip tracking for the next leg (pickup -> destination)
-    p.tripStartPos = { ...svc.pickup }
-    p.tripTarget = svc.destination
-    p.tripStartedAt = Date.now()
-    p.tripTotalKm = haversineKm(svc.pickup, svc.destination)
-    emitProvider(p)
-    emitService(svc)
+    persistServiceStatus(svc)
+    p.destination = svc.destination; p.tripStartPos = { ...svc.pickup }; p.tripTarget = svc.destination; p.tripStartedAt = Date.now(); p.tripTotalKm = haversineKm(svc.pickup, svc.destination)
+    emitProvider(p); emitService(svc)
   })
 
   socket.on('service:start', (data: { serviceId: string }) => {
@@ -664,15 +610,10 @@ io.on('connection', (socket) => {
     const svc = services.get(data.serviceId)
     if (!svc || svc.providerId !== role.id) return
     const p = providers.get(role.id)!
-    p.destination = svc.destination
-    // ensure trip tracking is for the destination leg
-    p.tripStartPos = { ...p.position }
-    p.tripTarget = svc.destination
-    p.tripStartedAt = Date.now()
-    p.tripTotalKm = haversineKm(p.position, svc.destination)
+    p.destination = svc.destination; p.tripStartPos = { ...p.position }; p.tripTarget = svc.destination; p.tripStartedAt = Date.now(); p.tripTotalKm = haversineKm(p.position, svc.destination)
     pushTimeline(svc, 'in_progress', 'Serviço em andamento — rumo ao destino final')
-    emitProvider(p)
-    emitService(svc)
+    persistServiceStatus(svc)
+    emitProvider(p); emitService(svc)
   })
 
   socket.on('service:complete', (data: { serviceId: string }) => {
@@ -681,19 +622,9 @@ io.on('connection', (socket) => {
     const svc = services.get(data.serviceId)
     if (!svc || svc.providerId !== role.id) return
     const p = providers.get(role.id)!
-    p.position = { ...svc.destination }
-    p.destination = null
-    p.currentServiceId = null
-    p.online = true
-    p.completedCount += 1
-    p.earningsToday += svc.price
-    // clear trip tracking
-    p.tripStartPos = null
-    p.tripTarget = null
-    p.tripStartedAt = null
-    p.tripTotalKm = 0
+    p.position = { ...svc.destination }; p.destination = null; p.currentServiceId = null; p.online = true; p.completedCount += 1; p.earningsToday += svc.price
+    p.tripStartPos = null; p.tripTarget = null; p.tripStartedAt = null; p.tripTotalKm = 0
     svc.completedAt = Date.now()
-    // Award loyalty points to client (1 point per R$ 1 spent)
     const earned = Math.round(svc.price)
     const prevPoints = clientLoyalty.get(svc.clientName) || 0
     const newPoints = prevPoints + earned
@@ -702,61 +633,62 @@ io.on('connection', (socket) => {
     const prevTier = loyaltyTier(prevPoints)
     const newTier = loyaltyTier(newPoints)
     pushTimeline(svc, 'completed', 'Serviço concluído com sucesso. Avalie o atendimento!')
-    if (earned > 0) {
-      svc.timeline.push({ status: 'completed', label: `+${earned} pontos de fidelidade (${newTier.name})`, at: Date.now() })
-    }
-    if (newTier.name !== prevTier.name) {
-      svc.timeline.push({ status: 'completed', label: `🎉 Subiu para o tier ${newTier.name}! ${newTier.perk}`, at: Date.now() })
-    }
-    emitProvider(p)
-    emitService(svc)
-    // Send updated loyalty to client
+    if (earned > 0) svc.timeline.push({ status: 'completed', label: `+${earned} pontos de fidelidade (${newTier.name})`, at: Date.now() })
+    if (newTier.name !== prevTier.name) svc.timeline.push({ status: 'completed', label: `🎉 Subiu para o tier ${newTier.name}! ${newTier.perk}`, at: Date.now() })
+    persistServiceStatus(svc)
+    // Persist loyalty + provider stats to DB
     const client = clients.get(svc.clientId)
-    if (client) {
-      io.to(client.socketId).emit('client:loyalty', {
-        points: newPoints,
-        tier: { name: newTier.name, color: newTier.color, perk: newTier.perk },
-        nextTierMin: nextTierMin(newPoints),
-        earnedThisService: earned,
-        tierUpgraded: newTier.name !== prevTier.name,
-      })
+    if (client?.dbUserId) {
+      db.loyaltyAccount.update({ where: { userId: client.dbUserId }, data: { points: newPoints, tier: newTier.name } }).catch(() => {})
     }
-    console.log(`[service] completed ${svc.id} — provider ${p.name} earned R$ ${svc.price}, client ${svc.clientName} +${earned}pts (total ${newPoints})`)
+    if (p.dbProviderProfileId) {
+      db.providerProfile.update({ where: { id: p.dbProviderProfileId }, data: { completedCount: { increment: 1 }, earningsToday: { increment: svc.price }, isAvailable: true } }).catch(() => {})
+    }
+    emitProvider(p); emitService(svc)
+    if (client) {
+      io.to(client.socketId).emit('client:loyalty', { points: newPoints, tier: { name: newTier.name, color: newTier.color, perk: newTier.perk }, nextTierMin: nextTierMin(newPoints), earnedThisService: earned, tierUpgraded: newTier.name !== prevTier.name })
+    }
+    console.log(`[service] completed ${svc.id} — provider ${p.name} earned R$ ${svc.price}, client +${earned}pts`)
   })
 
   socket.on('service:rate', (data: { serviceId: string; stars: number; comment: string }) => {
     const role = socketToRole.get(socket.id)
     if (!role || role.role !== 'client') return
     const svc = services.get(data.serviceId)
-    if (!svc || svc.clientId !== role.id) return
-    if (svc.status !== 'completed') return
-    if (svc.rating) return
+    if (!svc || svc.clientId !== role.id || svc.status !== 'completed' || svc.rating) return
     const stars = Math.max(1, Math.min(5, Math.round(data.stars)))
     svc.rating = { stars, comment: (data.comment || '').slice(0, 240), at: Date.now(), from: svc.clientName }
     if (svc.providerId) {
       const p = providers.get(svc.providerId)
-      if (p) {
-        p.ratingSum += stars
-        p.ratingCount += 1
-        p.rating = Number((p.ratingSum / p.ratingCount).toFixed(2))
-        emitProvider(p)
+      if (p) { p.ratingSum += stars; p.ratingCount += 1; p.rating = Number((p.ratingSum / p.ratingCount).toFixed(2)); emitProvider(p) }
+    }
+    // Persist rating to DB
+    const client = clients.get(svc.clientId)
+    if (svc.dbServiceId && client?.dbUserId) {
+      db.serviceRating.create({ data: { serviceId: svc.dbServiceId, authorId: client.dbUserId, targetRole: 'provider', stars, comment: (data.comment || '').slice(0, 240) } }).catch(() => {})
+      if (svc.providerId) {
+        const p = providers.get(svc.providerId)
+        if (p?.dbProviderProfileId) {
+          db.providerProfile.update({ where: { id: p.dbProviderProfileId }, data: { ratingSum: { increment: stars }, ratingCount: { increment: 1 }, rating: Number(((p.ratingSum + stars) / (p.ratingCount + 1)).toFixed(2)) } }).catch(() => {})
+        }
       }
     }
     emitService(svc)
     console.log(`[rating] service ${svc.id} rated ${stars}★ by ${svc.clientName}`)
   })
 
-  // Provider rates the client after completion (bidirectional rating)
   socket.on('service:rate-client', (data: { serviceId: string; stars: number; comment: string }) => {
     const role = socketToRole.get(socket.id)
     if (!role || role.role !== 'provider') return
     const svc = services.get(data.serviceId)
-    if (!svc || svc.providerId !== role.id) return
-    if (svc.status !== 'completed') return
-    if (svc.clientRating) return
+    if (!svc || svc.providerId !== role.id || svc.status !== 'completed' || svc.clientRating) return
     const stars = Math.max(1, Math.min(5, Math.round(data.stars)))
     const p = providers.get(role.id)!
     svc.clientRating = { stars, comment: (data.comment || '').slice(0, 240), at: Date.now(), from: p.name }
+    // Persist rating to DB
+    if (svc.dbServiceId && p.dbUserId) {
+      db.serviceRating.create({ data: { serviceId: svc.dbServiceId, authorId: p.dbUserId, targetRole: 'client', stars, comment: (data.comment || '').slice(0, 240) } }).catch(() => {})
+    }
     emitService(svc)
     console.log(`[rating] service ${svc.id} client rated ${stars}★ by ${p.name}`)
   })
@@ -765,25 +697,14 @@ io.on('connection', (socket) => {
     const role = socketToRole.get(socket.id)
     if (!role || role.role !== 'client') return
     const svc = services.get(data.serviceId)
-    if (!svc || svc.clientId !== role.id) return
-    if (svc.status === 'completed' || svc.status === 'cancelled') return
+    if (!svc || svc.clientId !== role.id || svc.status === 'completed' || svc.status === 'cancelled') return
     if ((svc as any)._expireTimer) clearTimeout((svc as any)._expireTimer)
-    // free all notified providers
     svc.notifiedProviderIds.forEach((pid) => {
       const np = providers.get(pid)
-      if (np) {
-        if (np.currentServiceId === svc.id) np.currentServiceId = null
-        np.destination = null
-        np.tripStartPos = null
-        np.tripTarget = null
-        np.tripStartedAt = null
-        np.tripTotalKm = 0
-        np.online = true
-        emitProvider(np)
-        io.to(np.socketId).emit('service:offer-taken', { serviceId: svc.id, acceptedBy: null, cancelled: true })
-      }
+      if (np) { if (np.currentServiceId === svc.id) np.currentServiceId = null; np.destination = null; np.tripStartPos = null; np.tripTarget = null; np.tripStartedAt = null; np.tripTotalKm = 0; np.online = true; emitProvider(np); io.to(np.socketId).emit('service:offer-taken', { serviceId: svc.id, acceptedBy: null, cancelled: true }) }
     })
     pushTimeline(svc, 'cancelled', 'Solicitação cancelada pelo cliente')
+    persistServiceStatus(svc)
     svc.completedAt = Date.now()
     emitService(svc)
   })
@@ -794,25 +715,16 @@ io.on('connection', (socket) => {
     if (!role) return
     const svc = services.get(data.serviceId)
     if (!svc) return
-    // Only client or assigned provider can chat
     if (role.role === 'client' && svc.clientId !== role.id) return
     if (role.role === 'provider' && svc.providerId !== role.id) return
     const text = (data.text || '').trim().slice(0, 500)
     if (!text) return
     const fromName = role.role === 'client' ? svc.clientName : (providers.get(role.id)?.name || 'Prestador')
-    const msg: ChatMessage = {
-      id: uid('msg_'),
-      serviceId: svc.id,
-      from: role.role,
-      fromName,
-      text,
-      at: Date.now(),
-    }
+    const msg: ChatMessage = { id: uid('msg_'), serviceId: svc.id, from: role.role, fromName, text, at: Date.now() }
     emitChatToService(svc.id, msg)
     console.log(`[chat] ${fromName}: ${text}`)
   })
 
-  // Request chat history for a service (e.g. after reconnect)
   socket.on('chat:history', (data: { serviceId: string }) => {
     const role = socketToRole.get(socket.id)
     if (!role) return
@@ -823,55 +735,62 @@ io.on('connection', (socket) => {
     socket.emit('chat:messages', { serviceId: svc.id, messages: chats.get(svc.id) || [] })
   })
 
-  // Public tracking — any connection can request service status by ID (no login required)
-  socket.on('public:track', (data: { serviceId: string }) => {
+  // Public tracking — tries DB first, falls back to in-memory
+  socket.on('public:track', async (data: { serviceId: string }) => {
     const svc = services.get(data.serviceId)
-    if (!svc) {
-      socket.emit('public:track-result', { available: false, message: 'Rastreamento indisponível ou encerrado.' })
+    if (svc) {
+      // In-memory service found — return from memory
+      const p = svc.providerId ? providers.get(svc.providerId) : null
+      socket.emit('public:track-result', {
+        available: true, serviceId: svc.id, status: svc.status, type: svc.type,
+        typeLabel: SERVICE_TYPES[svc.type]?.label || svc.type, icon: SERVICE_TYPES[svc.type]?.icon || 'wrench',
+        pickupLabel: svc.pickupLabel, destinationLabel: svc.destinationLabel, distanceKm: svc.distanceKm, etaMin: svc.etaMin,
+        createdAt: svc.createdAt, acceptedAt: svc.acceptedAt || null, completedAt: svc.completedAt || null,
+        timeline: svc.timeline,
+        provider: p ? { name: p.name, vehicle: p.vehicle, rating: p.rating } : null,
+        providerPosition: p ? p.position : null, pickup: svc.pickup, destination: svc.destination,
+        tripProgress: p ? { startPos: p.tripStartPos || null, target: p.tripTarget || null, startedAt: p.tripStartedAt || null, totalKm: p.tripTotalKm || 0 } : null,
+      })
       return
     }
-    // Return public-safe data (no client name, no payment details, no plate)
-    const p = svc.providerId ? providers.get(svc.providerId) : null
-    socket.emit('public:track-result', {
-      available: true,
-      serviceId: svc.id,
-      status: svc.status,
-      type: svc.type,
-      typeLabel: SERVICE_TYPES[svc.type]?.label || svc.type,
-      icon: SERVICE_TYPES[svc.type]?.icon || 'wrench',
-      pickupLabel: svc.pickupLabel,
-      destinationLabel: svc.destinationLabel,
-      distanceKm: svc.distanceKm,
-      etaMin: svc.etaMin,
-      createdAt: svc.createdAt,
-      acceptedAt: svc.acceptedAt || null,
-      completedAt: svc.completedAt || null,
-      timeline: svc.timeline,
-      provider: p ? { name: p.name, vehicle: p.vehicle, rating: p.rating } : null,
-      providerPosition: p ? p.position : null,
-      pickup: svc.pickup,
-      destination: svc.destination,
-      tripProgress: p ? {
-        startPos: p.tripStartPos || null,
-        target: p.tripTarget || null,
-        startedAt: p.tripStartedAt || null,
-        totalKm: p.tripTotalKm || 0,
-      } : null,
-    })
+    // Try DB by the socket service ID (could be the DB ID itself)
+    try {
+      const dbSvc = await db.serviceRequest.findUnique({
+        where: { id: data.serviceId },
+        include: { timeline: { orderBy: { createdAt: 'asc' } }, provider: { include: { user: true } } },
+      })
+      if (dbSvc) {
+        const statusMap: Record<string, string> = { REQUESTED: 'searching', OFFERED: 'offered', ACCEPTED: 'accepted', PROVIDER_EN_ROUTE: 'arriving', ARRIVED: 'arrived', IN_PROGRESS: 'in_progress', COMPLETED: 'completed', CANCELED: 'cancelled', EXPIRED: 'expired', FAILED: 'expired' }
+        const typeLabels: Record<string, string> = { REBOQUE: 'Reboque / Guincho', PNEU: 'Troca de Pneu', BATERIA: 'Carga de Bateria', COMBUSTIVEL: 'Combustível', CHAVEIRO: 'Chaveiro', PANE: 'Pane Mecânica' }
+        const typeIcons: Record<string, string> = { REBOQUE: 'tow-truck', PNEU: 'tire', BATERIA: 'battery', COMBUSTIVEL: 'fuel', CHAVEIRO: 'key', PANE: 'wrench' }
+        socket.emit('public:track-result', {
+          available: true, serviceId: data.serviceId,
+          status: statusMap[dbSvc.status] || 'expired',
+          type: dbSvc.type.toLowerCase(), typeLabel: typeLabels[dbSvc.type] || dbSvc.type, icon: typeIcons[dbSvc.type] || 'wrench',
+          pickupLabel: dbSvc.pickupLabel, destinationLabel: dbSvc.destinationLabel,
+          distanceKm: dbSvc.distanceKm, etaMin: dbSvc.etaMin,
+          createdAt: dbSvc.createdAt.getTime(), acceptedAt: dbSvc.acceptedAt?.getTime() || null, completedAt: dbSvc.completedAt?.getTime() || null,
+          timeline: dbSvc.timeline.map((ev: any) => ({ status: statusMap[ev.status] || 'expired', label: ev.label, at: ev.createdAt.getTime() })),
+          provider: dbSvc.provider ? { name: dbSvc.provider.user.name, vehicle: dbSvc.provider.vehicle, rating: dbSvc.provider.rating } : null,
+          providerPosition: dbSvc.providerLat && dbSvc.providerLng ? { lat: dbSvc.providerLat, lng: dbSvc.providerLng } : null,
+          pickup: JSON.parse(dbSvc.pickup), destination: JSON.parse(dbSvc.destination),
+          tripProgress: null,
+        })
+        return
+      }
+    } catch (e) {
+      console.error('[db] public:track error:', e)
+    }
+    socket.emit('public:track-result', { available: false, message: 'Rastreamento indisponível ou encerrado.' })
   })
 
   socket.on('disconnect', () => {
     const role = socketToRole.get(socket.id)
     if (!role) return
-    if (role.role === 'client') {
-      clients.delete(role.id)
-    } else if (role.role === 'provider') {
+    if (role.role === 'client') { clients.delete(role.id) }
+    else if (role.role === 'provider') {
       const p = providers.get(role.id)
-      if (p) {
-        p.online = false
-        providers.delete(role.id)
-        io.emit('providers:nearby', Array.from(providers.values()).filter((x) => x.online).map(providerPublic))
-      }
+      if (p) { p.online = false; providers.delete(role.id); io.emit('providers:nearby', Array.from(providers.values()).filter((x) => x.online).map(providerPublic)) }
     }
     socketToRole.delete(socket.id)
     console.log(`[socket] disconnected ${socket.id}`)
@@ -889,14 +808,12 @@ setInterval(() => {
     if (p.currentServiceId) {
       const svc = services.get(p.currentServiceId)
       if (svc) {
+        // Persist provider position (throttled)
+        persistProviderPosition(svc, p)
         if (arrived) {
-          if (svc.status === 'accepted') {
-            pushTimeline(svc, 'arriving', `${p.name} está próximo do local`)
-            emitService(svc)
-          }
+          if (svc.status === 'accepted') { pushTimeline(svc, 'arriving', `${p.name} está próximo do local`); persistServiceStatus(svc); emitService(svc) }
         } else if (svc.status === 'accepted') {
-          pushTimeline(svc, 'arriving', `${p.name} está a caminho do local`)
-          emitService(svc)
+          pushTimeline(svc, 'arriving', `${p.name} está a caminho do local`); emitService(svc)
         }
       }
     }
@@ -905,25 +822,12 @@ setInterval(() => {
 
 setInterval(() => {
   io.emit('providers:nearby', Array.from(providers.values()).filter((x) => x.online).map(providerPublic))
-  // Broadcast leaderboard (top providers by completedCount + rating)
-  const leaderboard = Array.from(providers.values())
-    .map(p => ({
-      id: p.id, name: p.name, vehicle: p.vehicle, rating: p.rating,
-      completedCount: p.completedCount, earningsToday: p.earningsToday,
-    }))
-    .sort((a, b) => {
-      // Sort by completedCount desc, then rating desc
-      if (b.completedCount !== a.completedCount) return b.completedCount - a.completedCount
-      return b.rating - a.rating
-    })
-    .slice(0, 10)
+  const leaderboard = Array.from(providers.values()).map(p => ({ id: p.id, name: p.name, vehicle: p.vehicle, rating: p.rating, completedCount: p.completedCount, earningsToday: p.earningsToday })).sort((a, b) => { if (b.completedCount !== a.completedCount) return b.completedCount - a.completedCount; return b.rating - a.rating }).slice(0, 10)
   io.emit('leaderboard', leaderboard)
 }, 5000)
 
 const PORT = 3003
-httpServer.listen(PORT, () => {
-  console.log(`🚑 Help Bibi rescue-service running on port ${PORT}`)
-})
+httpServer.listen(PORT, () => { console.log(`🚑 Help Bibi rescue-service running on port ${PORT} (with Prisma persistence)`) })
 
-process.on('SIGTERM', () => httpServer.close(() => process.exit(0)))
-process.on('SIGINT', () => httpServer.close(() => process.exit(0)))
+process.on('SIGTERM', () => { httpServer.close(() => process.exit(0)) })
+process.on('SIGINT', () => { httpServer.close(() => process.exit(0)) })

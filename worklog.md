@@ -814,3 +814,116 @@ Validado no browser:
   - Migração do leaderboard para buscar do banco.
   - Testes de integração com banco real.
 - **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy). Banco SQLite em `db/custom.db`.
+
+---
+Task ID: 13 (FASE 13 — Persistência Real do Fluxo Operacional)
+Agent: main (user-driven)
+Task: Integrar rescue-service com Prisma para persistir cliente, prestador, ServiceRequest, status, timeline, tracking, chat e avaliações no banco.
+
+## Diagnóstico inicial
+### Partes em memória (rescue-service)
+- providers Map, clients Map, services Map, chats Map, clientLoyalty Map, socketToRole Map
+- TODOS os dados do fluxo operacional eram voláteis
+
+### Partes em localStorage (frontend)
+- helpbibi:history (histórico de serviços), helpbibi:favorites (locais favoritos)
+
+### Estratégia de migração
+- Manter estruturas em memória para sockets/matching/simulação (tempo real)
+- Espelhar tudo no banco de forma assíncrona (fire-and-forget) para não bloquear
+- Usar dbUserId/dbServiceId/dbProviderProfileId para ligar objetos em memória aos registros no banco
+
+## Completed modifications / verification results
+
+### 1. Persistir cliente e prestador
+- `client:register` → `db.user.upsert()` com email demo (`demo_{name}@helpbibi.com`), cria ClientProfile + LoyaltyAccount
+- `provider:register` → `db.user.upsert()` com role PROVIDER, cria ProviderProfile com vehicle/plate
+- IDs do banco (`dbUserId`, `dbProviderProfileId`) armazenados nos objetos em memória
+- Loyalty points sincronizados do banco ao registrar
+
+### 2. Persistir ServiceRequest
+- `service:request` → `db.serviceRequest.create()` com type, description, status REQUESTED, pickup/destination (JSON), price, paymentMethod, timeline inicial
+- `dbServiceId` armazenado no objeto em memória
+- TrackingShare criado automaticamente
+
+### 3. Persistir mudanças de status + timeline
+- `pushTimeline()` agora cria `ServiceTimelineEvent` no banco (fire-and-forget)
+- `persistServiceStatus()` atualiza `ServiceRequest.status` no banco a cada transição
+- Status map: searching→REQUESTED, offered→OFFERED, accepted→ACCEPTED, arriving→PROVIDER_EN_ROUTE, arrived→ARRIVED, in_progress→IN_PROGRESS, completed→COMPLETED, cancelled→CANCELED, expired→EXPIRED
+- Aplicado em: service:accept, service:reject, service:arrived, service:start, service:complete, service:cancel
+
+### 4. Persistir tracking/location
+- `persistProviderPosition()` atualiza `providerLat`/`providerLng` no ServiceRequest (throttled: max 1x por 3s)
+- Chamado no loop de simulação de movimento
+
+### 5. Persistir chat
+- `emitChatToService()` agora cria `ServiceChatMessage` no banco a cada mensagem (fire-and-forget)
+- Campos: serviceId, authorRole, authorName, text, createdAt
+- Chat NÃO exposto na API pública de tracking
+
+### 6. Persistir avaliações
+- `service:rate` (cliente→prestador) → `db.serviceRating.create()` + `db.providerProfile.update()` (ratingSum, ratingCount, rating)
+- `service:rate-client` (prestador→cliente) → `db.serviceRating.create()`
+- Unique constraint: serviceId+targetRole (uma avaliação por alvo por serviço)
+
+### 7. Tracking público via banco
+- `public:track` socket event agora tenta banco primeiro (por DB ID), depois memória
+- API `GET /api/track/[serviceId]` busca do banco via `tracking.repository.ts`
+- `public-tracking.tsx` tenta API (banco) primeiro, fallback para socket (memória)
+- **Validado**: após recarregar página (serviço saiu da memória), API encontrou serviço no banco e mostrou status, prestador, timeline
+
+### 8. Segurança do tracking público
+Validado no browser:
+- ❌ Nome do cliente (Paulo Persist) — NÃO exibido ✓
+- ❌ Pagamento (PIX) — NÃO exibido ✓
+- ❌ Placa (PRV1D99) — NÃO exibido ✓
+- ❌ Preço (R$) — NÃO exibido ✓
+- ✅ Status, tipo, prestador (nome+veículo+nota), ETA, trajeto, timeline — exibidos ✓
+
+### Arquivo modificado
+- `mini-services/rescue-service/index.ts` — reescrito com integração Prisma completa
+
+### Verificação (agent-browser via porta 81)
+- Cliente registrado: `[client] registered cli_z40vskf8 (Paulo Persist) — dbUser=cmqv8gkvx0000rcduserzcdr9` ✓
+- Prestador registrado: `[provider] registered prv_z5bahxn5 (Rita Rescue) — dbUser=cmqv8gmle0003rcduizgjk11o` ✓
+- Serviço criado: `[db] service persisted svc_aku0ypiy → dbId=cmqv8h3ee0007rcduv6z3j65g` ✓
+- Serviço aceito: `[service] accepted svc_aku0ypiy by Rita Rescue` ✓
+- Status mudou no banco: API retornou `status: "accepted"` ✓
+- Timeline no banco: API retornou eventos "Solicitação enviada", "Chamada enviada", "aceitou a chamada", "está a caminho" ✓
+- Tracking público via banco: `/?track=cmqv8h3ee0007rcduv6z3j65g` mostrou serviço mesmo após reload ✓
+- Sem dados sensíveis no tracking público ✓
+- `bun run lint`: 0 erros ✓
+- `bunx prisma validate`: schema válido ✓
+- Sem erros no console ✓
+
+## O que foi realmente persistido
+- ✅ User (cliente e prestador) com ClientProfile/ProviderProfile
+- ✅ ServiceRequest com todos os campos (type, status, price, locations, payment, loyalty)
+- ✅ ServiceTimelineEvent a cada mudança de status
+- ✅ ServiceChatMessage a cada mensagem enviada
+- ✅ ServiceRating (bidirecional) + atualização de rating do prestador
+- ✅ LoyaltyAccount (pontos + tier) atualizado ao concluir serviço
+- ✅ ProviderProfile stats (completedCount, earningsToday) atualizados
+- ✅ ProviderPosition (lat/lng) atualizado com throttle
+- ✅ TrackingShare criado automaticamente
+
+## O que ainda ficou em memória
+- Sockets ativos e matching em tempo real (necessário para o tempo real)
+- Simulação de movimento do prestador (loop de 1s)
+- Estados transitórios do browser (sessão do demo)
+- PROMO_CODES e LOYALTY_REWARDS (estáticos, não persistidos)
+- Leaderboard (gerado em tempo real dos providers em memória)
+
+## Riscos pendentes
+- Se o rescue-service reiniciar, serviços em andamento (não concluídos) perdem o estado em memória, mas os dados persistidos no banco permanecem
+- O matching em tempo real ainda depende de memória (providers Map)
+- Loyalty rewards redeemed não são persistidos como PromoCode no banco
+- Frontend ainda usa localStorage para histórico e favoritos
+
+## Próxima fase recomendada (FASE 14)
+- Implementar autenticação básica (NextAuth.js) com login/registro real
+- Migrar histórico do frontend do localStorage para o banco
+- Seed de dados iniciais (promos, providers demo)
+- Leaderboard buscando do banco
+- Testes de integração com banco real
+- API para histórico de serviços do usuário
