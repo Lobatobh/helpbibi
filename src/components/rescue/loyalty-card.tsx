@@ -7,7 +7,7 @@ import type { LoyaltyInfo, LoyaltyReward } from '@/lib/rescue-types'
 const TIERS = [
   { name: 'Bronze', min: 0, color: '#a16207' },
   { name: 'Prata', min: 200, color: '#94a3b8' },
-  { name: 'Ouro', min: 500, color: '#00B0FF' },
+  { name: 'Ouro', min: 500, color: '#00BFFF' },
   { name: 'Diamante', min: 1000, color: '#38bdf8' },
 ]
 

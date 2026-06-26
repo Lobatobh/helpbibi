@@ -568,3 +568,104 @@ Task: Renomear plataforma de SocorroJá para Help Bibi, aplicar cores da logo (a
   - PWA / instalação no celular.
   - Internacionalização (i18n).
 - **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy).
+
+---
+Task ID: 11 (FASE 11 — Consolidação Help Bibi + Rastreamento Público)
+Agent: main (user-driven)
+Task: Consolidar identidade Help Bibi no código, corrigir cores exatas (#00BFFF + #FFA500), adicionar variáveis CSS da marca, implementar rastreamento público por link.
+
+## Current project status / assessment
+- Nome oficial da plataforma: **Help Bibi** (não mais SocorroJá).
+- Cores oficiais: **Azul #00BFFF** (primário), **Laranja #FFA500** (acento), Preto #000000.
+- rescue-service e Next.js ambos ativos e funcionando.
+- Rebranding anterior (Task 10) usava #00B0FF (incorreto) — corrigido para #00BFFF nesta fase.
+
+## Completed modifications / verification results
+### 1. Rebranding real para Help Bibi
+- Verificação completa: nenhum remanescente de "SocorroJá", "socorroja", "amber", ou "emerald" no código.
+- Metadata em `src/app/layout.tsx`: title, description, keywords, OpenGraph, Twitter — todos com "Help Bibi".
+- Favicon: `/logo-help-bibi.png` (arquivo local, sem favicon externo).
+- `lang="pt-BR"` no html.
+- rescue-service: logs e health response com "Help Bibi".
+- worklog.md preservado com histórico, registrando nome oficial atual.
+
+### 2. Logo
+- Arquivo: `public/logo-help-bibi.png` (renomeado de `help-bibi-logo.png`).
+- Usada no header da landing (h-10), no footer (h-8), e na tela de rastreamento público (h-9 e h-8).
+- Proporção mantida com `w-auto`.
+
+### 3. Cores da marca
+- Variáveis CSS globais em `:root`:
+  - `--helpbibi-blue: #00BFFF`
+  - `--helpbibi-orange: #FFA500`
+  - `--helpbibi-black: #000000`
+  - `--helpbibi-blue-rgb: 0, 191, 255`
+  - `--helpbibi-orange-rgb: 255, 165, 0`
+- CSS overrides com `var()` para sky-500 e orange-500 (não mais hex direto).
+- Azul (#00BFFF): CTAs, marca, cliente, links, destaque tecnológico.
+- Laranja (#FFA500): prestador, SOS, urgência, alerta positivo, energia.
+- Verde/vermelho mantidos para sucesso/erro semânticos.
+
+### 4. Padronização visual
+- Header da landing: logo Help Bibi + "auto socorro por aplicativo".
+- Footer: logo Help Bibi.
+- Painel do cliente: "Help Bibi · Cliente".
+- Painel do prestador: "Help Bibi · Prestador".
+- Hero tagline: "Socorro veicular em minutos" + "Seguro, rastreável e sem burocracia."
+
+### 5. Rastreamento público por link
+- **Backend**: evento socket.io `public:track` que retorna dados públicos seguras (sem nome do cliente, sem pagamento, sem placa). Qualquer conexão pode solicitar — sem login.
+- **Frontend**: `PublicTracking` component que conecta via socket.io, faz polling a cada 2s, e exibe:
+  - Status do serviço com banner colorido
+  - Tipo de serviço + ID
+  - Prestador (nome, veículo, nota) — se aceito
+  - ETA com LiveCountdown em tempo real
+  - Trajeto (origem → destino)
+  - Timeline resumida com timestamps
+  - Logo Help Bibi + tagline
+  - Botão "Voltar" para a landing
+  - Estado seguro: "Rastreamento indisponível ou encerrado" para IDs inválidos/expirados
+- **Integração**: `page.tsx` detecta `?track={serviceId}` na URL e renderiza `PublicTracking` em vez da landing.
+- **Segurança**: não mostra nome do cliente, método de pagamento, placa, ou dados desnecessários.
+
+### Arquivos modificados
+- `public/logo-help-bibi.png` (renomeado de help-bibi-logo.png).
+- `src/app/layout.tsx` — metadata, favicon, lang.
+- `src/app/globals.css` — variáveis CSS da marca, correção #00BFFF, uso de var().
+- `src/app/page.tsx` — deteção de ?track=, import PublicTracking, useEffect, hero tagline atualizada.
+- `src/components/rescue/public-tracking.tsx` (novo) — tela de rastreamento público via socket.io.
+- `src/components/rescue/loyalty-card.tsx` — correção #00BFFF.
+- `src/components/rescue/rescue-map.tsx` — correção #00BFFF.
+- `mini-services/rescue-service/index.ts` — evento public:track, CORS headers, health com name.
+- Todos os arquivos .ts/.tsx — correção global #00B0FF → #00BFFF.
+
+### Verificação (agent-browser via porta 81)
+- Landing: título "Help Bibi — Auto socorro por aplicativo" ✓
+- Logo: carregando de /logo-help-bibi.png no header e footer ✓
+- Cor azul: botão primário rgb(0, 191, 255) = #00BFFF ✓
+- Hero: "Socorro veicular em minutos" + "Seguro, rastreável e sem burocracia." ✓
+- Demo: abre, registra cliente e prestador ✓
+- Serviço: solicitado → aceito → "Chegando no local" com ETA ✓
+- Compartilhar rastreamento: botão visível ✓
+- Rastreamento público: URL `/?track=svc_3yswy8m3` → tela pública com status, prestador, ETA, timeline ✓
+- Segurança: nome do cliente (Ana Track), pagamento (PIX), placa (TRK1D23) — NÃO exibidos ✓
+- Estado indisponível: `/?track=svc_invalid999` → "Rastreamento indisponível ou encerrado" ✓
+- Modo claro: alterna corretamente, cor azul mantida ✓
+- Modo escuro: funciona corretamente ✓
+- `bun run lint`: 0 erros ✓
+- Sem erros no console ✓
+- Sem erros de hidratação ✓
+
+## Unresolved issues / risks + next-phase recommendations
+- **Rastreamento público via socket.io:** o endpoint HTTP `/track/:id` não funciona porque socket.io (path: '/') intercepta todas as requisições HTTP. Solução: usar evento socket.io `public:track` que funciona perfeitamente. Para produção, considerar mudar o path do socket.io ou usar um servidor HTTP separado.
+- **Dados em memória:** serviços, providers, loyalty — tudo em memória no rescue-service. Reiniciar o serviço perde tudo. Para produção, persistir em Prisma.
+- **Recomendação próxima fase:**
+  - Persistir tudo em Prisma (schema.prisma).
+  - PWA / instalação no celular.
+  - Internacionalização (i18n) com next-intl.
+  - Tela de rastreamento público com mapa (atualmente só texto/timeline).
+  - Notificação push quando prestador chega ao local.
+  - Cupons resgatáveis com validade.
+  - Sistema de ranking semanal/mensal.
+  - Configurar cores brand no tailwind.config.ts para evitar CSS !important.
+- **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy).

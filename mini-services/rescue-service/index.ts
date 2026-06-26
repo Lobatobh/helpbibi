@@ -8,11 +8,76 @@ import { Server } from 'socket.io'
 // ============================================================
 
 const httpServer = createServer((req, res) => {
-  if (req.url === '/health') {
-    res.writeHead(200, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({ ok: true, providers: providers.size, activeServices: services.size }))
+  // CORS headers for all responses
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204)
+    res.end()
     return
   }
+
+  if (req.url === '/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ok: true, name: 'Help Bibi', providers: providers.size, activeServices: services.size }))
+    return
+  }
+
+  // Public tracking endpoint: GET /track/:serviceId
+  const trackMatch = req.url?.match(/^\/track\/(.+)$/)
+  if (trackMatch && req.method === 'GET') {
+    const serviceId = decodeURIComponent(trackMatch[1])
+    const svc = services.get(serviceId)
+    if (!svc) {
+      res.writeHead(404, { 'Content-Type': 'application/json' })
+      res.end(JSON.stringify({ available: false, message: 'Rastreamento indisponível ou encerrado.' }))
+      return
+    }
+    // Return public-safe data (no client personal info, no payment details)
+    const publicData = {
+      available: true,
+      serviceId: svc.id,
+      status: svc.status,
+      type: svc.type,
+      typeLabel: SERVICE_TYPES[svc.type]?.label || svc.type,
+      icon: SERVICE_TYPES[svc.type]?.icon || 'wrench',
+      pickupLabel: svc.pickupLabel,
+      destinationLabel: svc.destinationLabel,
+      distanceKm: svc.distanceKm,
+      etaMin: svc.etaMin,
+      createdAt: svc.createdAt,
+      acceptedAt: svc.acceptedAt || null,
+      completedAt: svc.completedAt || null,
+      timeline: svc.timeline,
+      // Provider public info (name + vehicle only, no plate)
+      provider: svc.providerId ? (() => {
+        const p = providers.get(svc.providerId)
+        return p ? { name: p.name, vehicle: p.vehicle, rating: p.rating } : null
+      })() : null,
+      // Provider position for map (if available)
+      providerPosition: svc.providerId ? (() => {
+        const p = providers.get(svc.providerId)
+        return p ? p.position : null
+      })() : null,
+      pickup: svc.pickup,
+      destination: svc.destination,
+      tripProgress: svc.providerId ? (() => {
+        const p = providers.get(svc.providerId)
+        return p ? {
+          startPos: p.tripStartPos || null,
+          target: p.tripTarget || null,
+          startedAt: p.tripStartedAt || null,
+          totalKm: p.tripTotalKm || 0,
+        } : null
+      })() : null,
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify(publicData))
+    return
+  }
+
   res.writeHead(200, { 'Content-Type': 'text/plain' })
   res.end('Help Bibi rescue-service running')
 })
@@ -756,6 +821,43 @@ io.on('connection', (socket) => {
     if (role.role === 'client' && svc.clientId !== role.id) return
     if (role.role === 'provider' && svc.providerId !== role.id) return
     socket.emit('chat:messages', { serviceId: svc.id, messages: chats.get(svc.id) || [] })
+  })
+
+  // Public tracking — any connection can request service status by ID (no login required)
+  socket.on('public:track', (data: { serviceId: string }) => {
+    const svc = services.get(data.serviceId)
+    if (!svc) {
+      socket.emit('public:track-result', { available: false, message: 'Rastreamento indisponível ou encerrado.' })
+      return
+    }
+    // Return public-safe data (no client name, no payment details, no plate)
+    const p = svc.providerId ? providers.get(svc.providerId) : null
+    socket.emit('public:track-result', {
+      available: true,
+      serviceId: svc.id,
+      status: svc.status,
+      type: svc.type,
+      typeLabel: SERVICE_TYPES[svc.type]?.label || svc.type,
+      icon: SERVICE_TYPES[svc.type]?.icon || 'wrench',
+      pickupLabel: svc.pickupLabel,
+      destinationLabel: svc.destinationLabel,
+      distanceKm: svc.distanceKm,
+      etaMin: svc.etaMin,
+      createdAt: svc.createdAt,
+      acceptedAt: svc.acceptedAt || null,
+      completedAt: svc.completedAt || null,
+      timeline: svc.timeline,
+      provider: p ? { name: p.name, vehicle: p.vehicle, rating: p.rating } : null,
+      providerPosition: p ? p.position : null,
+      pickup: svc.pickup,
+      destination: svc.destination,
+      tripProgress: p ? {
+        startPos: p.tripStartPos || null,
+        target: p.tripTarget || null,
+        startedAt: p.tripStartedAt || null,
+        totalKm: p.tripTotalKm || 0,
+      } : null,
+    })
   })
 
   socket.on('disconnect', () => {

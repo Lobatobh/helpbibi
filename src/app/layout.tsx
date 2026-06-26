@@ -21,7 +21,7 @@ export const metadata: Metadata = {
   keywords: ["auto socorro", "guincho", "reboque", "app de socorro", "socorro veicular", "help bibi", "ajuda carro"],
   authors: [{ name: "Help Bibi" }],
   icons: {
-    icon: "/help-bibi-logo.png",
+    icon: "/logo-help-bibi.png",
   },
   openGraph: {
     title: "Help Bibi — Auto socorro por aplicativo",

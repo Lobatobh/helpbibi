@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Shield,
@@ -40,9 +40,28 @@ import { ProviderPanel } from '@/components/rescue/provider-panel'
 import { Leaderboard } from '@/components/rescue/leaderboard'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { AnimatedCounter } from '@/components/rescue/animated-counter'
+import { PublicTracking } from '@/components/rescue/public-tracking'
 
 export default function Home() {
   const [demoOpen, setDemoOpen] = useState(false)
+  const [trackId, setTrackId] = useState<string | null>(null)
+
+  useEffect(() => {
+    // Check for ?track= param in URL for public tracking view
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      const track = params.get('track')
+      if (track) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setTrackId(track)
+      }
+    }
+  }, [])
+
+  // If track ID is present, render public tracking page instead of landing
+  if (trackId) {
+    return <PublicTracking serviceId={trackId} />
+  }
 
   return (
     <div className="flex min-h-screen flex-col bg-slate-950 text-white">
@@ -50,7 +69,7 @@ export default function Home() {
       <header className="sticky top-0 z-40 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-lg">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-2">
-            <img src="/help-bibi-logo.png" alt="Help Bibi" className="h-10 w-auto rounded-lg" />
+            <img src="/logo-help-bibi.png" alt="Help Bibi" className="h-10 w-auto rounded-lg" />
             <div className="leading-tight">
               <p className="text-base font-extrabold tracking-tight">Help Bibi</p>
               <p className="text-[10px] text-slate-400">auto socorro por aplicativo</p>
@@ -111,9 +130,9 @@ export default function Home() {
               transition={{ duration: 0.6, delay: 0.1 }}
               className="text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl"
             >
-              Socorro automotivo
+              Socorro veicular
               <span className="block bg-gradient-to-r from-sky-300 via-sky-400 to-sky-500 bg-clip-text text-transparent">
-                na palma da mão
+                em minutos
               </span>
             </motion.h1>
             <motion.p
@@ -122,8 +141,9 @@ export default function Home() {
               transition={{ duration: 0.6, delay: 0.2 }}
               className="mt-5 max-w-xl text-base text-slate-300 sm:text-lg"
             >
-              O cliente solicita, acompanha a chegada em tempo real e segue o serviço até o destino
-              final. O prestador mais próximo recebe a chamada, confere o valor e atende — tudo pelo app.
+              Seguro, rastreável e sem burocracia. O cliente solicita, acompanha a chegada em tempo
+              real e segue o serviço até o destino final. O prestador mais próximo recebe a chamada,
+              confere o valor e atende — tudo pelo app.
             </motion.p>
 
             <div className="mt-7 flex flex-col gap-3 sm:flex-row">
@@ -391,7 +411,7 @@ export default function Home() {
           <div className="grid gap-8 md:grid-cols-4">
             <div>
               <div className="flex items-center gap-2">
-                <img src="/help-bibi-logo.png" alt="Help Bibi" className="h-8 w-auto rounded-md" />
+                <img src="/logo-help-bibi.png" alt="Help Bibi" className="h-8 w-auto rounded-md" />
                 <p className="text-sm font-extrabold">Help Bibi</p>
               </div>
               <p className="mt-3 text-xs text-slate-500">

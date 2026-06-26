@@ -106,7 +106,7 @@ export function RescueMap({
             y1={`${route.a.y}%`}
             x2={`${route.b.x}%`}
             y2={`${route.b.y}%`}
-            stroke="#00B0FF"
+            stroke="#00BFFF"
             strokeWidth="3"
             strokeDasharray="8 6"
             strokeLinecap="round"
