@@ -46,6 +46,26 @@ export type LoyaltyInfo = {
   tierUpgraded?: boolean
 }
 
+export type LoyaltyReward = {
+  id: string
+  cost: number
+  code: string
+  type: 'percent' | 'fixed'
+  value: number
+  label: string
+  desc: string
+  affordable: boolean
+}
+
+export type RedeemResult = {
+  success: boolean
+  code?: string
+  label?: string
+  pointsSpent?: number
+  pointsRemaining?: number
+  message: string
+}
+
 export type TimelineEvent = {
   status: ServiceStatus
   label: string

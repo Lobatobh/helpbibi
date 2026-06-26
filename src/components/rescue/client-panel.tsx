@@ -55,9 +55,10 @@ const haversineKm = (a: LatLng, b: LatLng) => {
 
 export function ClientPanel() {
   const {
-    connected, registered, nearby, currentService, messages, newMessage, promoResult, loyalty,
+    connected, registered, nearby, currentService, messages, newMessage, promoResult, loyalty, rewards, redeemResult,
     register, requestService, cancelService, rateService,
-    validatePromo, clearPromo, sendChat, clearNewMessage, clearCurrent,
+    validatePromo, clearPromo, sendChat, clearNewMessage,
+    redeemReward, clearRedeemResult, clearCurrent,
   } = useClientSocket()
 
   useServiceToasts(currentService, 'client')
@@ -280,7 +281,15 @@ export function ClientPanel() {
               Solicitar socorro
             </Button>
 
-            {loyalty && <LoyaltyCard loyalty={loyalty} />}
+            {loyalty && (
+              <LoyaltyCard
+                loyalty={loyalty}
+                rewards={rewards}
+                redeemResult={redeemResult}
+                onRedeem={redeemReward}
+                onClearRedeem={clearRedeemResult}
+              />
+            )}
 
             <div>
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">

@@ -4,7 +4,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Truck, Star, Power, MapPin, Navigation, Flag, Clock, CheckCircle2, X, Loader2,
   Wallet, TrendingUp, Battery, Fuel, Key, Wrench, CircleDot, Phone, MessageCircle,
-  History, Home, BarChart3, Award, Tag, Eye, ChevronRight, Send, Users,
+  History, Home, BarChart3, Award, Tag, Eye, ChevronRight, Send, Users, User,
+  Shield, Zap, Trophy,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -43,7 +44,7 @@ export function ProviderPanel() {
   const [name, setName] = useState('')
   const [vehicle, setVehicle] = useState('Guincho Plataforma')
   const [plate, setPlate] = useState('')
-  const [view, setView] = useState<'home' | 'stats' | 'history'>('home')
+  const [view, setView] = useState<'home' | 'stats' | 'history' | 'profile'>('home')
   const [history, setHistory] = useState<ServiceRecord[]>(() =>
     typeof window !== 'undefined' ? getHistoryForRole('provider') : []
   )
@@ -179,6 +180,7 @@ export function ProviderPanel() {
         <TabBtn active={view === 'home'} onClick={() => setView('home')} icon={Home} label="Chamadas" />
         <TabBtn active={view === 'stats'} onClick={() => setView('stats')} icon={BarChart3} label="Ganhos" />
         <TabBtn active={view === 'history'} onClick={() => { setView('history'); refreshHistory() }} icon={History} label="Histórico" badge={history.length} />
+        <TabBtn active={view === 'profile'} onClick={() => setView('profile')} icon={User} label="Perfil" />
       </div>
 
       {/* Body */}
@@ -256,6 +258,10 @@ export function ProviderPanel() {
 
         {view === 'history' && (
           <HistoryView history={history} onSelect={setDetailRecord} />
+        )}
+
+        {view === 'profile' && (
+          <ProfileView state={state} history={history} />
         )}
       </div>
 
@@ -905,5 +911,128 @@ function FilterChip({ active, onClick, label, small }: { active: boolean; onClic
     >
       {label}
     </button>
+  )
+}
+
+function ProfileView({ state, history }: { state: any; history: ServiceRecord[] }) {
+  if (!state) {
+    return (
+      <div className="rounded-xl border border-dashed border-slate-800 p-8 text-center text-xs text-slate-500">
+        Aguardando dados do prestador...
+      </div>
+    )
+  }
+
+  const completedCount = state.completedCount ?? 0
+  const earningsToday = state.earningsToday ?? 0
+  const rating = state.rating ?? 0
+  const totalEarnings = history.filter(h => h.status === 'completed').reduce((sum, h) => sum + h.price, 0)
+
+  // Achievements based on milestones
+  const achievements = [
+    { id: 'first', icon: Shield, label: 'Primeiro serviço', desc: 'Conclua seu primeiro atendimento', unlocked: completedCount >= 1, color: 'emerald' },
+    { id: 'ten', icon: TrendingUp, label: '10 serviços', desc: 'Conclua 10 atendimentos', unlocked: completedCount >= 10, color: 'sky' },
+    { id: 'fifty', icon: Award, label: '50 serviços', desc: 'Conclua 50 atendimentos', unlocked: completedCount >= 50, color: 'amber' },
+    { id: 'fiveStar', icon: Star, label: 'Nota 5.0', desc: 'Alcance nota média 5.0', unlocked: rating >= 5.0, color: 'amber' },
+    { id: 'highRated', icon: Trophy, label: 'Bem avaliado', desc: 'Alcance nota 4.5+', unlocked: rating >= 4.5, color: 'emerald' },
+    { id: 'busy', icon: Zap, label: 'Movimentado', desc: 'Ganhe R$ 500+ hoje', unlocked: earningsToday >= 500, color: 'amber' },
+  ]
+
+  const colorMap: Record<string, string> = {
+    emerald: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400',
+    sky: 'border-sky-500/40 bg-sky-500/10 text-sky-400',
+    amber: 'border-amber-500/40 bg-amber-500/10 text-amber-400',
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Profile header */}
+      <div className="relative overflow-hidden rounded-2xl border border-slate-800 bg-gradient-to-br from-slate-900 to-slate-950 p-4">
+        <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-emerald-500/10 blur-2xl" />
+        <div className="relative flex items-center gap-3">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 text-xl font-extrabold text-slate-950 shadow-lg shadow-emerald-500/30">
+            {state.name?.slice(0, 2).toUpperCase()}
+          </div>
+          <div className="flex-1">
+            <p className="text-base font-extrabold text-white">{state.name}</p>
+            <p className="text-xs text-slate-400">{state.vehicle}</p>
+            <div className="mt-1 flex items-center gap-2">
+              <Badge variant="outline" className="border-emerald-500/40 bg-emerald-500/10 text-emerald-400">
+                <Shield className="mr-1 h-2.5 w-2.5" /> Verificado
+              </Badge>
+              <span className="text-[10px] text-slate-500">Placa: {state.plate}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Stats grid */}
+      <div className="grid grid-cols-2 gap-2">
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+          <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase text-slate-500">
+            <TrendingUp className="h-3 w-3 text-emerald-400" /> Serviços totais
+          </div>
+          <p className="text-xl font-extrabold text-white">{completedCount}</p>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+          <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase text-slate-500">
+            <Wallet className="h-3 w-3 text-amber-400" /> Ganhos hoje
+          </div>
+          <p className="text-xl font-extrabold text-amber-400">R$ {earningsToday}</p>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+          <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase text-slate-500">
+            <Star className="h-3 w-3 text-amber-400" /> Nota média
+          </div>
+          <p className="text-xl font-extrabold text-white">{rating.toFixed(1)} ★</p>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+          <div className="mb-1 flex items-center gap-1.5 text-[10px] uppercase text-slate-500">
+            <Wallet className="h-3 w-3 text-emerald-400" /> Total acumulado
+          </div>
+          <p className="text-xl font-extrabold text-white">R$ {totalEarnings}</p>
+        </div>
+      </div>
+
+      {/* Achievements */}
+      <div>
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Conquistas</p>
+        <div className="grid grid-cols-3 gap-2">
+          {achievements.map((a) => {
+            const Icon = a.icon
+            return (
+              <div
+                key={a.id}
+                className={`flex flex-col items-center gap-1 rounded-xl border p-2.5 text-center transition ${
+                  a.unlocked
+                    ? colorMap[a.color]
+                    : 'border-slate-800 bg-slate-900/40 opacity-50 grayscale'
+                }`}
+              >
+                <Icon className="h-5 w-5" />
+                <p className="text-[10px] font-bold text-white">{a.label}</p>
+                <p className="text-[8px] text-slate-500">{a.desc}</p>
+                {a.unlocked && (
+                  <CheckCircle2 className="absolute right-1 top-1 h-3 w-3 text-emerald-400" />
+                )}
+              </div>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* Status */}
+      <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+        <div className="flex items-center justify-between">
+          <span className="flex items-center gap-1.5 text-xs text-slate-400">
+            <Power className={`h-3.5 w-3.5 ${state.online ? 'text-emerald-400' : 'text-slate-500'}`} />
+            Status atual
+          </span>
+          <span className={`text-xs font-bold ${state.online ? 'text-emerald-400' : 'text-slate-500'}`}>
+            {state.online ? 'Online' : 'Offline'}
+          </span>
+        </div>
+      </div>
+    </div>
   )
 }

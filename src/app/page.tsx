@@ -552,23 +552,38 @@ function HeroPhoneMock() {
 }
 
 function DemoLive() {
+  const [showSecondProvider, setShowSecondProvider] = useState(false)
   return (
     <div className="mt-10">
-      <div className="mb-6 flex items-center justify-center gap-2 text-sm text-slate-400">
-        <span className="flex h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
-        Conexão em tempo real ativa · WebSocket na porta 3003
+      <div className="mb-6 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
+        <div className="flex items-center gap-2 text-sm text-slate-400">
+          <span className="flex h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+          Conexão em tempo real ativa · WebSocket na porta 3003
+        </div>
+        <button
+          onClick={() => setShowSecondProvider((v) => !v)}
+          className="flex items-center gap-1.5 rounded-full border border-sky-500/40 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-400 transition hover:bg-sky-500/20"
+        >
+          <Users className="h-3.5 w-3.5" />
+          {showSecondProvider ? 'Ocultar 2º prestador' : 'Adicionar 2º prestador'}
+        </button>
       </div>
-      <div className="grid gap-8 lg:grid-cols-2">
+      <div className={`grid gap-8 ${showSecondProvider ? 'xl:grid-cols-3 lg:grid-cols-2' : 'lg:grid-cols-2'}`}>
         <PhoneFrame label="App do Cliente" color="amber">
           <ClientPanel />
         </PhoneFrame>
-        <PhoneFrame label="App do Prestador" color="emerald">
+        <PhoneFrame label="App do Prestador 1" color="emerald">
           <ProviderPanel />
         </PhoneFrame>
+        {showSecondProvider && (
+          <PhoneFrame label="App do Prestador 2" color="emerald">
+            <ProviderPanel />
+          </PhoneFrame>
+        )}
       </div>
       <p className="mx-auto mt-6 max-w-2xl text-center text-xs text-slate-500">
-        Dica: registre-se nos dois painéis. No app do cliente, solicite um serviço — no app do
-        prestador, você verá a chamada chegar com um contador de 12s para aceitar.
+        Dica: registre-se nos painéis. No app do cliente, solicite um serviço — os prestadores
+        receberão a chamada simultaneamente. O primeiro a aceitar leva! {showSecondProvider && 'Com 2 prestadores, você verá a competição em tempo real.'}
       </p>
     </div>
   )

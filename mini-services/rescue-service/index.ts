@@ -116,6 +116,14 @@ const PROMO_CODES: Record<string, PromoDef> = {
   PROMO15: { type: 'percent', value: 15, label: '15% OFF' },
 }
 
+// Loyalty rewards: spend points to get a one-time promo code
+const LOYALTY_REWARDS = [
+  { id: 'reward_5pct', cost: 100, code: 'FIDEL5', type: 'percent' as const, value: 5, label: '5% OFF', desc: 'Cupom de 5% de desconto' },
+  { id: 'reward_10pct', cost: 200, code: 'FIDEL10', type: 'percent' as const, value: 10, label: '10% OFF', desc: 'Cupom de 10% de desconto' },
+  { id: 'reward_25', cost: 300, code: 'FIDEL25', type: 'fixed' as const, value: 25, label: 'R$ 25 OFF', desc: 'Cupom de R$ 25 de desconto' },
+  { id: 'reward_15pct', cost: 500, code: 'FIDEL15', type: 'percent' as const, value: 15, label: '15% OFF', desc: 'Cupom de 15% de desconto' },
+]
+
 // Loyalty: clients earn 1 point per R$ 1 spent. Tiers based on total points.
 const LOYALTY_TIERS = [
   { name: 'Bronze', min: 0, color: '#a16207', perk: '5% OFF no próximo' },
@@ -140,7 +148,7 @@ const MULTI_NOTIFY_COUNT = 3
 
 // ----------------------- State -----------------------
 const providers = new Map<string, Provider>()
-const clients = new Map<string, { id: string; socketId: string }>()
+const clients = new Map<string, { id: string; socketId: string; name: string }>()
 const services = new Map<string, ServiceRequest>()
 const chats = new Map<string, ChatMessage[]>() // serviceId -> messages
 const socketToRole = new Map<string, { role: Role; id: string }>()
@@ -273,14 +281,54 @@ io.on('connection', (socket) => {
 
   socket.on('client:register', (data: { name: string }) => {
     const id = uid('cli_')
-    clients.set(id, { id, socketId: socket.id })
+    clients.set(id, { id, socketId: socket.id, name: data.name })
     socketToRole.set(socket.id, { role: 'client', id })
     const points = clientLoyalty.get(data.name) || 0
     const tier = loyaltyTier(points)
     socket.emit('client:registered', { id, name: data.name })
     socket.emit('client:loyalty', { points, tier: { name: tier.name, color: tier.color, perk: tier.perk }, nextTierMin: nextTierMin(points) })
+    socket.emit('loyalty:rewards', LOYALTY_REWARDS.map(r => ({ ...r, affordable: points >= r.cost })))
     socket.emit('providers:nearby', Array.from(providers.values()).filter((x) => x.online).map(providerPublic))
     console.log(`[client] registered ${id} (${data.name}) — loyalty ${points}pts (${tier.name})`)
+  })
+
+  // Redeem loyalty points for a promo code
+  socket.on('loyalty:redeem', (data: { rewardId: string }) => {
+    const role = socketToRole.get(socket.id)
+    if (!role || role.role !== 'client') return
+    const client = clients.get(role.id)
+    if (!client) return
+    const name = client.name
+    const reward = LOYALTY_REWARDS.find(r => r.id === data.rewardId)
+    if (!reward) {
+      socket.emit('loyalty:redeem-result', { success: false, message: 'Recompensa não encontrada' })
+      return
+    }
+    const points = clientLoyalty.get(name) || 0
+    if (points < reward.cost) {
+      socket.emit('loyalty:redeem-result', { success: false, message: `Pontos insuficientes. Necessário: ${reward.cost}` })
+      return
+    }
+    // Deduct points and grant the promo code (add to PROMO_CODES so it's valid)
+    const newPoints = points - reward.cost
+    clientLoyalty.set(name, newPoints)
+    PROMO_CODES[reward.code] = { type: reward.type, value: reward.value, label: reward.label }
+    const tier = loyaltyTier(newPoints)
+    socket.emit('loyalty:redeem-result', {
+      success: true,
+      code: reward.code,
+      label: reward.label,
+      pointsSpent: reward.cost,
+      pointsRemaining: newPoints,
+      message: `Cupom ${reward.code} resgatado! Use no próximo serviço.`,
+    })
+    socket.emit('client:loyalty', {
+      points: newPoints,
+      tier: { name: tier.name, color: tier.color, perk: tier.perk },
+      nextTierMin: nextTierMin(newPoints),
+    })
+    socket.emit('loyalty:rewards', LOYALTY_REWARDS.map(r => ({ ...r, affordable: newPoints >= r.cost })))
+    console.log(`[loyalty] ${name} redeemed ${reward.code} for ${reward.cost}pts (remaining ${newPoints})`)
   })
 
   socket.on('provider:register', (data: { name: string; vehicle: string; plate: string }) => {
@@ -452,11 +500,12 @@ io.on('connection', (socket) => {
     svc.notifiedProviderIds.forEach((pid) => {
       if (pid !== role.id) {
         const np = providers.get(pid)
-        if (np && np.currentServiceId === svc.id) {
-          np.currentServiceId = null
+        if (np) {
+          // Clear currentServiceId if it was set (for the primary provider)
+          if (np.currentServiceId === svc.id) np.currentServiceId = null
           emitProvider(np)
-          // notify them the offer was taken
-          io.to(np.socketId).emit('service:offer-taken', { serviceId: svc.id, acceptedBy: winner.name })
+          // Notify ALL other notified providers that the offer was taken
+          io.to(np.socketId).emit('service:offer-taken', { serviceId: svc.id, acceptedBy: winner.name, cancelled: false })
         }
       }
     })

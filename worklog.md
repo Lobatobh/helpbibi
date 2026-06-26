@@ -240,3 +240,61 @@ Task: QA + adicionar multi-prestador (first-accept-wins), barra de progresso de 
   - Sistema de cupons resgatáveis por pontos de fidelidade.
   - Avaliação bidirecional (prestador também avalia o cliente).
 - **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork a partir de `/home/z/my-project/mini-services/rescue-service`: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy) para o WebSocket `/?XTransformPort=3003` rotear corretamente.
+
+---
+Task ID: 5 (cron webDevReview)
+Agent: cron review agent
+Task: QA + adicionar segundo painel de prestador, perfil de prestador, resgate de pontos de fidelidade, e corrigir bug do offer-taken.
+
+## Current project status / assessment
+- Protótipo SocorroJá estável após Tasks 1-4: landing + demo ao vivo com WebSocket, avaliações, pagamentos, histórico, dashboard de ganhos, chat, toasts, cupons, modal de detalhe, multi-prestador, progresso de trajeto, fidelidade, filtros.
+- QA desta rodada via agent-browser: nenhum bug encontrado no fluxo existente. Logs limpos.
+- rescue-service (porta 3003) e Next.js (porta 3000) ambos ativos.
+- Decidi focar em: segundo painel de prestador, perfil, resgate de pontos, e corrigir bug do offer-taken.
+
+## Completed modifications / verification results
+### Bug corrigido
+1. **Bug do offer-taken em multi-prestador** 🐛 — Na Task 4, o `service:offer-taken` só era enviado a providers com `currentServiceId === svc.id`, mas apenas o provider primário tinha esse campo setado. Providers secundários notificados nunca recebiam a notificação de "chamada aceita por X". Corrigido: agora o `service:offer-taken` é enviado a TODOS os providers notificados, independentemente de `currentServiceId`. *Validado: com 2 providers, Sergio aceitou → Paulo recebeu "Chamada aceita por Sergio Guincho" + "Outro prestador aceitou a chamada primeiro." + botão "Entendido".*
+
+### Novos recursos implementados
+2. **Segundo painel de prestador na demo** 📱 — botão "Adicionar 2º prestador" na seção demo que revela um terceiro phone frame. Layout responsivo: 2 colunas (lg) ou 3 colunas (xl). Permite testar a competição multi-prestador em tempo real com 2 providers recebendo a chamada simultaneamente. Dica contextual atualizada.
+
+3. **Tela de perfil do prestador** 👤 — nova aba "Perfil" no painel do prestador com: header com avatar (iniciais), nome, veículo, badge "Verificado", placa; grid de 4 stats (serviços totais, ganhos hoje, nota média, total acumulado); grid de 6 conquistas (achievements) com ícones e estados desbloqueado/bloqueado: Primeiro serviço, 10 serviços, 50 serviços, Nota 5.0, Bem avaliado (4.5+), Movimentado (R$ 500+ hoje); status atual online/offline.
+
+4. **Resgate de pontos de fidelidade** 🎁 — LoyaltyCard expandido com botão "Resgatar pontos" que revela 4 recompensas: FIDEL5 (100 pts, 5% OFF), FIDEL10 (200 pts, 10% OFF), FIDEL25 (300 pts, R$ 25 OFF), FIDEL15 (500 pts, 15% OFF). Cada recompensa mostra custo em pontos, descrição, e botão "Resgatar" (habilitado se pontos suficientes). Backend: evento `loyalty:redeem` deduz pontos, adiciona o cupom a PROMO_CODES (válido para uso imediato), envia `loyalty:redeem-result` com sucesso/mensagem + código resgatado, atualiza `client:loyalty` e `loyalty:rewards`. Inline result notification com código copiável. Recompensas bloqueadas mostram ícone de cadeado.
+
+### Polimento de estilo
+5. ProfileView com gradientes, glow effects, achievements com grayscale quando bloqueados, check icon quando desbloqueados.
+6. LoyaltyCard rewards com estados affordable/locked visualmente distintos (amber vs slate + opacity).
+7. Botão "Adicionar 2º prestador" com estilo sky/blue destacando a funcionalidade multi-prestador.
+
+### Arquivos modificados
+- `mini-services/rescue-service/index.ts` — corrigido offer-taken para todos notificados; adicionado LOYALTY_REWARDS, evento loyalty:redeem, clients Map agora inclui name, evento loyalty:rewards enviado no register e após redeem.
+- `src/lib/rescue-types.ts` — adicionado LoyaltyReward, RedeemResult types.
+- `src/hooks/use-rescue-socket.ts` — adicionado rewards, redeemResult no state; listeners loyalty:rewards, loyalty:redeem-result; callbacks redeemReward, clearRedeemResult.
+- `src/components/rescue/loyalty-card.tsx` — expandido com rewards list, redeem button, inline result notification, toggle showRewards.
+- `src/components/rescue/client-panel.tsx` — passado rewards, redeemResult, onRedeem, onClearRedeem para LoyaltyCard.
+- `src/components/rescue/provider-panel.tsx` — adicionado aba Perfil, ProfileView component com stats e achievements.
+- `src/app/page.tsx` — DemoLive com toggle de segundo provider, layout 3 colunas, botão "Adicionar 2º prestador".
+
+### Verificação (agent-browser via porta 81)
+- Multi-prestador: 2 providers (Sergio + Paulo) registrados → cliente solicitou → "2 prestadores recebendo esta chamada — primeiro a aceitar leva!" em ambos → Sergio aceitou → Paulo recebeu "Chamada aceita por Sergio Guincho" + "Entendido". Backend log: "first-accept-wins among 2". ✓
+- Segundo painel: botão "Adicionar 2º prestador" revelou 3º phone frame "App do Prestador 2". Layout ajustou para 3 colunas. ✓
+- Perfil: aba "Perfil" no prestador → avatar PA, nome Paulo Reboque, veículo, badge Verificado, placa, 4 stats, 6 achievements (todos bloqueados pois 0 serviços). ✓
+- Loyalty rewards: LoyaltyCard com "Resgatar pontos" → 4 recompensas (FIDEL5/10/25/15) com custos 100/200/300/500 pts, todas locked (0 pontos). ✓
+- `bun run lint`: 0 erros. Sem erros de browser.
+
+## Unresolved issues / risks + next-phase recommendations
+- **Avaliação bidirecional:** não implementada nesta rodada (prestador avaliando cliente). Ficou para próxima fase.
+- **Risco (baixo):** loyalty points e rewards redeemed são em memória no backend — se o rescue-service reiniciar, pontos resgatados voltam. Para produção, persistir em banco.
+- **Recomendação próxima fase:**
+  - Avaliação bidirecional (prestador também avalia o cliente após concluir).
+  - Modo escuro/claro toggle (next-themes disponível).
+  - Notificações sonoras opcionais.
+  - Compartilhamento de localização via link.
+  - Persistir tudo em Prisma (schema.prisma).
+  - Estatísticas avançadas no perfil (gráfico de serviços por dia, mapa de calor de regiões).
+  - Sistema de ranking/leaderboard de prestadores.
+  - Notificação push quando novo tier desbloqueado.
+  - Cupons resgatáveis com validade (expiram após N dias).
+- **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork a partir de `/home/z/my-project/mini-services/rescue-service`: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy) para o WebSocket `/?XTransformPort=3003` rotear corretamente.

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { io, Socket } from 'socket.io-client'
 import type {
   ProviderState, ProviderPublic, ServiceData, PaymentMethod,
-  ChatMessage, PromoResult, LoyaltyInfo,
+  ChatMessage, PromoResult, LoyaltyInfo, LoyaltyReward, RedeemResult,
 } from '@/lib/rescue-types'
 
 type ClientState = {
@@ -17,6 +17,8 @@ type ClientState = {
   newMessage: ChatMessage | null
   promoResult: PromoResult | null
   loyalty: LoyaltyInfo | null
+  rewards: LoyaltyReward[]
+  redeemResult: RedeemResult | null
 }
 
 type ProviderSession = {
@@ -45,6 +47,8 @@ export function useClientSocket() {
     newMessage: null,
     promoResult: null,
     loyalty: null,
+    rewards: [],
+    redeemResult: null,
   })
 
   useEffect(() => {
@@ -87,6 +91,14 @@ export function useClientSocket() {
 
     s.on('client:loyalty', (loyalty: LoyaltyInfo) => {
       setState((p) => ({ ...p, loyalty }))
+    })
+
+    s.on('loyalty:rewards', (rewards: LoyaltyReward[]) => {
+      setState((p) => ({ ...p, rewards }))
+    })
+
+    s.on('loyalty:redeem-result', (result: RedeemResult) => {
+      setState((p) => ({ ...p, redeemResult: result }))
     })
 
     return () => {
@@ -142,14 +154,23 @@ export function useClientSocket() {
     setState((p) => ({ ...p, newMessage: null }))
   }, [])
 
+  const redeemReward = useCallback((rewardId: string) => {
+    socketRef.current?.emit('loyalty:redeem', { rewardId })
+  }, [])
+
+  const clearRedeemResult = useCallback(() => {
+    setState((p) => ({ ...p, redeemResult: null }))
+  }, [])
+
   const clearCurrent = useCallback(() => {
-    setState((p) => ({ ...p, currentService: null, messages: [], newMessage: null, promoResult: null }))
+    setState((p) => ({ ...p, currentService: null, messages: [], newMessage: null, promoResult: null, redeemResult: null }))
   }, [])
 
   return {
     ...state,
     register, requestService, cancelService, rateService,
-    validatePromo, clearPromo, sendChat, clearNewMessage, clearCurrent,
+    validatePromo, clearPromo, sendChat, clearNewMessage,
+    redeemReward, clearRedeemResult, clearCurrent,
   }
 }
 
