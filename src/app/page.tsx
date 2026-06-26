@@ -39,6 +39,7 @@ import { ClientPanel } from '@/components/rescue/client-panel'
 import { ProviderPanel } from '@/components/rescue/provider-panel'
 import { Leaderboard } from '@/components/rescue/leaderboard'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { AnimatedCounter } from '@/components/rescue/animated-counter'
 
 export default function Home() {
   const [demoOpen, setDemoOpen] = useState(false)
@@ -172,10 +173,10 @@ export default function Home() {
         {/* stats bar */}
         <div className="relative border-y border-slate-800 bg-slate-900/40">
           <div className="mx-auto grid max-w-7xl grid-cols-2 divide-x divide-slate-800 sm:grid-cols-4">
-            <Stat icon={Users} value="12k+" label="Clientes ativos" />
-            <Stat icon={Truck} value="850+" label="Prestadores" />
-            <Stat icon={Clock} value="8 min" label="Tempo médio" />
-            <Stat icon={MapPin} value="24h" label="Cobertura" />
+            <Stat icon={Users} value="12k+" label="Clientes ativos" numeric={12000} suffix="+" />
+            <Stat icon={Truck} value="850+" label="Prestadores" numeric={850} suffix="+" />
+            <Stat icon={Clock} value="8 min" label="Tempo médio" numeric={8} suffix=" min" />
+            <Stat icon={MapPin} value="24h" label="Cobertura" numeric={24} suffix="h" />
           </div>
         </div>
       </section>
@@ -188,27 +189,33 @@ export default function Home() {
           subtitle="Da solicitação ao destino final, tudo rastreado em tempo real — cliente e prestador na mesma página."
         />
         <div className="mt-12 grid gap-6 md:grid-cols-3">
-          <StepCard
-            n="01"
-            icon={Zap}
-            title="Cliente solicita"
-            desc="Escolhe o tipo de socorro (reboque, pneu, bateria...), informa local e destino. O preço é calculado na hora."
-            color="amber"
-          />
-          <StepCard
-            n="02"
-            icon={Navigation}
-            title="Prestador mais próximo recebe"
-            desc="O sistema localiza o prestador mais próximo e envia a chamada. Ele confere o valor, distância e dá o aceite."
-            color="emerald"
-          />
-          <StepCard
-            n="03"
-            icon={MapPin}
-            title="Acompanhamento em tempo real"
-            desc="Cliente acompanha a chegada e o trajeto até o destino final. Pagamento liberado ao concluir o serviço."
-            color="sky"
-          />
+          <RevealSection delay={0}>
+            <StepCard
+              n="01"
+              icon={Zap}
+              title="Cliente solicita"
+              desc="Escolhe o tipo de socorro (reboque, pneu, bateria...), informa local e destino. O preço é calculado na hora."
+              color="amber"
+            />
+          </RevealSection>
+          <RevealSection delay={0.1}>
+            <StepCard
+              n="02"
+              icon={Navigation}
+              title="Prestador mais próximo recebe"
+              desc="O sistema localiza o prestador mais próximo e envia a chamada. Ele confere o valor, distância e dá o aceite."
+              color="emerald"
+            />
+          </RevealSection>
+          <RevealSection delay={0.2}>
+            <StepCard
+              n="03"
+              icon={MapPin}
+              title="Acompanhamento em tempo real"
+              desc="Cliente acompanha a chegada e o trajeto até o destino final. Pagamento liberado ao concluir o serviço."
+              color="sky"
+            />
+          </RevealSection>
         </div>
       </section>
 
@@ -411,11 +418,13 @@ export default function Home() {
 
 /* ---------------- sub components ---------------- */
 
-function Stat({ icon: Icon, value, label }: { icon: any; value: string; label: string }) {
+function Stat({ icon: Icon, value, label, numeric, suffix }: { icon: any; value: string; label: string; numeric?: number; suffix?: string }) {
   return (
     <div className="px-4 py-5 text-center">
       <Icon className="mx-auto mb-1.5 h-5 w-5 text-amber-400" />
-      <p className="text-2xl font-extrabold text-white">{value}</p>
+      <p className="text-2xl font-extrabold text-white">
+        {numeric !== undefined ? <AnimatedCounter value={numeric} suffix={suffix} /> : value}
+      </p>
       <p className="text-xs text-slate-400">{label}</p>
     </div>
   )
@@ -423,11 +432,30 @@ function Stat({ icon: Icon, value, label }: { icon: any; value: string; label: s
 
 function SectionHead({ eyebrow, title, subtitle }: { eyebrow: string; title: string; subtitle: string }) {
   return (
-    <div className="mx-auto max-w-2xl text-center">
+    <motion.div
+      initial={{ opacity: 0, y: 30 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-80px" }}
+      transition={{ duration: 0.5 }}
+      className="mx-auto max-w-2xl text-center"
+    >
       <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-amber-400">{eyebrow}</p>
       <h2 className="text-3xl font-extrabold tracking-tight sm:text-4xl">{title}</h2>
       <p className="mt-3 text-slate-400">{subtitle}</p>
-    </div>
+    </motion.div>
+  )
+}
+
+function RevealSection({ children, delay = 0 }: { children: React.ReactNode; delay?: number }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 40 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-60px" }}
+      transition={{ duration: 0.5, delay }}
+    >
+      {children}
+    </motion.div>
   )
 }
 

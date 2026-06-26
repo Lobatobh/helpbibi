@@ -5,7 +5,7 @@ import {
   Truck, Star, Power, MapPin, Navigation, Flag, Clock, CheckCircle2, X, Loader2,
   Wallet, TrendingUp, Battery, Fuel, Key, Wrench, CircleDot, Phone, MessageCircle,
   History, Home, BarChart3, Award, Tag, Eye, ChevronRight, Send, Users, User,
-  Shield, Zap, Trophy, Volume2, VolumeX,
+  Shield, Zap, Trophy, Volume2, VolumeX, Settings,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,7 +17,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
 import {
-  ResponsiveContainer, BarChart, Bar, XAxis, Tooltip, Cell,
+  ResponsiveContainer, BarChart, Bar, XAxis, Tooltip, Cell, AreaChart, Area, CartesianGrid,
 } from 'recharts'
 import { useProviderSocket } from '@/hooks/use-rescue-socket'
 import { useServiceToasts } from '@/hooks/use-service-toasts'
@@ -27,6 +27,8 @@ import { getHistoryForRole, addRecord, recordFromService } from '@/lib/rescue-hi
 import { RescueMap } from './rescue-map'
 import { ChatPanel } from './chat-panel'
 import { TripProgressBar } from './trip-progress-bar'
+import { SettingsView } from './settings-view'
+import { LiveCountdown } from './live-countdown'
 
 const ICONS: Record<string, any> = {
   'tow-truck': Truck, tire: CircleDot, battery: Battery, fuel: Fuel, key: Key, wrench: Wrench,
@@ -47,7 +49,7 @@ export function ProviderPanel() {
   const [name, setName] = useState('')
   const [vehicle, setVehicle] = useState('Guincho Plataforma')
   const [plate, setPlate] = useState('')
-  const [view, setView] = useState<'home' | 'stats' | 'history' | 'profile'>('home')
+  const [view, setView] = useState<'home' | 'stats' | 'history' | 'profile' | 'settings'>('home')
   const [history, setHistory] = useState<ServiceRecord[]>(() =>
     typeof window !== 'undefined' ? getHistoryForRole('provider') : []
   )
@@ -193,6 +195,7 @@ export function ProviderPanel() {
         <TabBtn active={view === 'stats'} onClick={() => setView('stats')} icon={BarChart3} label="Ganhos" />
         <TabBtn active={view === 'history'} onClick={() => { setView('history'); refreshHistory() }} icon={History} label="Histórico" badge={history.length} />
         <TabBtn active={view === 'profile'} onClick={() => setView('profile')} icon={User} label="Perfil" />
+        <TabBtn active={view === 'settings'} onClick={() => setView('settings')} icon={Settings} label="Ajustes" />
       </div>
 
       {/* Body */}
@@ -275,6 +278,10 @@ export function ProviderPanel() {
 
         {view === 'profile' && (
           <ProfileView state={state} history={history} />
+        )}
+
+        {view === 'settings' && (
+          <SettingsView soundEnabled={soundEnabled} onToggleSound={toggleSound} />
         )}
       </div>
 
@@ -487,7 +494,11 @@ function ProviderServiceCard({ svc, onArrived, onStart, onComplete, onDismiss, m
           </div>
           <div>
             <p className="text-[10px] uppercase text-slate-500">ETA</p>
-            <p className="text-xs font-bold text-white">{svc.etaMin} min</p>
+            {(status === 'accepted' || status === 'arriving' || status === 'in_progress') ? (
+              <LiveCountdown seconds={svc.etaMin * 60} variant="inline" />
+            ) : (
+              <p className="text-xs font-bold text-white">{svc.etaMin} min</p>
+            )}
           </div>
           <div>
             <p className="text-[10px] uppercase text-slate-500">Você recebe</p>
@@ -655,6 +666,44 @@ function EarningsView({ history, earningsToday, completedCount, rating }: {
           <p className="text-lg font-bold text-amber-400">{rating.toFixed(1)} ★</p>
         </div>
       </div>
+
+      {/* Weekly trend AreaChart */}
+      {chartData.length > 1 && (
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <TrendingUp className="h-4 w-4 text-emerald-400" />
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tendência de ganhos</p>
+          </div>
+          <div className="h-36 w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+                <defs>
+                  <linearGradient id="earningsGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#10b981" stopOpacity={0.4} />
+                    <stop offset="100%" stopColor="#10b981" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                <XAxis dataKey="day" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <Tooltip
+                  contentStyle={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: 8, fontSize: 12 }}
+                  labelStyle={{ color: '#94a3b8' }}
+                  formatter={(v: any) => [`R$ ${v}`, 'Ganhos']}
+                />
+                <Area
+                  type="monotone"
+                  dataKey="total"
+                  stroke="#10b981"
+                  strokeWidth={2}
+                  fill="url(#earningsGradient)"
+                  dot={{ fill: '#10b981', r: 3 }}
+                  activeDot={{ r: 5, fill: '#34d399' }}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       {/* Service type breakdown */}
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">

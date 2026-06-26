@@ -456,3 +456,55 @@ Task: QA + adicionar notificações sonoras, animações Framer Motion, e botão
   - Tela de configurações (som, notificações, privacidade).
   - Histórico de localizações favoritas (casa, trabalho).
 - **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork a partir de `/home/z/my-project/mini-services/rescue-service`: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy) para o WebSocket `/?XTransformPort=3003` rotear corretamente.
+
+---
+Task ID: 9 (cron webDevReview)
+Agent: cron review agent
+Task: QA + adicionar locais favoritos, compartilhamento de rastreamento, e animações de scroll reveal.
+
+## Current project status / assessment
+- Protótipo SocorroJá estável após Tasks 1-8: landing + demo ao vivo com WebSocket, avaliações bidirecionais, pagamentos, histórico, dashboard de ganhos, chat, toasts, cupons, modal de detalhe, multi-prestador, progresso de trajeto, fidelidade com resgate, filtros, segundo painel, perfis (cliente + prestador), leaderboard ao vivo, dark/light mode, notificações sonoras, animações Framer Motion, botão SOS.
+- QA desta rodada via agent-browser: nenhum bug encontrado no fluxo existente. Logs limpos.
+- rescue-service (porta 3003) e Next.js (porta 3000) ambos ativos.
+- Decidi focar em: locais favoritos, compartilhamento de rastreamento, animações de scroll.
+
+## Completed modifications / verification results
+### Novos recursos implementados
+1. **Locais favoritos** ⭐ — sistema de favoritos com persistência em localStorage (`src/lib/rescue-favorites.ts`). No formulário de solicitação do cliente: barra de quick-select "LOCAIS FAVORITOS" com chips clicáveis (ícone + label), botão "Salvar como favorito" ao lado do select de local, form inline com nome + seletor de ícone (Home/Briefcase/Star) + salvar/cancelar, "Salvo!" flash confirmation, remoção de favoritos com botão X no hover. Favoritos pré-preenchem o local de atendimento ao clicar. *Validado: salvei "Casa" → apareceu na barra "LOCAIS FAVORITOS" → "Salvo!" confirmation.*
+
+2. **Compartilhamento de rastreamento** 🔗 — botão "Compartilhar rastreamento" no ServiceTracker do cliente (visível apenas durante serviço ativo). Usa `navigator.share()` quando disponível (mobile), fallback para `navigator.clipboard.writeText()` com "Link copiado!" confirmation. Gera URL `/?track={serviceId}`. *Validado: botão "Compartilhar rastreamento" visível durante serviço ativo ao lado de "Cancelar solicitação".*
+
+3. **Animações de scroll reveal** ✨ — SectionHead agora anima com `whileInView` (fade+slide quando entra no viewport). Reusable `RevealSection` component com delay configurável. StepCards na seção "Como funciona" animam em cascata (delay 0, 0.1, 0.2) ao entrar no viewport. `viewport={{ once: true }}` para animar apenas uma vez. *Validado: screenshot da landing mostra animações aplicadas.*
+
+### Polimento de estilo
+4. Favorites quick-select com chips amber, hover effect, botão X de remoção no hover.
+5. Save favorite form inline com seletor de ícone visual, disabled state quando label vazio.
+6. Share button com borda sky-blue e ícone Share2, muda para "Link copiado!" com Check icon.
+7. Scroll reveal animations suaves com delays escalonados.
+
+### Arquivos modificados
+- `src/lib/rescue-favorites.ts` (novo) — getFavorites, addFavorite, removeFavorite, isFavorite com localStorage, type FavoriteLocation.
+- `src/components/rescue/client-panel.tsx` — adicionado favorites state + handlers no RequestForm, favorites quick-select bar, save favorite form inline, ShareTrackingButton component no ServiceTracker, imports Briefcase/Share2/Check, RevealSection.
+- `src/app/page.tsx` — SectionHead com motion whileInView, RevealSection component, StepCards envolvidos com RevealSection (delay cascata).
+
+### Verificação (agent-browser via porta 81)
+- Favorites: form abriu → "Salvar como favorito" → preenchi "Casa" → "Salvar" → "LOCAIS FAVORITOS" apareceu com chip "Casa" + "Salvo!" flash. ✓
+- Share tracking: serviço ativo → "Compartilhar rastreamento" visível ao lado de "Cancelar solicitação". ✓
+- Scroll animations: StepCards animam entrada ao rolar para a seção "Como funciona". ✓
+- `bun run lint`: 0 erros. Sem erros de browser.
+
+## Unresolved issues / risks + next-phase recommendations
+- **Settings screen:** não implementada nesta rodada. O tema e som já têm toggles individuais nos headers, mas uma tela consolidada de configurações ficaria para próxima fase.
+- **Weekly leaderboard:** o leaderboard atual mostra apenas hoje/total. Dados históricos (semana/mês) requerem persistência no backend.
+- **Recomendação próxima fase:**
+  - Tela de configurações consolidada (som, tema, notificações, privacidade).
+  - Persistir tudo em Prisma (schema.prisma) — favoritos, histórico, loyalty, leaderboard.
+  - Estatísticas avançadas no perfil (gráfico de serviços por dia, mapa de calor).
+  - Sistema de ranking semanal/mensal com recompensas.
+  - PWA / instalação no celular.
+  - Internacionalização (i18n) com next-intl.
+  - Notificação push quando novo tier desbloqueado.
+  - Cupons resgatáveis com validade (expiram após N dias).
+  - Histórico de localizações favoritas no backend (sincronizar entre dispositivos).
+  - Tela de rastreamento público (URL /?track={id} acessível sem login).
+- **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork a partir de `/home/z/my-project/mini-services/rescue-service`: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy) para o WebSocket `/?XTransformPort=3003` rotear corretamente.

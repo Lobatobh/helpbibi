@@ -5,7 +5,7 @@ import {
   Shield, Phone, Star, MapPin, Navigation, X, Truck, Battery, Fuel, Key, Wrench,
   CircleDot, Clock, CheckCircle2, Loader2, AlertTriangle, MessageCircle,
   Zap, CreditCard, Wallet, History, Home, Send, Tag, Eye, ArrowRight, ChevronRight, User,
-  TrendingUp, Trophy, Heart, Volume2, VolumeX,
+  TrendingUp, Trophy, Heart, Volume2, VolumeX, Briefcase, Share2, Check, Settings,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -25,10 +25,13 @@ import {
   type ServiceType, type LatLng, type PaymentMethod, type ServiceData, type ServiceRecord, type PromoResult, type LoyaltyInfo,
 } from '@/lib/rescue-types'
 import { getHistoryForRole, addRecord, recordFromService, updateRecord } from '@/lib/rescue-history'
+import { getFavorites, addFavorite, removeFavorite, isFavorite, type FavoriteLocation } from '@/lib/rescue-favorites'
 import { RescueMap } from './rescue-map'
 import { ChatPanel } from './chat-panel'
 import { TripProgressBar } from './trip-progress-bar'
 import { LoyaltyCard } from './loyalty-card'
+import { SettingsView } from './settings-view'
+import { LiveCountdown } from './live-countdown'
 
 const ICONS: Record<string, any> = {
   'tow-truck': Truck, tire: CircleDot, battery: Battery, fuel: Fuel, key: Key, wrench: Wrench,
@@ -68,7 +71,7 @@ export function ClientPanel() {
   useChatSound(soundEnabled, messages.length)
 
   const [name, setName] = useState('')
-  const [view, setView] = useState<'home' | 'form' | 'history' | 'profile'>('home')
+  const [view, setView] = useState<'home' | 'form' | 'history' | 'profile' | 'settings'>('home')
   const [svcType, setSvcType] = useState<ServiceType>('reboque')
   const [description, setDescription] = useState('')
   const [pickupId, setPickupId] = useState('paulista')
@@ -267,6 +270,7 @@ export function ClientPanel() {
         <TabBtn active={view === 'home' || view === 'form'} onClick={() => setView('home')} icon={Home} label="Início" />
         <TabBtn active={view === 'history'} onClick={() => { setView('history'); setHistory(getHistoryForRole('client')) }} icon={History} label="Histórico" badge={history.length} />
         <TabBtn active={view === 'profile'} onClick={() => setView('profile')} icon={User} label="Perfil" />
+        <TabBtn active={view === 'settings'} onClick={() => setView('settings')} icon={Settings} label="Ajustes" />
       </div>
 
       {/* Body */}
@@ -407,6 +411,10 @@ export function ClientPanel() {
         {view === 'profile' && (
           <ClientProfileView name={name} loyalty={loyalty} history={history} />
         )}
+
+        {view === 'settings' && (
+          <SettingsView soundEnabled={soundEnabled} onToggleSound={toggleSound} />
+        )}
       </div>
 
       {/* Service detail dialog */}
@@ -439,6 +447,44 @@ function RequestForm(props: any) {
     onCancel, onSubmit, presets,
   } = props
   const sameLoc = pickupId === destId
+  const [favorites, setFavorites] = useState<FavoriteLocation[]>(() =>
+    typeof window !== 'undefined' ? getFavorites() : []
+  )
+  const [showSaveFav, setShowSaveFav] = useState(false)
+  const [favLabel, setFavLabel] = useState('')
+  const [favIcon, setFavIcon] = useState<'home' | 'work' | 'star'>('home')
+  const [savedFlash, setSavedFlash] = useState(false)
+
+  const selectedPickup = presets?.find((p: any) => p.id === pickupId)
+  const pickupIsFav = selectedPickup ? isFavorite(selectedPickup.label) : false
+
+  const handleSaveFavorite = () => {
+    if (!selectedPickup || !favLabel.trim()) return
+    addFavorite({
+      id: Math.random().toString(36).slice(2, 10),
+      label: favLabel.trim(),
+      address: selectedPickup.label,
+      pos: selectedPickup.pos,
+      icon: favIcon,
+      createdAt: Date.now(),
+    })
+    setFavorites(getFavorites())
+    setFavLabel('')
+    setShowSaveFav(false)
+    setSavedFlash(true)
+    setTimeout(() => setSavedFlash(false), 2000)
+  }
+
+  const handleRemoveFavorite = (id: string) => {
+    removeFavorite(id)
+    setFavorites(getFavorites())
+  }
+
+  const handleSelectFavorite = (fav: FavoriteLocation) => {
+    // Find matching preset by position, or just set by label
+    const match = presets?.find((p: any) => p.label === fav.address)
+    if (match) setPickupId(match.id)
+  }
 
   const effectiveResult = promoResult as PromoResult | null
 
@@ -562,11 +608,55 @@ function RequestForm(props: any) {
       </div>
 
       <div className="grid grid-cols-1 gap-2">
+        {/* Favorites quick-select */}
+        {favorites.length > 0 && (
+          <div>
+            <p className="mb-1.5 text-[10px] font-semibold uppercase text-slate-500">Locais favoritos</p>
+            <div className="flex gap-1.5 overflow-x-auto pb-1">
+              {favorites.map((fav) => {
+                const FavIcon = fav.icon === 'home' ? Home : fav.icon === 'work' ? Briefcase : Star
+                return (
+                  <div key={fav.id} className="group relative shrink-0">
+                    <button
+                      onClick={() => handleSelectFavorite(fav)}
+                      className="flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-[10px] font-semibold text-amber-400 transition hover:bg-amber-500/15"
+                    >
+                      <FavIcon className="h-3 w-3" />
+                      {fav.label}
+                    </button>
+                    <button
+                      onClick={() => handleRemoveFavorite(fav.id)}
+                      className="absolute -right-1 -top-1 hidden h-3.5 w-3.5 items-center justify-center rounded-full bg-rose-500 text-white group-hover:flex"
+                    >
+                      <X className="h-2 w-2" />
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
         <div>
-          <Label className="mb-1.5 block text-xs font-semibold uppercase text-slate-400">
-            <MapPin className="mr-1 inline h-3 w-3 text-amber-400" />
-            Local do atendimento
-          </Label>
+          <div className="mb-1.5 flex items-center justify-between">
+            <Label className="text-xs font-semibold uppercase text-slate-400">
+              <MapPin className="mr-1 inline h-3 w-3 text-amber-400" />
+              Local do atendimento
+            </Label>
+            {!pickupIsFav && !showSaveFav && (
+              <button
+                onClick={() => setShowSaveFav(true)}
+                className="flex items-center gap-0.5 text-[10px] text-amber-400 hover:text-amber-300"
+              >
+                <Star className="h-2.5 w-2.5" /> Salvar como favorito
+              </button>
+            )}
+            {savedFlash && (
+              <span className="flex items-center gap-0.5 text-[10px] text-emerald-400">
+                <Check className="h-2.5 w-2.5" /> Salvo!
+              </span>
+            )}
+          </div>
           <select
             value={pickupId}
             onChange={(e) => setPickupId(e.target.value)}
@@ -574,6 +664,38 @@ function RequestForm(props: any) {
           >
             {presets.map((p: any) => (<option key={p.id} value={p.id}>{p.label}</option>))}
           </select>
+          {showSaveFav && (
+            <div className="mt-2 space-y-2 rounded-lg border border-slate-700 bg-slate-900/60 p-2.5">
+              <Input
+                value={favLabel}
+                onChange={(e) => setFavLabel(e.target.value)}
+                placeholder="Nome (ex: Casa, Trabalho)"
+                className="h-8 border-slate-700 bg-slate-950 text-xs text-white placeholder:text-slate-500"
+              />
+              <div className="flex gap-1.5">
+                {(['home', 'work', 'star'] as const).map((icon) => {
+                  const Icon = icon === 'home' ? Home : icon === 'work' ? Briefcase : Star
+                  return (
+                    <button
+                      key={icon}
+                      onClick={() => setFavIcon(icon)}
+                      className={`flex h-7 w-7 items-center justify-center rounded-lg border transition ${
+                        favIcon === icon ? 'border-amber-500 bg-amber-500/15 text-amber-400' : 'border-slate-700 text-slate-500'
+                      }`}
+                    >
+                      <Icon className="h-3.5 w-3.5" />
+                    </button>
+                  )
+                })}
+                <Button onClick={handleSaveFavorite} disabled={!favLabel.trim()} size="sm" className="ml-auto h-7 bg-amber-500 px-3 text-[10px] font-bold text-slate-950 hover:bg-amber-400">
+                  Salvar
+                </Button>
+                <Button onClick={() => setShowSaveFav(false)} variant="ghost" size="sm" className="h-7 px-2 text-[10px] text-slate-400">
+                  Cancelar
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
         <div>
           <Label className="mb-1.5 block text-xs font-semibold uppercase text-slate-400">
@@ -715,7 +837,7 @@ function ServiceTracker({
             <div className="mt-3 grid grid-cols-3 gap-2 text-center">
               <div className="rounded-lg bg-slate-800/60 p-2">
                 <p className="text-[10px] uppercase text-slate-500">ETA</p>
-                <p className="text-sm font-bold text-emerald-400">{svc.etaMin} min</p>
+                <LiveCountdown seconds={svc.etaMin * 60} variant="inline" />
               </div>
               <div className="rounded-lg bg-slate-800/60 p-2">
                 <p className="text-[10px] uppercase text-slate-500">Distância</p>
@@ -840,9 +962,12 @@ function ServiceTracker({
 
       {/* Actions */}
       {isLive && (
-        <Button onClick={onCancel} variant="outline" className="w-full border-rose-500/40 text-rose-400 hover:bg-rose-500/10">
-          Cancelar solicitação
-        </Button>
+        <>
+          <ShareTrackingButton svcId={svc.id} />
+          <Button onClick={onCancel} variant="outline" className="w-full border-rose-500/40 text-rose-400 hover:bg-rose-500/10">
+            Cancelar solicitação
+          </Button>
+        </>
       )}
       {isFinal && (
         <Button onClick={onNewRequest} className="w-full bg-amber-500 py-5 text-sm font-bold text-slate-950 hover:bg-amber-400">
@@ -1259,5 +1384,42 @@ function ClientProfileView({ name, loyalty, history }: { name: string; loyalty: 
         </div>
       )}
     </div>
+  )
+}
+
+function ShareTrackingButton({ svcId }: { svcId: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleShare = async () => {
+    const url = `${window.location.origin}/?track=${svcId}`
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: 'SocorroJá — Acompanhar serviço', url })
+      } else {
+        await navigator.clipboard.writeText(url)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      }
+    } catch {
+      try {
+        await navigator.clipboard.writeText(url)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      } catch {}
+    }
+  }
+
+  return (
+    <Button onClick={handleShare} variant="outline" className="w-full border-sky-500/40 text-sky-400 hover:bg-sky-500/10">
+      {copied ? (
+        <>
+          <Check className="mr-2 h-4 w-4" /> Link copiado!
+        </>
+      ) : (
+        <>
+          <Share2 className="mr-2 h-4 w-4" /> Compartilhar rastreamento
+        </>
+      )}
+    </Button>
   )
 }
