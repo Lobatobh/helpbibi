@@ -52,3 +52,15 @@ prompt
 server.log
 # Skills directory
 /skills/
+
+# Local SQLite/runtime databases
+db/*.db
+db/*.db-journal
+db/*.sqlite
+db/*.sqlite3
+db/*.sqlite-wal
+db/*.sqlite-shm
+db/*.bak*
+
+# Keep db folder
+!db/.gitkeep

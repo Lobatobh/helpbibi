@@ -1132,3 +1132,94 @@ Stage Summary:
 - Regressão browser: todas as sanitizações verificadas, cross-access bloqueado, session cookie funcional, histórico persiste após reload.
 - Total final de testes: 227 (0 fail).
 - Riscos restantes: MercadoPago sem credenciais reais; admin auth não implementada (demo-accessível); UI sem botões de simular pagamento; localStorage ainda como fallback.
+
+---
+Task ID: 25.4-checkpoint
+Agent: main (orchestrator)
+Task: CHECKPOINT GIT da Fase 25.4 — salvar com segurança todo o estado antes de iniciar a Fase 26.
+
+Work Log:
+- Verifiquei o estado do repositório: `git status --short` retornou vazio (working tree limpa). `git diff --stat HEAD` sem mudanças.
+- Confirmar que o commit 2ffc5a5 (criado pelos subagents da FASE 25.4) já continha todos os 56 arquivos do trabalho.
+- Verifiquei os 18 arquivos críticos — todos presentes:
+  - src/server/auth/session.ts ✓
+  - src/server/env.ts ✓
+  - src/server/pricing/pricing-engine.ts ✓
+  - src/server/payments/payment-state-machine.ts ✓
+  - src/server/repositories/payment.repository.ts ✓
+  - src/server/payments/gateways/simulated-gateway.ts ✓
+  - src/server/payments/gateways/mercado-pago-gateway.ts ✓
+  - src/server/payments/gateways/payment-gateway.ts ✓
+  - src/server/payments/gateways/index.ts ✓
+  - src/server/history/history-auth.ts ✓
+  - src/server/repositories/history.repository.ts ✓
+  - src/lib/notifications/notification-store.ts ✓
+  - src/hooks/use-notifications.ts ✓
+  - mini-services/rescue-service/matching.ts ✓
+  - prisma/schema.prisma ✓
+  - docs/production-readiness.md ✓
+  - docs/manual-regression-checklist.md ✓
+  - worklog.md ✓
+- Rodei `bun run check:full`:
+  - lint: 0 erros ✓
+  - prisma validate: válido ✓
+  - prisma generate: ok ✓
+  - test: 227 pass, 0 fail, 565 expect() calls (14 arquivos) ✓
+  - build: Next.js 16.1.3, 15 rotas, compiled successfully ✓
+  - Resultado: check:full PASSOU
+- Conferi cron: `cron list` retornou total=0. Nenhum job webDevReview ativo.
+- O commit existente (2ffc5a5) tinha mensagem auto-gerada (UUID). Fiz `git commit --amend -m "feat: complete production readiness test suite and secure history"` para usar a mensagem solicitada.
+- Novo hash do commit: b32fa6f
+- Verifiquei remote: `git remote -v` retornou vazio — sem remote configurado. Commit criado apenas localmente.
+
+Stage Summary:
+- COMMIT HASH: b32fa6f
+- MENSAGEM: "feat: complete production readiness test suite and secure history"
+- check:full: PASSOU (lint ✓, prisma ✓, 227 testes ✓, build ✓)
+- Total de testes: 227 (0 fail, 565 expect() calls, 14 arquivos)
+- cron/webDevReview: nenhum job ativo (total=0)
+- Push: Sem remote configurado. Commit criado apenas localmente.
+- Estado final do git: working tree limpa, HEAD em b32fa6f, branch main.
+- Checkpoint da Fase 25.4 salvo com segurança. Pronto para iniciar Fase 26.
+
+---
+Task ID: 25.4-hygiene
+Agent: main (orchestrator)
+Task: HIGIENE DO BANCO LOCAL NO GIT — garantir que arquivos de banco local/runtime não fiquem rastreados pelo Git.
+
+Work Log:
+- Verifiquei rastreamento: `git ls-files db` retornou `db/custom.db` e `db/custom.db.bak.254` — ambos rastreados.
+- Executei `git rm --cached db/custom.db db/custom.db.bak.254` — arquivos removidos do index Git mas mantidos localmente (dev database preservado).
+- Atualizei `.gitignore` com regras para bancos SQLite runtime:
+  ```
+  # Local SQLite/runtime databases
+  db/*.db
+  db/*.db-journal
+  db/*.sqlite
+  db/*.sqlite3
+  db/*.sqlite-wal
+  db/*.sqlite-shm
+  db/*.bak*
+
+  # Keep db folder
+  !db/.gitkeep
+  ```
+- Criei `db/.gitkeep` para manter a pasta versionada.
+- Verifiquei ignore rules: `git check-ignore db/custom.db` → ignorado ✓; `git check-ignore db/custom.db.bak.254` → ignorado ✓; `git check-ignore db/.gitkeep` → NÃO ignorado ✓.
+- Rodei `bun run check:full`: PASSOU (lint ✓, prisma ✓, 227 testes ✓, build ✓).
+- Commit de higiene criado: `git commit -m "chore: ignore local sqlite runtime database"` → hash ccf1973.
+- Confirmação final: rodei `bun run test` (modifica o db) e depois `git status --short` → VAZIO. O db não aparece mais como alteração no Git.
+
+Stage Summary:
+- COMMIT DE HIGIENE: ccf1973 "chore: ignore local sqlite runtime database"
+- db/custom.db e db/custom.db.bak.254: untracked do Git, mantidos localmente.
+- .gitignore atualizado com regras para db/*.db, db/*.bak*, etc.
+- db/.gitkeep criado para manter pasta versionada.
+- check:full: PASSOU (227 testes, 0 fail).
+- Working tree limpo após rodar testes (db changes ignorados).
+- Pronto para iniciar Fase 26.
+
+Estado final do git:
+- ccf1973 chore: ignore local sqlite runtime database
+- 8d03dc7 (auto-commit intermediário com db binary — antes da higiene)
+- b32fa6f feat: complete production readiness test suite and secure history
