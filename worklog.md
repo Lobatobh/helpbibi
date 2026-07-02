@@ -1269,3 +1269,65 @@ Estado final do git:
 - ...
 
 Pronto para iniciar Fase 26.
+
+---
+Task ID: 25.4-sqlite-history-definitive-cleanup
+Agent: main (orchestrator)
+Task: LIMPEZA DEFINITIVA DO HISTÓRICO GIT SQLITE — remover db/custom.db, backups e qualquer SQLite runtime de TODO o histórico da branch main, preservando o estado final.
+
+Work Log:
+- Confirmei estado atual: working tree limpo, branch main, 8 commits no histórico. `git log --all -- db/custom.db db/custom.db.bak.254` mostrava 8 commits (incluindo antigos como a97f517, 3f014d4, etc.) que continham o banco binário.
+- Criei backup externo seguro (fora do Git): `git bundle create ../helpbibi-before-sqlite-history-cleanup.bundle --all` → arquivo de 15.9 MB em /home/z/helpbibi-before-sqlite-history-cleanup.bundle. Este bundle contém TODO o histórico antigo (incluindo o banco) e pode ser usado para restaurar se necessário.
+- Deleti branch backup interna: `git branch -D backup/before-db-history-cleanup` (was bcc38e4). Nenhuma branch local permanece com o histórico antigo contendo o banco.
+- Verifiquei disponibilidade do `git filter-repo`: não estava no PATH, mas encontrei em /home/z/.venv/bin/git-filter-repo (instalado via pip3). Funciona via path direto.
+- Executei `git filter-repo` com os seguintes paths/globs (todos com --invert-paths --force):
+  - --path db/custom.db
+  - --path db/custom.db.bak.254
+  - --path-glob 'db/*.db'
+  - --path-glob 'db/*.db-journal'
+  - --path-glob 'db/*.sqlite'
+  - --path-glob 'db/*.sqlite3'
+  - --path-glob 'db/*.sqlite-wal'
+  - --path-glob 'db/*.sqlite-shm'
+  - --path-glob 'db/*.bak*'
+- filter-repo processou 17 commits, reescreveu o histórico em 0.04s, e fez repack/cleanup em 1.12s. HEAD agora em 007cbd3.
+- Verifiquei resultado:
+  - `git log --all -- db/custom.db db/custom.db.bak.254` → VAZIO (nenhum commit contém os arquivos) ✓
+  - `git log --all -- 'db/*.db' 'db/*.sqlite' 'db/*.bak*'` → VAZIO ✓
+  - `git ls-files db` → apenas db/.gitkeep ✓
+  - `git status --short` → vazio (clean) ✓
+- Confirmei .gitignore preservado com as regras SQLite + db/.gitkeep existe.
+- `git check-ignore db/custom.db` → db/custom.db (ignorado) ✓.
+- `git add .gitignore db/.gitkeep` → `git diff --cached --stat` vazio (nada a commitar — filter-repo preservou o estado).
+- Rodei `bun run check:full`: PASSOU (lint ✓, prisma ✓, 227 testes ✓, build ✓).
+- Rodei `bun run test` (modifica db) e depois `git status --short` → VAZIO. Working tree permanece limpo após testes.
+- Confirmei ausência de remote: `git remote -v` → vazio. Sem remote configurado. Histórico limpo apenas localmente.
+
+Stage Summary:
+- MÉTODO USADO: `git filter-repo` (disponível via /home/z/.venv/bin/git-filter-repo). filter-branch fallback não foi necessário.
+- BRANCH BACKUP INTERNA DELETADA: `backup/before-db-history-cleanup` removida. Nenhuma branch local contém histórico antigo com banco.
+- BUNDLE EXTERNO CRIADO: /home/z/helpbibi-before-sqlite-history-cleanup.bundle (15.9 MB, contém todo histórico antigo incluindo banco). Pode ser usado para restaurar se necessário: `git clone helpbibi-before-sqlite-history-cleanup.bundle restored-repo`.
+- RESULTADO `git log --all -- db/custom.db db/custom.db.bak.254`: VAZIO — nenhum commit em qualquer branch contém os arquivos SQLite.
+- RESULTADO `git ls-files db`: apenas db/.gitkeep.
+- RESULTADO `check:full`: PASSOU (lint ✓, prisma ✓, 227 testes ✓ com 565 expect calls, build ✓).
+- TOTAL DE TESTES: 227 (0 fail).
+- ESTADO FINAL DO GIT: working tree limpo, branch main, sem remote, histórico completamente limpo de arquivos SQLite.
+- CONFIRMAÇÃO: nenhum banco SQLite runtime permanece no histórico atual. Nenhuma branch local contém histórico antigo com banco.
+
+ORIENTAÇÃO:
+- O bundle externo (/home/z/helpbibi-before-sqlite-history-cleanup.bundle) contém o histórico antigo COM o banco binário. Deve ser mantido fora do repositório e NÃO deve ser enviado a nenhum remote.
+- Quando houver certeza de que o estado atual está estável, o bundle pode ser deletado: `rm ../helpbibi-before-sqlite-history-cleanup.bundle`.
+- Nenhum remote configurado — quando um remote for adicionado no futuro, o push enviará apenas o histórico limpo.
+
+Histórico final da main (após reescrita, hashes novos):
+- 007cbd3 docs: record db history cleanup in worklog
+- ca738d4 chore: ignore local sqlite runtime database
+- 6afc93c feat: complete production readiness test suite and secure history
+- 0e81f95 f118face-b48a-4bbd-b90b-28988ded72bf
+- 972fe74 a237a7d0-8539-474e-9041-032804598aa1
+- 1de0757 a0b19162-0c9e-483b-948a-cc4ccefeb6e5
+- aba9c0a 5d860928-6189-4cb9-b72a-8af2b78079bc
+- 3d92d1e 9a4718f6-2bba-4b79-8851-5d9781eb3a40
+- ... (commits antigos reescritos, todos sem o banco)
+
+Pronto para iniciar Fase 26.
