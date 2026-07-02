@@ -4,6 +4,11 @@ import { PrismaClient } from '@prisma/client'
 import { isEligibleForMatching, rankProvidersByDistance } from './matching'
 import { calculatePrice } from '../../src/server/pricing/pricing-engine'
 import { validateEnv } from '../../src/server/env'
+// FASE 26 — Socket.IO hardening helpers (per-socket rate limit + payload validation)
+import {
+  socketRateBuckets, socketRateLimit,
+  isValidLatLng, isValidText, isNonEmptyString,
+} from './validation'
 
 // FASE 25.2/25.4 — Environment validation + CORS hardening
 const _envResult = validateEnv()
@@ -234,6 +239,9 @@ const stepToward = (from: LatLng, to: LatLng, stepKm: number): { pos: LatLng; ar
   }
 }
 
+// FASE 26 — Socket.IO hardening: per-socket rate limiting + payload validation
+// (Helpers extracted to validation.ts and imported above.)
+
 const providerPublic = (p: Provider) => ({
   id: p.id, name: p.name, vehicle: p.vehicle, rating: p.rating,
   position: p.position, online: p.online, completedCount: p.completedCount,
@@ -314,6 +322,8 @@ io.on('connection', (socket) => {
   console.log(`[socket] connected ${socket.id}`)
 
   socket.on('client:register', async (data: { name: string }) => {
+    if (!socketRateLimit(socket.id, 'client:register', 5, 60000)) return
+    if (!data || !isNonEmptyString(data.name, 100)) return
     const id = uid('cli_')
     // Persist user to DB
     let dbUserId: string | undefined
@@ -373,6 +383,8 @@ io.on('connection', (socket) => {
   })
 
   socket.on('provider:register', async (data: { name: string; vehicle: string; plate: string }) => {
+    if (!socketRateLimit(socket.id, 'provider:register', 5, 60000)) return
+    if (!data || !isNonEmptyString(data.name, 100) || !isNonEmptyString(data.vehicle, 100) || !isNonEmptyString(data.plate, 20)) return
     const id = uid('prv_')
     // Persist user + provider profile to DB
     let dbUserId: string | undefined
@@ -433,13 +445,19 @@ io.on('connection', (socket) => {
   socket.on('provider:position', (data: { lat: number; lng: number }) => {
     const role = socketToRole.get(socket.id)
     if (!role || role.role !== 'provider') return
+    // FASE 26: rate limit position updates (max 10/sec per socket)
+    if (!socketRateLimit(socket.id, 'provider:position', 10, 1000)) return
     const p = providers.get(role.id)
     if (!p) return
-    if (typeof data?.lat !== 'number' || typeof data?.lng !== 'number') return
-    p.position = { lat: data.lat, lng: data.lng }; p.isGpsPosition = true; emitProvider(p)
+    // FASE 26: validate payload
+    if (!isValidLatLng(data)) return
+    p.position = { lat: data.lat, lng: data.lng }
+    p.isGpsPosition = true
+    emitProvider(p)
   })
 
   socket.on('promo:validate', (data: { code: string; type: ServiceType; distanceKm: number }) => {
+    if (!data || !isNonEmptyString(data.code, 50) || typeof data.distanceKm !== 'number' || data.distanceKm < 0) return
     const code = (data.code || '').trim().toUpperCase()
     const promo = PROMO_CODES[code]
     if (!promo) { socket.emit('promo:result', { valid: false, code, message: 'Cupom inválido ou expirado' }); return }
@@ -452,10 +470,22 @@ io.on('connection', (socket) => {
     pickup: LatLng; pickupLabel: string; destination: LatLng; destinationLabel: string;
     paymentMethod: PaymentMethod; promoCode?: string | null
   }) => {
+    // FASE 26: rate limit service requests (max 5 per minute per socket)
+    if (!socketRateLimit(socket.id, 'service:request', 5, 60000)) {
+      socket.emit('service:error', { message: 'Too many requests. Please wait before requesting another service.' })
+      return
+    }
     const role = socketToRole.get(socket.id)
     if (!role || role.role !== 'client') return
     const client = clients.get(role.id)
     if (!client) return
+    // FASE 26: validate payload
+    if (!data || !isNonEmptyString(data.clientName) || !isNonEmptyString(data.type as string) ||
+        !isNonEmptyString(data.pickupLabel) || !isNonEmptyString(data.destinationLabel) ||
+        !isValidLatLng(data.pickup) || !isValidLatLng(data.destination)) {
+      socket.emit('service:error', { message: 'Invalid request payload' })
+      return
+    }
 
     const distanceKm = haversineKm(data.pickup, data.destination)
     const promoCodeUpper = (data.promoCode || '').trim().toUpperCase()
@@ -713,6 +743,7 @@ io.on('connection', (socket) => {
     if (!role || role.role !== 'client') return
     const svc = services.get(data.serviceId)
     if (!svc || svc.clientId !== role.id || svc.status !== 'completed' || svc.rating) return
+    if (typeof data.stars !== 'number' || data.stars < 1 || data.stars > 5) return
     const stars = Math.max(1, Math.min(5, Math.round(data.stars)))
     svc.rating = { stars, comment: (data.comment || '').slice(0, 240), at: Date.now(), from: svc.clientName }
     if (svc.providerId) {
@@ -770,10 +801,13 @@ io.on('connection', (socket) => {
   socket.on('chat:send', (data: { serviceId: string; text: string }) => {
     const role = socketToRole.get(socket.id)
     if (!role) return
+    // FASE 26: rate limit chat (max 10 messages per 10 seconds)
+    if (!socketRateLimit(socket.id, 'chat:send', 10, 10000)) return
     const svc = services.get(data.serviceId)
     if (!svc) return
     if (role.role === 'client' && svc.clientId !== role.id) return
     if (role.role === 'provider' && svc.providerId !== role.id) return
+    // FASE 26: validate text (max 500 chars, non-empty)
     const text = (data.text || '').trim().slice(0, 500)
     if (!text) return
     const fromName = role.role === 'client' ? svc.clientName : (providers.get(role.id)?.name || 'Prestador')
@@ -849,6 +883,7 @@ io.on('connection', (socket) => {
       const p = providers.get(role.id)
       if (p) { p.online = false; providers.delete(role.id); io.emit('providers:nearby', Array.from(providers.values()).filter((x) => x.online).map(providerPublic)) }
     }
+    socketRateBuckets.delete(socket.id)
     socketToRole.delete(socket.id)
     console.log(`[socket] disconnected ${socket.id}`)
   })

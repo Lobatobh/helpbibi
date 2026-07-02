@@ -1,15 +1,15 @@
 # Help Bibi — Manual Regression Checklist
 
-> Última execução: FASE 25.4.
+> Última execução: FASE 26.
 
 ## Pré-requisitos
 - [ ] `bun run check:full` passa (lint + prisma + test + build)
-- [ ] `bunx prisma db push` aplicou o schema (PaymentRecord, PaymentEvent, PaymentStatus)
-- [ ] Dev server Next.js na porta 3000 (reiniciado após `prisma generate`)
+- [ ] Dev server Next.js na porta 3000
 - [ ] rescue-service na porta 3003 (`bun --hot index.ts`)
 - [ ] Caddy gateway na porta 81
 - [ ] Acessar via `http://localhost:81`
 - [ ] Nenhum cron ativo
+- [ ] `git ls-files db` mostra apenas `db/.gitkeep`
 
 ## 1. Landing Page
 - [ ] Página abre sem blank screen
@@ -17,67 +17,80 @@
 - [ ] Sem erros de hidratação
 - [ ] Footer sticky mobile + desktop
 
-## 2. Auth (FASE 25.4)
-- [ ] `POST /api/auth/login {userId, role}` → seta cookie, retorna user
-- [ ] `GET /api/auth/me` → 200 com user (com cookie) / 401 (sem cookie)
-- [ ] `POST /api/auth/logout` → limpa cookie
-- [ ] Session cookie é HttpOnly + SameSite=Lax
-- [ ] Cookie tampering rejeitado (HMAC verificado)
+## 2. Security Headers (FASE 26)
+- [ ] `X-Content-Type-Options: nosniff` presente
+- [ ] `X-Frame-Options: DENY` presente
+- [ ] `Referrer-Policy: strict-origin-when-cross-origin` presente
+- [ ] `Permissions-Policy` presente
+- [ ] `Strict-Transport-Security` presente
+- [ ] `Content-Security-Policy` com `frame-ancestors 'none'` presente
 
-## 3. Demo — Registro + Serviço
+## 3. Health Endpoints (FASE 26)
+- [ ] `GET /api/health` retorna `{ status: "ok", timestamp, environment, uptime, version }`
+- [ ] `GET /api/health/db` retorna `{ status: "ok", database: "connected" }`
+- [ ] Health não expõe DATABASE_URL, secrets, hostname, stack traces
+
+## 4. Rate Limiting (FASE 26)
+- [ ] `/api/auth/login` — 10/min per IP
+- [ ] `/api/payments/webhook` — 30/min per IP
+- [ ] `/api/track/[id]` — 60/min per IP
+- [ ] `/api/admin/*` — 60/min per IP
+- [ ] Exceder limite retorna 429 com `Retry-After` header
+
+## 5. Auth
+- [ ] `POST /api/auth/login` seta cookie HttpOnly
+- [ ] `GET /api/auth/me` retorna user com cookie / 401 sem cookie
+- [ ] `POST /api/auth/logout` limpa cookie
+- [ ] Cookie: HttpOnly + SameSite=Lax + Secure (prod)
+
+## 6. Demo — Registro + Serviço
 - [ ] Cliente + prestador registram via socket
+- [ ] Socket rate limiting: registrar 6x em 1min é bloqueado na 6ª
 - [ ] Cliente solicita Reboque → R$ 180
 - [ ] Matching: prestador recebe chamada
 - [ ] Prestador aceita → serviço accepted
 
-## 4. Pagamento (PaymentRecord + PaymentEvent)
+## 7. Pagamento
 - [ ] `POST /api/payments/simulate` outcome=success → PaymentRecord PAID + 2 events
-- [ ] `POST /api/payments/simulate` outcome=failure → PaymentRecord FAILED + failedAt + failureReason
-- [ ] Transição inválida (PAID→FAILED) rejeitada
-- [ ] `/api/payments/simulate` retorna 403 em produção
+- [ ] outcome=failure → PaymentRecord FAILED + failedAt + failureReason
+- [ ] Transição inválida rejeitada
+- [ ] 403 em produção
 
-## 5. Admin Financeiro
+## 8. Admin Financeiro
 - [ ] `GET /api/admin/payments` retorna lista + summary
 - [ ] Admin vê: amount, platformFee, providerPayout, events
-- [ ] Summary: total, totalAmount, totalPlatformFee, totalProviderPayout, byStatus
-- [ ] `POST /api/admin/providers/[id]/approve` atualiza verificação
+- [ ] Produção: sem sessão ADMIN → 401
 
-## 6. Histórico Real no Banco + Sanitização (FASE 25.4 CRÍTICO)
-- [ ] `GET /api/client/services` retorna serviços do cliente
-- [ ] **Cliente list NÃO tem platformFee** ✓
-- [ ] **Cliente list NÃO tem providerPayout** ✓
-- [ ] `GET /api/client/services/[id]` retorna detalhe
-- [ ] **Cliente detail NÃO tem platformFee** ✓
-- [ ] **Cliente detail NÃO tem providerPayout** ✓
-- [ ] Cliente detail breakdownText: apenas "Total: R$ X" (sem taxa/repasse)
-- [ ] `GET /api/provider/services` retorna atendimentos
-- [ ] **Prestador list tem providerPayout** ✓
-- [ ] **Prestador list NÃO tem platformFee** ✓
-- [ ] `GET /api/provider/services/[id]` retorna detalhe
-- [ ] **Prestador detail tem providerPayout** ✓
-- [ ] **Prestador detail NÃO tem platformFee** ✓
-- [ ] Prestador detail breakdownText: "Total" + "Seu repasse (80%)" (sem taxa)
+## 9. Histórico + Sanitização
+- [ ] Client list: sem platformFee, sem providerPayout
+- [ ] Client detail: sem platformFee, sem providerPayout
+- [ ] Provider list: com providerPayout, sem platformFee
+- [ ] Provider detail: com providerPayout, sem platformFee
+- [ ] Cross-access bloqueado
+- [ ] Sem auth → 401
 
-## 7. Autorização do Histórico (FASE 25.4)
-- [ ] Sem sessão + sem dbUserId → 401 "Authentication required"
-- [ ] Produção: dbUserId query bloqueado (401)
-- [ ] Dev: dbUserId query permitido
-- [ ] Cross-access: cliente → provider services = 0
-- [ ] Cross-access: provider → client services = 0
-- [ ] Cross-user: cliente B → serviço de cliente A = 404
-- [ ] Cross-user: prestador B → atendimento de prestador A = 404
-- [ ] Histórico persiste após reload
-
-## 8. Tracking Público
-- [ ] `GET /api/track/[id]` sem price, paymentStatus, platformFee, providerPayout
+## 10. Tracking Público
+- [ ] Sem price, paymentStatus, platformFee, providerPayout
 - [ ] Sem client name/phone, plate, chat
+- [ ] Rate limit: 60/min per IP
 
-## 9. Chat + Notificações
+## 11. Socket.IO Hardening (FASE 26)
+- [ ] `provider:position` rate limited (10/sec)
+- [ ] `chat:send` rate limited (10/10s)
+- [ ] `service:request` rate limited (5/min)
+- [ ] Payload inválido rejeitado (lat/lng inválido, texto vazio, etc.)
+
+## 12. Chat + Notificações
 - [ ] Chat bidirecional
 - [ ] Notificações: sino + badge + dedup + marcar lida
 - [ ] Chat não notifica remetente
 
-## 10. Responsividade
+## 13. Responsividade
 - [ ] Mobile 375px OK
 - [ ] Desktop 1280px OK
 - [ ] Footer sticky
+
+## 14. Git Hygiene
+- [ ] `git status --short` limpo após testes
+- [ ] `git ls-files db` mostra apenas `db/.gitkeep`
+- [ ] `git log --all -- 'db/*.db'` vazio

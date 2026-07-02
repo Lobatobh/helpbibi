@@ -2,8 +2,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getProviderServices, authorizeHistoryRequest } from '@/server/repositories/history.repository'
 import { getSessionUser } from '@/server/auth/session'
 import { db } from '@/server/db/prisma'
+import { applyRateLimit, RATE_LIMITS, getClientIp } from '@/server/rate-limit'
+import { audit } from '@/server/audit'
 
 export async function GET(req: NextRequest) {
+  // FASE 26: rate limiting
+  const rateLimited = applyRateLimit(req, 'provider/services', RATE_LIMITS.history)
+  if (rateLimited) {
+    audit('rate_limit_exceeded', { ip: getClientIp(req), route: 'provider/services' })
+    return rateLimited
+  }
+
   const url = new URL(req.url)
   const dbUserId = url.searchParams.get('dbUserId')
   const providerProfileId = url.searchParams.get('providerProfileId')

@@ -63,4 +63,6 @@ db/*.sqlite-shm
 db/*.bak*
 
 # Keep db folder
-!db/.gitkeep
+!db/.gitkeeptool-results/
+
+tool-results/

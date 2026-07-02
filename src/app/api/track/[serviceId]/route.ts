@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getPublicTracking } from '@/server/repositories/tracking.repository'
+import { applyRateLimit, RATE_LIMITS, getClientIp } from '@/server/rate-limit'
+import { audit } from '@/server/audit'
 
 /**
  * GET /api/track/[serviceId]
@@ -7,9 +9,16 @@ import { getPublicTracking } from '@/server/repositories/tracking.repository'
  * Returns only safe public data (no client name, phone, payment, plate, chat).
  */
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ serviceId: string }> }
 ) {
+  // FASE 26: rate limiting
+  const rateLimited = applyRateLimit(req, 'track', RATE_LIMITS.track)
+  if (rateLimited) {
+    audit('rate_limit_exceeded', { ip: getClientIp(req), route: 'track' })
+    return rateLimited
+  }
+
   try {
     const { serviceId } = await params
     const data = await getPublicTracking(serviceId)

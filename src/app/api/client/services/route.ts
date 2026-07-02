@@ -1,8 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getClientServices, authorizeHistoryRequest } from '@/server/repositories/history.repository'
 import { getSessionUser } from '@/server/auth/session'
+import { applyRateLimit, RATE_LIMITS, getClientIp } from '@/server/rate-limit'
+import { audit } from '@/server/audit'
 
 export async function GET(req: NextRequest) {
+  // FASE 26: rate limiting
+  const rateLimited = applyRateLimit(req, 'client/services', RATE_LIMITS.history)
+  if (rateLimited) {
+    audit('rate_limit_exceeded', { ip: getClientIp(req), route: 'client/services' })
+    return rateLimited
+  }
+
   const url = new URL(req.url)
   const dbUserId = url.searchParams.get('dbUserId')
   const limit = Math.min(parseInt(url.searchParams.get('limit') || '50', 10), 200)

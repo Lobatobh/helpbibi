@@ -1,102 +1,100 @@
 # Help Bibi — Production Readiness
 
-> Status após FASE 25.4 — Autenticação Real do Histórico e Sanitização Financeira Final.
+> Status após FASE 26 — Hardening Final de Segurança e Observabilidade.
 
 ## Resumo Executivo
 
-A FASE 25.4 fechou os últimos bloqueios de produção:
+A FASE 26 adicionou camadas de proteção para produção real:
 
-1. **Autenticação real por sessão** — `src/server/auth/session.ts` com cookies HMAC-signed HttpOnly. Rotas de histórico usam `getSessionUser()` em produção; `dbUserId` query limitado a dev/demo.
-2. **Sanitização financeira do cliente** — cliente **NUNCA** recebe `platformFee` nem `providerPayout` (nem em lista, nem em detalhe).
-3. **Sanitização financeira do prestador** — prestador recebe `providerPayout` mas **NUNCA** `platformFee`.
-4. **Admin financeiro preservado** — admin vê tudo (amount, platformFee, providerPayout, events).
+1. **Rate limiting** em todas as APIs (in-memory, 8 presets).
+2. **Headers de segurança** no next.config (CSP, X-Frame-Options, HSTS, etc.).
+3. **Logger seguro** que mascara email/telefone/cartão e redacta secrets.
+4. **Auditoria operacional** com buffer in-memory + logs estruturados.
+5. **Socket.IO hardening** com rate limiting (provider:position, chat, service:request) + validação de payload.
+6. **Health endpoints** (/api/health, /api/health/db).
+7. **Admin hardening** com `requireRole(ADMIN)` em produção.
+8. **Plano de backup/restore** documentado.
+9. **Plano PostgreSQL** documentado.
 
-## Autenticação (FASE 25.4)
+## Proteções Adicionadas (FASE 26)
 
-### Session Helper (`src/server/auth/session.ts`)
-- Cookie `hb_session` HMAC-signed (SHA-256) com `{userId, role, exp}`.
-- `HttpOnly; SameSite=Lax; Path=/`; `Secure` em produção.
-- TTL: 7 dias.
-- Funções: `getSessionUser(request)`, `getCurrentUserFromRequest(request)`, `requireCurrentUser(request)`, `requireRole(request, role)`, `setSessionCookie(userId, role)`, `clearSessionCookie()`.
+### Rate Limiting (`src/server/rate-limit.ts`)
+| Preset | Limite | Janela | Rotas |
+|--------|--------|--------|-------|
+| login | 10 | 60s | /api/auth/login |
+| me | 60 | 60s | /api/auth/me |
+| webhook | 30 | 60s | /api/payments/webhook |
+| simulate | 20 | 60s | /api/payments/simulate |
+| track | 60 | 60s | /api/track/[id] |
+| admin | 60 | 60s | /api/admin/* |
+| history | 30 | 60s | /api/client/services, /api/provider/services |
+| health | 120 | 60s | /api/health, /api/health/db |
 
-### Rotas de Auth
-- `POST /api/auth/login` — body `{userId, role}`; verifica user no DB; seta cookie.
-- `GET /api/auth/me` — retorna user atual da sessão (401 se sem sessão).
-- `POST /api/auth/logout` — limpa cookie.
+In-memory para MVP. **Produção real deve usar Redis ou proxy/WAF.**
 
-### Regra de Autorização do Histórico
-- **Produção**: usa apenas sessão/cookie (`getSessionUser`). `dbUserId` query é **ignorado/bloqueado**.
-- **Dev/demo**: permite `dbUserId` query como fallback (`NODE_ENV !== 'production'`).
-- Sem sessão em produção → 401.
-- Cross-role (cliente acessa provider) → 0 resultados.
-- Cross-user (cliente B acessa serviço de cliente A) → 404.
+### Security Headers (next.config.ts)
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: DENY`
+- `Referrer-Policy: strict-origin-when-cross-origin`
+- `Permissions-Policy: camera=(), microphone=(), geolocation=(self), interest-cohort=()`
+- `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`
+- `Content-Security-Policy` com `frame-ancestors 'none'`, `default-src 'self'`
 
-## Sanitização Financeira (FASE 25.4)
+### Secure Logger (`src/server/logger.ts`)
+- Redacta keys: password, secret, token, cookie, authorization, cvv, cardNumber, security_code.
+- Mascara: email (jo***@domain), telefone (11 ****-1234), cartão (123456******1234).
+- Trunca strings >500 chars.
+- Nunca loga payload completo de webhook.
 
-### Cliente — NUNCA recebe:
-- `platformFee`
-- `providerPayout`
-- `providerPaymentId`
-- `externalReference`
-- `idempotencyKey`
-- `rawPayload`
-- `metadata`
+### Audit (`src/server/audit.ts`)
+Eventos auditados: login_success, login_failure, provider_approved, webhook_received, webhook_invalid_signature, webhook_duplicate, payment_failed, payment_invalid_transition, rate_limit_exceeded, unauthorized_access.
 
-### Cliente — PODE receber:
-- `price` / `total`
-- `discount`
-- `paymentStatus` (simplificado)
-- `paymentMethod` (simplificado)
-- `couponCode` (próprio cupom)
-- `breakdownText`: apenas `["Total: R$ X,XX"]` (+ desconto se houver)
+### Socket.IO Hardening
+- `provider:position`: max 10/sec por socket + validação lat/lng.
+- `chat:send`: max 10 msg/10s + validação texto (max 500 chars).
+- `service:request`: max 5/min + validação payload completo.
+- `client:register`/`provider:register`: max 5/min + validação campos.
+- `promo:validate`: validação code + distanceKm.
+- `service:rate`: validação stars (1-5).
+- Cleanup de rate limit buckets no disconnect.
 
-### Prestador — NUNCA recebe:
-- `platformFee`
-- `providerPaymentId`
-- `externalReference`
-- `idempotencyKey`
-- `rawPayload`
-- `metadata`
+### Health Endpoints
+- `GET /api/health` — liveness: status, timestamp, env, uptime, version.
+- `GET /api/health/db` — readiness: status, database connected, timestamp.
+- Sem expor: DATABASE_URL, secrets, hostname, stack traces.
 
-### Prestador — PODE receber:
-- `price` / `total`
-- `providerPayout` (80% do total)
-- `paymentStatus` (simplificado)
-- `breakdownText`: `["Total: R$ X,XX", "Seu repasse (80%): R$ Y,YY"]`
+### Admin Hardening
+- `/api/admin/payments` e `/api/admin/providers/[id]/approve`: `requireRole(req, 'ADMIN')` em produção.
+- Dev: mantém NODE_ENV guard + audit logging.
+- Produção: 401 se sem sessão ADMIN.
 
-### Admin — recebe TUDO:
-- `amount`, `platformFee`, `providerPayout`
-- `providerPaymentId`, `externalReference`, `idempotencyKey`
-- `events` (CREATED, PAID, FAILED, WEBHOOK, etc.)
-- `summary`: total, totalAmount, totalPlatformFee, totalProviderPayout, byStatus
+## Cobertura de Testes
 
-## Schema Financeiro
-
-### Models
-- `PaymentRecord` — 20+ campos (method, status, amount, platformFee, providerPayout, providerPaymentId, externalReference, idempotencyKey @unique, simulatedTransactionId, paidAt, failedAt, failureReason, lastWebhookSignature, webhookVerifiedAt, metadata, rawPayload, events)
-- `PaymentEvent` — eventType, fromStatus, toStatus, message, rawPayload
-- `enum PaymentStatus` — PENDING, AUTHORIZED, PAID, FAILED, CANCELED, REFUNDED
-- `ServiceRequest.paymentStatus` + relação `paymentRecords`
-
-## Módulos e Status
-
-| Módulo | Testes | Integrado | Status |
-|--------|--------|-----------|--------|
-| pricing-engine.ts | 15 | ✅ rescue-service | OK |
-| payment-state-machine.ts | 17 | ✅ payment.repository | OK |
-| payment.repository.ts | 14 | ✅ APIs + rescue-service | OK |
-| simulated-gateway.ts | 10 | ✅ payment.repository | OK |
-| mercado-pago-gateway.ts | 29 | ⚠️ sem credenciais | Pendente |
-| gateway factory | 9 | ✅ payment.repository | OK |
-| env.ts | 12 | ✅ rescue-service boot | OK |
-| tracking-security | 8 | ✅ /api/track | OK |
-| financial-security | 15 | ✅ regras válidas | OK |
-| matching.ts | 21 | ✅ rescue-service | OK |
-| history-auth.ts | 21 | ✅ 4 rotas de API | OK |
-| history.repository.ts | 21 | ✅ 4 rotas de API | OK |
-| notification-store.ts | 18 | ✅ use-notifications.ts | OK |
-| auth/session.ts | 17 | ✅ rotas auth + histórico | OK |
-| **TOTAL** | **227** | | |
+| Categoria | Arquivos | Testes |
+|-----------|----------|--------|
+| Pricing | 1 | 15 |
+| Payment state machine | 1 | 17 |
+| Financial security | 1 | 15 |
+| Simulated gateway | 1 | 10 |
+| Gateway factory | 1 | 9 |
+| MercadoPago contract | 1 | 29 |
+| Env validation | 1 | 12 |
+| Tracking security | 1 | 8 |
+| Matching | 1 | 21 |
+| History auth | 1 | 21 |
+| Notification store | 1 | 18 |
+| Session auth | 2 | 25 |
+| Payment persistence (DB) | 1 | 14 |
+| History integration (DB) | 1 | 21 |
+| **Rate limiter (NEW)** | 1 | 12 |
+| **Logger sanitize (NEW)** | 1 | 13 |
+| **Audit (NEW)** | 1 | 6 |
+| **Session hardening (NEW)** | 1 | 8 |
+| **Security headers (NEW)** | 1 | 8 |
+| **Tracking hardening (NEW)** | 1 | 6 |
+| **Webhook hardening (NEW)** | 1 | 4 |
+| **Socket hardening (NEW)** | 1 | 12 |
+| **TOTAL** | **22** | **296** |
 
 ## Resultado do check:full
 
@@ -104,34 +102,34 @@ A FASE 25.4 fechou os últimos bloqueios de produção:
 ✓ bun run lint (0 errors)
 ✓ bunx prisma validate
 ✓ bunx prisma generate
-✓ bun run test (227 pass, 0 fail, 565 expect calls)
-✓ bun run build (Next.js 16.1.3, 15 rotas)
+✓ bun run test (296 pass, 0 fail, 847 expect calls)
+✓ bun run build (Next.js 16.1.3, 17 rotas)
 ```
 
-## Regressão Browser (FASE 25.4)
+## Regressão Browser (FASE 26)
 
 - ✅ App abre sem erros de console/hidratação.
-- ✅ Cliente + prestador registram via socket.
+- ✅ Security headers presentes (X-Content-Type-Options, X-Frame-Options, CSP, HSTS, etc.).
+- ✅ `/api/health` retorna status ok + version + uptime.
+- ✅ `/api/health/db` retorna database connected.
+- ✅ Cliente + prestador registram (com rate limiting de socket).
 - ✅ Cliente solicita Reboque → R$ 180 → matching → prestador aceita.
 - ✅ Pagamento aprovado cria PaymentRecord PAID + 2 events.
-- ✅ Admin financeiro vê platformFee=36, providerPayout=144, events=2.
-- ✅ **Cliente list NÃO tem platformFee nem providerPayout** ✓
-- ✅ **Cliente detail NÃO tem platformFee nem providerPayout** (breakdownText: apenas Total) ✓
-- ✅ **Prestador list tem providerPayout=144, NÃO tem platformFee** ✓
-- ✅ **Prestador detail tem providerPayout=144, NÃO tem platformFee** (breakdownText: Total + Repasse) ✓
-- ✅ Cross-access: cliente → provider services = 0; provider → client services = 0.
-- ✅ Sem auth (no dbUserId, no session) → "Authentication required".
-- ✅ Session cookie: login → /api/auth/me retorna 200 com user correto.
-- ✅ Histórico persiste após reload (count=1 antes e depois).
-- ✅ Tracking público seguro (sem price, paymentStatus, platformFee, providerPayout).
+- ✅ Cliente history sanitizado (sem platformFee, sem providerPayout).
+- ✅ Provider history sanitizado (com providerPayout, sem platformFee).
+- ✅ Tracking público seguro (sem price, sem platformFee).
+- ✅ Rate limiting funciona (3 requests track passam, sob 60/min).
 - ✅ Sem erros no console.
-
-## Cron
-- Nenhum cron ativo. `webDevReview` foi removido na FASE 25.3.
 
 ## Riscos Restantes
 
-1. **MercadoPagoGateway sem credenciais reais** — PIX/CARD lançam erro (só CASH funciona sem homologação).
-2. **Admin auth não implementada** — rotas `/api/admin/*` são demo-accessíveis; produção precisa de session check ADMIN.
-3. **UI sem botões de simular pagamento** — o hook `simulatePayment` existe mas não está conectado a botões no ClientPanel.
-4. **localStorage ainda presente** como fallback no `rescue-history.ts` — não é mais a fonte principal.
+1. **Rate limiting in-memory** — não funciona em multi-instância. Produção precisa Redis ou proxy/WAF.
+2. **Admin auth** — rotas admin usam requireRole em produção, mas não há UI de login admin ainda.
+3. **MercadoPago** — sem credenciais reais (PIX/CARD lançam erro).
+4. **SQLite em produção** — adequado para dev, mas produção precisa PostgreSQL (ver `docs/database-production-plan.md`).
+5. **CSP unsafe-inline/unsafe-eval** — necessário para Next.js dev; pode ser refinado em produção com nonces.
+6. **Audit buffer in-memory** — perdido em restart. Produção precisa persistir em DB ou log aggregator.
+
+## Próxima Fase Recomendada
+
+- FASE 27: PostgreSQL migration + Redis rate limiting + admin auth UI + log aggregation.
