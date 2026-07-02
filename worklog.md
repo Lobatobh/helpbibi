@@ -1223,3 +1223,49 @@ Estado final do git:
 - ccf1973 chore: ignore local sqlite runtime database
 - 8d03dc7 (auto-commit intermediário com db binary — antes da higiene)
 - b32fa6f feat: complete production readiness test suite and secure history
+
+---
+Task ID: 25.4-db-history-cleanup
+Agent: main (orchestrator)
+Task: LIMPAR HISTÓRICO GIT DO BANCO SQLITE — remover db/custom.db e backups do histórico recente da main, preservando o estado final.
+
+Work Log:
+- Confirmei estado atual: main tinha 4 commits acima do checkpoint (bcc38e4, ccf1973, 8d03dc7, b32fa6f). O commit intermediário 8d03dc7 continha o banco SQLite binário.
+- Criei branch de backup local: `git branch backup/before-db-history-cleanup` (aponta para bcc38e4, preserva o histórico antigo com o db).
+- Executei `git reset --soft b32fa6f` — voltei HEAD ao checkpoint limpo, mantendo as mudanças posteriores no index.
+- Após reset, o index mostrava: .gitignore (M), db/.gitkeep (A), db/custom.db (D), db/custom.db.bak.254 (D), worklog.md (M) — exatamente o estado de higiene desejado.
+- Executei belt-and-suspenders: `git reset db/custom.db db/custom.db.bak.254` e `git rm --cached` — confirmado que bancos não aparecem como arquivos staged (apenas como deleções D, que é o correto).
+- Verifiquei .gitignore: contém as regras para db/*.db, db/*.db-journal, db/*.sqlite*, db/*.bak* + !db/.gitkeep ✓.
+- Verifiquei db/.gitkeep existe ✓.
+- Stageei: `git add .gitignore db/.gitkeep worklog.md`.
+- Commitei: `git commit -m "chore: ignore local sqlite runtime database"` → hash 3642961.
+- Verifiquei histórico da main: `git log --oneline -6` mostra 3642961 → b32fa6f → a97f517 → ... (commit intermediário 8d03dc7 REMOVIDO da main ✓).
+- Confirmei: `git log --oneline main | grep 8d03dc7` → "8d03dc7 NAO esta na main (OK)".
+- `git log --all -- db/custom.db` mostra 3642961 (deleção), commits antigos (b32fa6f, a97f517, etc.), e commits da branch backup (ccf1973, 8d03dc7) — esperado enquanto backup existir.
+- `git ls-files db` → apenas db/.gitkeep ✓.
+- `git status --short` → vazio (clean) ✓.
+- Rodei `bun run check:full`: PASSOU (lint ✓, prisma ✓, 227 testes ✓, build ✓).
+- Rodei `bun run test` (modifica db) e depois `git status --short` → VAZIO. Working tree permanece limpo após testes.
+- Branch backup mantida localmente: `backup/before-db-history-cleanup` (aponta para bcc38e4, contém histórico antigo com db binário).
+
+Stage Summary:
+- HISTÓRICO DA MAIN LIMPO: commit intermediário 8d03dc7 (com banco SQLite binário) removido da main. Histórico recente: 3642961 (higiene) → b32fa6f (checkpoint) → commits antigos.
+- BANCO SQLITE NÃO RASTREADO: `git ls-files db` mostra apenas db/.gitkeep. db/custom.db e db/custom.db.bak.254 preservados localmente para dev.
+- .GITIGNORE VALIDADO: regras para db/*.db, db/*.db-journal, db/*.sqlite*, db/*.bak* + !db/.gitkeep.
+- CHECK:FULL PASSOU: lint ✓, prisma ✓, 227 testes ✓ (0 fail), build ✓.
+- WORKING TREE LIMPO APÓS TESTES: `git status --short` vazio após `bun run test`.
+- BRANCH BACKUP CRIADA: `backup/before-db-history-cleanup` (aponta para bcc38e4).
+
+ORIENTAÇÃO IMPORTANTE:
+- A branch `backup/before-db-history-cleanup` contém histórico antigo COM o banco SQLite binário (commits 8d03dc7, ccf1973, bcc38e4).
+- ESTA BRANCH NÃO DEVE SER ENVIADA AO REMOTE em hipótese alguma, pois contains o banco binário.
+- Quando houver confiança de que o estado da main está estável, a branch backup pode ser deletada com `git branch -D backup/before-db-history-cleanup`.
+- Nota: commits antigos da main (b32fa6f, a97f517, 3f014d4, etc.) ainda contêm o db binário em suas árvores. Para remover COMPLETAMENTE o db de todo o histórico, seria necessário usar `git filter-repo` ou reescrever todos os commits. Como não há remote configurado, isso fica como ação futura opcional se necessário.
+
+Estado final do git:
+- 3642961 chore: ignore local sqlite runtime database
+- b32fa6f feat: complete production readiness test suite and secure history
+- a97f517 f118face-b48a-4bbd-b90b-28988ded72bf
+- ...
+
+Pronto para iniciar Fase 26.
