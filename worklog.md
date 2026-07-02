@@ -1468,3 +1468,119 @@ Stage Summary:
 - Total de testes: 296 (0 fail, 847 expect calls, 22 arquivos).
 - Riscos restantes: rate limiting in-memory (multi-instância precisa Redis), admin auth sem UI, MercadoPago sem credenciais, SQLite em produção precisa PostgreSQL, CSP com unsafe-inline (Next.js), audit buffer in-memory perde em restart.
 - Próxima fase recomendada: FASE 27 — PostgreSQL migration + Redis rate limiting + admin auth UI + log aggregation.
+
+---
+Task ID: 27-A
+Agent: general-purpose
+Task: Refactor rate limiter with backend interface (memory + redis stub)
+
+Work Log:
+- Read worklog.md (FASE 26/27 context) and src/server/rate-limit.ts (current 119-line in-memory limiter).
+- Inventoried callers: 11 API routes import { applyRateLimit, RATE_LIMITS, getClientIp } from '@/server/rate-limit'; 2 test files import { rateLimit, clearRateLimits, RATE_LIMITS, getClientIp, applyRateLimit }. Confirmed ioredis is NOT installed (node_modules has no redis client).
+- Verified eslint.config.mjs is permissive (no naming/any restrictions) and src/server/logger.ts exports `logger` with warn()/info()/error() — used it for backend warnings to stay consistent with FASE 26 logging.
+- Rewrote src/server/rate-limit.ts (119 → ~245 lines):
+  • Extracted the existing in-memory logic into a new `MemoryRateLimitBackend` class implementing a new `RateLimitBackend` interface (`check(key, config): RateLimitResult` + `clear(): void`). Cleanup-on-60s behavior preserved.
+  • Added `RedisRateLimitBackend` STUB: logs a warning on construction (ioredis not installed), delegates to an internal MemoryRateLimitBackend. Inline docstring documents the production steps: `bun add ioredis`, set REDIS_URL, implement real INCR + PEXPIRE in check() (with pttl for retryAfterMs), implement clear() via SCAN over `rl:*` keys, and notes that the interface may need to become async (Promise<RateLimitResult>) when the real Redis impl lands.
+  • Added `getRateLimitBackend()` factory: lazily memoizes a singleton, reads `RATE_LIMIT_BACKEND` env var (default 'memory'; supports 'redis' → stub). When NODE_ENV=production AND backend=memory, emits a strong `logger.warn` explaining the multi-instance/restart limitations and recommending Redis or a proxy/WAF (Cloudflare / Vercel Edge / NGINX limit_req).
+  • Kept `rateLimit`, `clearRateLimits`, `applyRateLimit`, `getClientIp`, `RATE_LIMITS` as backward-compatible wrappers that delegate to the active backend via `getRateLimitBackend()` — zero changes to the 11 API routes or 2 test files required.
+  • Also exported `RateLimitConfig` and `RateLimitResult` types (additive, useful for the new interface signatures).
+- Final exports of the file: rateLimit, clearRateLimits, getClientIp, applyRateLimit, RATE_LIMITS, RateLimitBackend, MemoryRateLimitBackend, RedisRateLimitBackend, getRateLimitBackend (+ RateLimitConfig, RateLimitResult types).
+- Verification:
+  • `bun run lint` → clean (no errors, no warnings).
+  • `bun run test` → 292 pass / 4 fail. Investigated the 4 failures: they are all in src/server/env/__tests__/env.test.ts (tests 4-7) and are caused by FASE 27 changes in src/server/env.ts (a DIFFERENT agent's work — adds SQLite + RATE_LIMIT_BACKEND=memory + AUDIT_LOG_BACKEND=memory production guards that the env tests don't yet account for). Proven pre-existing by reverting ONLY rate-limit.ts to HEAD: same 4 failures occur. Re-running only rate-limit + tracking-hardening suites: 18/18 pass.
+- Did NOT modify any API route, test file, env.ts, or other source file — only src/server/rate-limit.ts.
+
+Stage Summary:
+- src/server/rate-limit.ts refactored to a pluggable backend architecture: `RateLimitBackend` interface + `MemoryRateLimitBackend` (production-warned) + `RedisRateLimitBackend` stub (ioredis not installed, falls back to memory with a warning, full implementation path documented inline) + `getRateLimitBackend()` factory reading `RATE_LIMIT_BACKEND` env var.
+- 100% backward compatible: all 11 API routes and both existing test files continue to work unchanged. All 18 rate-limit + tracking-hardening tests pass (12 rate-limit + 6 tracking-hardening).
+- Lint clean. The 4 pre-existing env test failures (FASE 27 env.ts changes by another agent) are unrelated to this task and need the env test suite updated by the test agent.
+- Next actions for production: (1) `bun add ioredis`, (2) set REDIS_URL, (3) implement real Redis INCR+PEXPIRE in RedisRateLimitBackend.check() (consider migrating RateLimitBackend to async), (4) optionally move rate limiting to an edge proxy (Cloudflare/Vercel/NGINX) for true multi-region safety.
+
+---
+Task ID: 27-B
+Agent: general-purpose
+Task: Audit persistence (AuditLog model) + admin auth UI + admin login/audit routes
+
+Work Log:
+- Refactored `src/server/audit.ts`:
+  - Added `getAuditBackend()` reading `AUDIT_LOG_BACKEND` env (default 'memory', supports 'database').
+  - Added `persistToDatabase()` — fire-and-forget `db.auditLog.create()` (never throws, errors logged).
+  - Hash IP with SHA-256 truncated to 16 hex chars before persisting (`hashIp()`); raw IPs never stored in DB.
+  - Sanitize metadata via `sanitizeValue` from `@/server/logger` before persisting (redacts secrets, masks PII).
+  - `audit()` signature unchanged: `audit(event, context): void` — still emits structured log + pushes in-memory buffer; additionally persists to DB when backend is 'database'.
+  - `getRecentAuditEvents(limit?)` is now ASYNC (returns `Promise<AuditEntry[]>`); reads from DB when backend is 'database' (with buffer fallback on error), otherwise from the in-memory buffer. Normalizes DB rows to the same AuditEntry shape.
+  - Added optional `severity` and `userAgent` fields to `AuditContext` (backward compatible).
+  - Added `_clearAuditBufferForTests()` test helper.
+- Created `src/app/api/admin/login/route.ts` (POST):
+  - Accepts `{ email, password }`; rate limited with `RATE_LIMITS.login`.
+  - Production: ALWAYS blocks seed credentials (403 + `login_failure` audit).
+  - Dev with `ADMIN_SEED_ENABLED=true`: accepts `admin@helpbibi.local` / `Admin123!`, finds-or-creates admin User (role ADMIN), sets session cookie, audits `admin_login`.
+  - Dev without flag: 401 with hint message + `login_failure` audit.
+- Created `src/app/api/admin/audit/route.ts` (GET):
+  - Rate limited with `RATE_LIMITS.admin`.
+  - Production: requires ADMIN session (`requireRole`); 401 + `unauthorized_access` audit on failure.
+  - Dev: open (matches existing admin route guard pattern).
+  - Returns `{ events, count }` via `await getRecentAuditEvents(50)`.
+- Created `src/app/admin/page.tsx` (client component):
+  - Checks `/api/auth/me` on mount; loading spinner while checking.
+  - Not authenticated → login form (email + password + "Entrar como Admin" button, posts to `/api/admin/login`).
+  - Authenticated but not ADMIN → "Acesso negado" warning + login form.
+  - Authenticated as ADMIN → dashboard: header (Help Bibi Admin + name + ADMIN badge + Logout), quick-link cards (Financeiro, Prestadores, Dashboard), financial summary card (total payments, platform fee, provider payout, by-status breakdown, recent payments table from `/api/admin/payments`), audit feed card (last 20 events with eventType/actor/severity/timestamp from `/api/admin/audit`).
+  - Colors: neutral/slate/emerald (no indigo/blue). Responsive (mobile-first). Sticky footer. Accessible labels.
+- Updated `.env`: added `ADMIN_SEED_ENABLED=true` (dev) and `AUDIT_LOG_BACKEND=memory` (default) with explanatory comments.
+- Ran `bun run db:push` — AuditLog table already in sync.
+- Ran `bun run lint` — clean (no errors/warnings).
+- Ran `bun run build` — ✓ all 17 routes generated including `/admin`, `/api/admin/audit`, `/api/admin/login`.
+- Wrote work record to `agent-ctx/27-B-general-purpose.md` with notes for the test agent (getRecentAuditEvents is now async — existing tests must be updated to `await`).
+
+Stage Summary:
+- Audit logs now persist to the AuditLog Prisma model when `AUDIT_LOG_BACKEND=database` (fire-and-forget, non-blocking, secrets sanitized, IPs hashed). Default stays 'memory' (unchanged dev behavior).
+- Admin auth UI fully functional at `/admin`: dev seed login (admin@helpbibi.local / Admin123!) works with `ADMIN_SEED_ENABLED=true`; production blocks seed credentials entirely.
+- Admin dashboard shows live financial summary (payments, fees, payouts, by-status) and the most recent 50 audit events with severity badges.
+- Two new API routes: `POST /api/admin/login`, `GET /api/admin/audit` — both rate limited and audit-logged.
+- Lint clean; build clean; dev server running with no errors after `.env` reload.
+- NOTE for test agent: `getRecentAuditEvents()` is now async — `src/server/__tests__/audit.test.ts` must `await` it. Existing `audit()` callers and signature are unchanged.
+
+---
+Task ID: 27
+Agent: main (orchestrator) + 2 subagents (27-A, 27-B)
+Task: FASE 27 — PostgreSQL, Redis e Admin Auth UI. Remover limitações estruturais de MVP: SQLite, rate limiting in-memory, acesso admin pouco maduro.
+
+Work Log:
+- DIAGNÓSTICO: schema provider="sqlite", DATABASE_URL=file:, sem Docker files, sem admin page, sem AuditLog, Docker não disponível no ambiente, sem redis client.
+- ESTRATÉGIA: manter schema.prisma com sqlite para dev/test (não quebrar 345 testes), criar schema.postgres.prisma para produção, bloquear SQLite em produção via validateEnv().
+- Adicionei model AuditLog ao schema.prisma (id, eventType, actorUserId, actorRole UserRole?, targetType, targetId, severity, message, metadata String?, ipHash, userAgent, createdAt + 4 índices). prisma validate + generate + db push OK.
+- Criei prisma/schema.postgres.prisma (cópia com provider="postgresql", POSTGRES_DATABASE_URL, metadata/rawPayload como Json?). Validado com POSTGRES_DATABASE_URL placeholder.
+- Atualizei src/server/env.ts: produção bloqueia DATABASE_URL file: (SQLite), exige postgresql://, bloqueia RATE_LIMIT_BACKEND=memory, exige REDIS_URL quando backend=redis, warning para AUDIT_LOG_BACKEND=memory.
+- Criei docker-compose.dev.yml (postgres 16-alpine + redis 7-alpine com healthchecks pg_isready/redis-cli, volumes, networks).
+- Criei docker-compose.prod.example.yml (app + rescue-service + postgres + redis com envs ${VAR:?must set}, healthchecks, volumes, restart).
+- Atualizei .env.example com DATABASE_URL postgres, REDIS_URL, RATE_LIMIT_BACKEND, AUDIT_LOG_BACKEND, ADMIN_SEED_ENABLED.
+- TASK 27-A (subagent): refatorou rate-limit.ts com backend interface (MemoryRateLimitBackend + RedisRateLimitBackend stub + getRateLimitBackend factory). API backward compatível. Lint OK.
+- TASK 27-B (subagent): refatorou audit.ts para persistir AuditLog no banco (AUDIT_LOG_BACKEND=database) com IP hashing + metadata sanitization. getRecentAuditEvents agora async. Criou /api/admin/login (seed admin dev-only, bloqueado em prod), /api/admin/audit, e src/app/admin/page.tsx (login form + dashboard financeiro + audit trail).
+- Corrigi 9 test failures: 4 audit tests (getRecentAuditEvents agora async → await), 5 env tests (produção agora bloqueia SQLite + memory rate limiter → usar postgresql:// + redis nos testes de prod).
+- Criei 4 novos arquivos de teste: postgres-compat.test.ts (13 testes), rate-limit-backend.test.ts (16 testes), audit-persistence.test.ts (10 testes), admin-auth.test.ts (10 testes).
+- Corrigi lint errors (require→import existsSync em admin-auth.test.ts).
+- check:full PASSOU: lint ✓, prisma ✓, 345 testes ✓ (0 fail, 939 expect calls, 26 arquivos), build ✓ (20 rotas).
+- REGRESSÃO BROWSER:
+  - /admin carrega com login form ✓
+  - Login admin com seed credentials (admin@helpbibi.local / Admin123!) funciona ✓
+  - Dashboard admin mostra "Bem-vindo, Admin" + resumo financeiro + audit trail ✓
+  - /api/health: status=ok, version=25.4.0 ✓
+  - /api/health/db: database=connected ✓
+  - /api/admin/payments: count=2, totalAmount=360 ✓
+  - /api/admin/audit: count=1 ✓
+  - Sem erros no console ✓
+- Criei docs/admin-auth.md (login, session, authorization, audit, security).
+- Criei docs/redis-rate-limit.md (backend interface, presets, production setup com ioredis).
+- Atualizei docs/production-readiness.md (status FASE 27, 345 testes, riscos restantes).
+
+Stage Summary:
+- POSTGRESQL STRATEGY: schema.postgres.prisma criado (provider=postgresql, Json types). validateEnv bloqueia SQLite em produção. Docker compose dev + prod example criados. Docker não disponível neste ambiente para testar localmente — bloqueio registrado.
+- REDIS RATE LIMITING: backend interface (memory + redis stub). Produção bloqueia memory. Redis stub fall back to memory. Produção real precisa bun add ioredis + implementar INCR/PEXPIRE.
+- AUDIT PERSISTENTE: AuditLog model no Prisma. AUDIT_LOG_BACKEND=database persiste com IP hashing + metadata sanitization. memory fallback para dev.
+- ADMIN AUTH UI: /admin page com login + dashboard financeiro + audit trail. /api/admin/login (seed dev-only, blocked in prod). /api/admin/audit (requireRole ADMIN em prod).
+- check:full: PASSOU (lint ✓, prisma ✓, 345 testes ✓, build ✓ com 20 rotas).
+- Regressão browser: admin login + dashboard + health + admin payments/audit funcionam.
+- Total de testes: 345 (0 fail, 939 expect calls, 26 arquivos).
+- Riscos restantes: Redis não implementado (stub), PostgreSQL não testado localmente (sem Docker), MercadoPago sem credenciais, CSP unsafe-inline, audit memory perde em restart.
+- Próxima fase: FASE 28 — implementar Redis real, testar PostgreSQL via Docker, homologação MercadoPago.

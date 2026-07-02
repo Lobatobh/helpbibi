@@ -19,7 +19,12 @@ const ENV_KEYS = [
   'SOCKET_CORS_ORIGIN', 'PAYMENT_GATEWAY_PROVIDER',
   'NEXT_PUBLIC_APP_URL', 'NEXT_PUBLIC_SOCKET_URL',
   'MERCADO_PAGO_ACCESS_TOKEN', 'MERCADO_PAGO_WEBHOOK_SECRET',
+  'RATE_LIMIT_BACKEND', 'REDIS_URL', 'AUDIT_LOG_BACKEND', 'ADMIN_SEED_ENABLED',
 ]
+
+const PROD_DB = 'postgresql://helpbibi:secure_pass@localhost:5432/helpbibi?schema=public'
+const PROD_SESSION = 'a_real_secure_random_64_char_string_a_real_secure_random_64_c'
+const PROD_WEBHOOK = 'a_real_secure_webhook_secret_string_here_64_chars_xx'
 
 describe('env — validateEnv', () => {
   beforeEach(() => {
@@ -50,7 +55,7 @@ describe('env — validateEnv', () => {
 
   test('2. production with insecure SESSION_SECRET throws', () => {
     process.env.NODE_ENV = 'production'
-    process.env.DATABASE_URL = 'file:./prod.db'
+    process.env.DATABASE_URL = PROD_DB
     process.env.SESSION_SECRET = 'dev_secret' // insecure (in INSECURE_VALUES set)
     process.env.PAYMENT_WEBHOOK_SECRET = 'secure_real_secret'
     expect(() => validateEnv()).toThrow(/Production validation failed/)
@@ -58,7 +63,7 @@ describe('env — validateEnv', () => {
 
   test('3. production with insecure PAYMENT_WEBHOOK_SECRET throws', () => {
     process.env.NODE_ENV = 'production'
-    process.env.DATABASE_URL = 'file:./prod.db'
+    process.env.DATABASE_URL = PROD_DB
     process.env.SESSION_SECRET = 'a_real_secure_random_64_char_string_a_real_secure_random_64_c'
     process.env.PAYMENT_WEBHOOK_SECRET = 'dev_webhook_secret_change_me' // insecure
     expect(() => validateEnv()).toThrow(/Production validation failed/)
@@ -66,9 +71,11 @@ describe('env — validateEnv', () => {
 
   test('4. production with all valid vars returns ok=true', () => {
     process.env.NODE_ENV = 'production'
-    process.env.DATABASE_URL = 'file:./prod.db'
-    process.env.SESSION_SECRET = 'a_real_secure_random_64_char_string_a_real_secure_random_64_c'
-    process.env.PAYMENT_WEBHOOK_SECRET = 'a_real_secure_webhook_secret_string_here_64_chars_xx'
+    process.env.DATABASE_URL = PROD_DB
+    process.env.SESSION_SECRET = PROD_SESSION
+    process.env.PAYMENT_WEBHOOK_SECRET = PROD_WEBHOOK
+    process.env.RATE_LIMIT_BACKEND = 'redis'
+    process.env.REDIS_URL = 'redis://localhost:6379'
     const result = validateEnv()
     expect(result.ok).toBe(true)
     expect(result.missing).toEqual([])
@@ -77,11 +84,13 @@ describe('env — validateEnv', () => {
 
   test('5. warnings for missing NEXT_PUBLIC_* vars in production', () => {
     process.env.NODE_ENV = 'production'
-    process.env.DATABASE_URL = 'file:./prod.db'
-    process.env.SESSION_SECRET = 'a_real_secure_random_64_char_string_a_real_secure_random_64_c'
-    process.env.PAYMENT_WEBHOOK_SECRET = 'a_real_secure_webhook_secret_string_here_64_chars_xx'
+    process.env.DATABASE_URL = PROD_DB
+    process.env.SESSION_SECRET = PROD_SESSION
+    process.env.PAYMENT_WEBHOOK_SECRET = PROD_WEBHOOK
     process.env.SOCKET_CORS_ORIGIN = 'https://app.helpbibi.com'
     process.env.PAYMENT_GATEWAY_PROVIDER = 'mercado_pago'
+    process.env.RATE_LIMIT_BACKEND = 'redis'
+    process.env.REDIS_URL = 'redis://localhost:6379'
     // NEXT_PUBLIC_* not set
     const result = validateEnv()
     expect(result.warnings.some((w) => w.includes('NEXT_PUBLIC_APP_URL'))).toBe(true)
@@ -90,21 +99,25 @@ describe('env — validateEnv', () => {
 
   test('6. production warns about simulated gateway', () => {
     process.env.NODE_ENV = 'production'
-    process.env.DATABASE_URL = 'file:./prod.db'
-    process.env.SESSION_SECRET = 'a_real_secure_random_64_char_string_a_real_secure_random_64_c'
-    process.env.PAYMENT_WEBHOOK_SECRET = 'a_real_secure_webhook_secret_string_here_64_chars_xx'
+    process.env.DATABASE_URL = PROD_DB
+    process.env.SESSION_SECRET = PROD_SESSION
+    process.env.PAYMENT_WEBHOOK_SECRET = PROD_WEBHOOK
     process.env.SOCKET_CORS_ORIGIN = 'https://app.helpbibi.com'
     process.env.PAYMENT_GATEWAY_PROVIDER = 'simulated'
+    process.env.RATE_LIMIT_BACKEND = 'redis'
+    process.env.REDIS_URL = 'redis://localhost:6379'
     const result = validateEnv()
     expect(result.warnings.some((w) => w.includes('simulated'))).toBe(true)
   })
 
   test('7. production warns about missing SOCKET_CORS_ORIGIN', () => {
     process.env.NODE_ENV = 'production'
-    process.env.DATABASE_URL = 'file:./prod.db'
-    process.env.SESSION_SECRET = 'a_real_secure_random_64_char_string_a_real_secure_random_64_c'
-    process.env.PAYMENT_WEBHOOK_SECRET = 'a_real_secure_webhook_secret_string_here_64_chars_xx'
+    process.env.DATABASE_URL = PROD_DB
+    process.env.SESSION_SECRET = PROD_SESSION
+    process.env.PAYMENT_WEBHOOK_SECRET = PROD_WEBHOOK
     process.env.PAYMENT_GATEWAY_PROVIDER = 'mercado_pago'
+    process.env.RATE_LIMIT_BACKEND = 'redis'
+    process.env.REDIS_URL = 'redis://localhost:6379'
     // SOCKET_CORS_ORIGIN not set
     const result = validateEnv()
     expect(result.warnings.some((w) => w.includes('SOCKET_CORS_ORIGIN'))).toBe(true)

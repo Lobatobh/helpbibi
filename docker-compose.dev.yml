@@ -1,0 +1,47 @@
+# Help Bibi — Docker Compose for Development (FASE 27)
+# Usage: docker compose -f docker-compose.dev.yml up -d postgres redis
+# This file provides PostgreSQL + Redis for local development.
+# The Next.js app and rescue-service run via `bun run dev` on the host.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: helpbibi-postgres-dev
+    environment:
+      POSTGRES_USER: helpbibi
+      POSTGRES_PASSWORD: helpbibi_dev_password
+      POSTGRES_DB: helpbibi
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U helpbibi -d helpbibi"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - helpbibi-dev
+
+  redis:
+    image: redis:7-alpine
+    container_name: helpbibi-redis-dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_dev_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - helpbibi-dev
+
+volumes:
+  postgres_dev_data:
+  redis_dev_data:
+
+networks:
+  helpbibi-dev:
+    driver: bridge

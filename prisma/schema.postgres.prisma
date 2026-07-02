@@ -1,0 +1,356 @@
+// Help Bibi — Prisma Schema
+// MVP data model for the roadside assistance platform.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("POSTGRES_DATABASE_URL")
+}
+
+// ============================================================
+// USER & PROFILES
+// ============================================================
+
+model User {
+  id        String   @id @default(cuid())
+  email     String?  @unique
+  name      String
+  phone     String?
+  role      UserRole @default(CLIENT)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  clientProfile   ClientProfile?
+  providerProfile ProviderProfile?
+  servicesRequested ServiceRequest[] @relation("ClientServices")
+  ratingsGiven     ServiceRating[]   @relation("RatingAuthor")
+  loyaltyAccount   LoyaltyAccount?
+}
+
+enum UserRole {
+  CLIENT
+  PROVIDER
+  ADMIN
+}
+
+model ClientProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ProviderProfile {
+  id              String              @id @default(cuid())
+  userId          String              @unique
+  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  vehicle         String
+  plate           String
+  ratingSum       Int                 @default(48)
+  ratingCount     Int                 @default(10)
+  rating          Float               @default(4.8)
+  completedCount  Int                 @default(0)
+  earningsToday   Int                 @default(0)
+  isAvailable     Boolean             @default(true)
+  isVerified      Boolean             @default(false)
+  documentStatus  VerificationStatus  @default(PENDING)
+  vehicleStatus   VerificationStatus  @default(PENDING)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  services ServiceRequest[] @relation("ProviderServices")
+}
+
+enum VerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// ============================================================
+// VEHICLE
+// ============================================================
+
+model Vehicle {
+  id        String   @id @default(cuid())
+  providerId String  @unique
+  type      String
+  plate     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ============================================================
+// SERVICE REQUEST
+// ============================================================
+
+model ServiceRequest {
+  id              String           @id @default(cuid())
+  clientId        String
+  client          User             @relation("ClientServices", fields: [clientId], references: [id])
+  providerId      String?
+  provider        ProviderProfile? @relation("ProviderServices", fields: [providerId], references: [id])
+  type            ServiceType
+  description     String           @default("")
+  status          ServiceStatus    @default(REQUESTED)
+
+  // Price
+  price           Int              @default(0)
+  originalPrice   Int              @default(0)
+  discount        Int              @default(0)
+  promoCode       String?
+
+  // Payment
+  paymentMethod   PaymentMethod    @default(PIX)
+  paymentStatus   PaymentStatus    @default(PENDING)
+
+  // Locations (stored as JSON strings for SQLite compatibility)
+  pickup          String           // JSON: { lat, lng }
+  pickupLabel     String
+  destination     String           // JSON: { lat, lng }
+  destinationLabel String
+  distanceKm      Float            @default(0)
+  etaMin          Int              @default(0)
+
+  // Provider position (for tracking)
+  providerLat     Float?
+  providerLng     Float?
+
+  // Loyalty
+  loyaltyPoints   Int              @default(0)
+
+  // Timestamps
+  createdAt       DateTime         @default(now())
+  acceptedAt      DateTime?
+  completedAt     DateTime?
+
+  // Relations
+  timeline        ServiceTimelineEvent[]
+  chatMessages    ServiceChatMessage[]
+  ratings         ServiceRating[]
+  trackingShares  TrackingShare[]
+  paymentRecords  PaymentRecord[]
+
+  @@index([clientId])
+  @@index([providerId])
+  @@index([status])
+}
+
+enum ServiceType {
+  REBOQUE
+  PNEU
+  BATERIA
+  COMBUSTIVEL
+  CHAVEIRO
+  PANE
+}
+
+enum ServiceStatus {
+  REQUESTED
+  OFFERED
+  ACCEPTED
+  PROVIDER_EN_ROUTE
+  ARRIVED
+  IN_PROGRESS
+  COMPLETED
+  CANCELED
+  EXPIRED
+  FAILED
+}
+
+enum PaymentMethod {
+  PIX
+  CARD
+  CASH
+}
+
+enum PaymentStatus {
+  PENDING
+  AUTHORIZED
+  PAID
+  FAILED
+  CANCELED
+  REFUNDED
+}
+
+// ============================================================
+// SERVICE TIMELINE
+// ============================================================
+
+model ServiceTimelineEvent {
+  id          String   @id @default(cuid())
+  serviceId   String
+  service     ServiceRequest @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  status      ServiceStatus
+  label       String
+  createdAt   DateTime @default(now())
+
+  @@index([serviceId])
+}
+
+// ============================================================
+// SERVICE CHAT
+// ============================================================
+
+model ServiceChatMessage {
+  id          String   @id @default(cuid())
+  serviceId   String
+  service     ServiceRequest @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  authorRole  String   // "client" | "provider"
+  authorName  String
+  text        String
+  createdAt   DateTime @default(now())
+
+  @@index([serviceId])
+}
+
+// ============================================================
+// SERVICE RATING (bidirectional)
+// ============================================================
+
+model ServiceRating {
+  id          String   @id @default(cuid())
+  serviceId   String
+  service     ServiceRequest @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  authorId    String
+  author      User     @relation("RatingAuthor", fields: [authorId], references: [id])
+  targetRole  String   // "provider" | "client"
+  stars       Int
+  comment     String   @default("")
+  createdAt   DateTime @default(now())
+
+  @@unique([serviceId, targetRole]) // One rating per target per service
+  @@index([serviceId])
+}
+
+// ============================================================
+// PROMO CODES
+// ============================================================
+
+model PromoCode {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  type        String   // "percent" | "fixed"
+  value       Int
+  label       String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+}
+
+// ============================================================
+// LOYALTY
+// ============================================================
+
+model LoyaltyAccount {
+  id          String   @id @default(cuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  points      Int      @default(0)
+  tier        String   @default("Bronze")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ============================================================
+// TRACKING SHARE (public links)
+// ============================================================
+
+model TrackingShare {
+  id          String   @id @default(cuid())
+  serviceId   String
+  service     ServiceRequest @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  token       String   @unique @default(cuid())
+  expiresAt   DateTime?
+  createdAt   DateTime @default(now())
+  viewCount   Int      @default(0)
+
+  @@index([serviceId])
+}
+
+// ============================================================
+// PAYMENT RECORD & EVENTS (FASE 25.3/25.4 — financial persistence)
+// ============================================================
+
+model PaymentRecord {
+  id                  String   @id @default(cuid())
+  serviceRequestId    String
+  serviceRequest      ServiceRequest @relation(fields: [serviceRequestId], references: [id], onDelete: Cascade)
+
+  method              String
+  status              PaymentStatus @default(PENDING)
+  amount              Float      @default(0)
+  platformFee         Float      @default(0)
+  providerPayout      Float      @default(0)
+  discountAmount      Float?     @default(0)
+  couponCode          String?
+
+  provider            String?
+  providerPaymentId   String?
+  externalReference   String?
+  idempotencyKey      String?   @unique
+
+  simulatedTransactionId String?
+  paidAt              DateTime?
+  failedAt            DateTime?
+  failureReason       String?
+
+  metadata            String?
+  rawPayload          String?
+
+  lastWebhookSignature String?
+  webhookVerifiedAt   DateTime?
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  events              PaymentEvent[]
+
+  @@index([serviceRequestId])
+  @@index([providerPaymentId])
+  @@index([status])
+}
+
+model PaymentEvent {
+  id              String   @id @default(cuid())
+  paymentRecordId String
+  paymentRecord   PaymentRecord @relation(fields: [paymentRecordId], references: [id], onDelete: Cascade)
+
+  eventType       String
+  fromStatus      PaymentStatus?
+  toStatus        PaymentStatus?
+  message         String?
+  rawPayload      String?
+
+  createdAt       DateTime @default(now())
+
+  @@index([paymentRecordId])
+  @@index([eventType])
+}
+
+// ============================================================
+// AUDIT LOG (FASE 27 — persistent operational audit)
+// ============================================================
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  eventType   String
+  actorUserId String?
+  actorRole   UserRole?
+  targetType  String?
+  targetId    String?
+  severity    String   @default("info")  // info | warning | error
+  message     String?
+  metadata    Json?
+  ipHash      String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([eventType])
+  @@index([actorUserId])
+  @@index([createdAt])
+  @@index([severity])
+}

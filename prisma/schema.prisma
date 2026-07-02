@@ -330,3 +330,27 @@ model PaymentEvent {
   @@index([paymentRecordId])
   @@index([eventType])
 }
+
+// ============================================================
+// AUDIT LOG (FASE 27 — persistent operational audit)
+// ============================================================
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  eventType   String
+  actorUserId String?
+  actorRole   UserRole?
+  targetType  String?
+  targetId    String?
+  severity    String   @default("info")  // info | warning | error
+  message     String?
+  metadata    String?  // JSON string (SQLite-safe; Json in postgres schema)
+  ipHash      String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([eventType])
+  @@index([actorUserId])
+  @@index([createdAt])
+  @@index([severity])
+}
