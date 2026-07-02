@@ -1,36 +1,35 @@
 import { createServer } from 'http'
 import { Server } from 'socket.io'
 import { PrismaClient } from '@prisma/client'
+import { isEligibleForMatching, rankProvidersByDistance } from './matching'
+import { calculatePrice } from '../../src/server/pricing/pricing-engine'
+import { validateEnv } from '../../src/server/env'
 
-// ============================================================
-// Help Bibi — Real-time rescue orchestration service
-// Handles: provider presence, service requests, live tracking,
-//          ratings, payment method, provider stats, chat, promos.
-// Now with Prisma persistence (Phase 13).
-// ============================================================
+// FASE 25.2/25.4 — Environment validation + CORS hardening
+const _envResult = validateEnv()
+const IS_PROD = process.env.NODE_ENV === 'production'
+const IS_DEV_MODE = !IS_PROD
+
+function parseCorsOrigin(): string | string[] {
+  const raw = process.env.SOCKET_CORS_ORIGIN
+  if (!raw) { if (IS_PROD) { console.error('[rescue-service] SOCKET_CORS_ORIGIN not set in production — blocking all origins'); return [] }; return '*' }
+  return raw.split(',').map((s) => s.trim()).filter(Boolean)
+}
+const CORS_ORIGIN = parseCorsOrigin()
 
 const db = new PrismaClient({ log: ['error'] })
 
 const httpServer = createServer((req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*')
+  const origin = req.headers.origin
+  if (origin && (CORS_ORIGIN === '*' || (Array.isArray(CORS_ORIGIN) && CORS_ORIGIN.includes(origin)))) res.setHeader('Access-Control-Allow-Origin', origin)
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS')
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
   if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
-  if (req.url === '/health') {
-    res.writeHead(200, { 'Content-Type': 'application/json' })
-    res.end(JSON.stringify({ ok: true, name: 'Help Bibi', providers: providers.size, activeServices: services.size }))
-    return
-  }
-  res.writeHead(200, { 'Content-Type': 'text/plain' })
-  res.end('Help Bibi rescue-service running')
+  if (req.url === '/health') { res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: true, name: 'Help Bibi', providers: providers.size, activeServices: services.size })); return }
+  res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('Help Bibi rescue-service running')
 })
 
-const io = new Server(httpServer, {
-  path: '/',
-  cors: { origin: '*', methods: ['GET', 'POST'] },
-  pingTimeout: 60000,
-  pingInterval: 25000,
-})
+const io = new Server(httpServer, { path: '/', cors: { origin: CORS_ORIGIN, methods: ['GET', 'POST'] }, pingTimeout: 60000, pingInterval: 25000 })
 
 // ----------------------- Types -----------------------
 type Role = 'client' | 'provider'
@@ -53,6 +52,7 @@ type Provider = {
   tripStartPos?: LatLng | null; tripTarget?: LatLng | null; tripStartedAt?: number | null; tripTotalKm?: number;
   // DB linkage
   dbUserId?: string; dbProviderProfileId?: string;
+  isDemoProvider: boolean; isVerified: boolean; documentStatus: string; vehicleStatus: string; userStatus: string; isGpsPosition: boolean;
 }
 
 type ServiceRequest = {
@@ -65,6 +65,8 @@ type ServiceRequest = {
   timeline: TimelineEvent[]; rating?: Rating | null; clientRating?: Rating | null; loyaltyPoints: number;
   // DB linkage
   dbServiceId?: string;
+  // FASE 25.4 — Pricing breakdown
+  breakdown?: any;
 }
 
 type TimelineEvent = { status: ServiceStatus; label: string; at: number }
@@ -158,9 +160,15 @@ const haversineKm = (a: LatLng, b: LatLng) => {
   return 2 * R * Math.asin(Math.sqrt(h))
 }
 
-const calcPrice = (type: ServiceType, distanceKm: number) => {
-  const meta = SERVICE_TYPES[type]
-  return Math.round(meta.basePrice + distanceKm * 4.5)
+// FASE 25.2/25.4 — Matching options + pricing delegation
+const MATCHING_OPTIONS = { isDevMode: IS_DEV_MODE, demoMode: IS_DEV_MODE }
+const calcPrice = (type: ServiceType, distanceKm: number): number => {
+  const breakdown = calculatePrice({ serviceType: type as any, pickup: { lat: 0, lng: 0 }, destination: null, providerPosition: null, pickupDistanceKm: 0, destinationDistanceKm: distanceKm })
+  return Math.round(breakdown.total)
+}
+const calcPriceBreakdown = (type: ServiceType, pickup: LatLng, destination: LatLng | null, distanceKm: number, promoCode?: string | null) => {
+  const promo = promoCode ? PROMO_CODES[promoCode.toUpperCase()] : null
+  return calculatePrice({ serviceType: type as any, pickup, destination, providerPosition: null, pickupDistanceKm: 0, destinationDistanceKm: distanceKm, promoCode: promo ? promoCode : null, promoType: promo ? (promo.type as 'percent' | 'fixed') : null, promoValue: promo ? promo.value : null })
 }
 
 const applyPromo = (price: number, code: string | null): { final: number; discount: number; valid: boolean } => {
@@ -369,6 +377,7 @@ io.on('connection', (socket) => {
     // Persist user + provider profile to DB
     let dbUserId: string | undefined
     let dbProviderProfileId: string | undefined
+    let isVerified = false; let documentStatus = 'PENDING'; let vehicleStatus = 'PENDING'
     try {
       const user = await db.user.upsert({
         where: { email: `demo_${data.name}@helpbibi.com` },
@@ -386,6 +395,9 @@ io.on('connection', (socket) => {
       })
       dbUserId = user.id
       dbProviderProfileId = user.providerProfile?.id
+      isVerified = user.providerProfile?.isVerified ?? false
+      documentStatus = user.providerProfile?.documentStatus ?? 'PENDING'
+      vehicleStatus = user.providerProfile?.vehicleStatus ?? 'PENDING'
     } catch (e) {
       console.error('[db] provider register error:', e)
     }
@@ -397,6 +409,7 @@ io.on('connection', (socket) => {
       position: { lat: CITY.center.lat + (Math.random() - 0.5) * CITY.span, lng: CITY.center.lng + (Math.random() - 0.5) * CITY.span },
       currentServiceId: null,
       dbUserId, dbProviderProfileId,
+      isDemoProvider: true, isVerified, documentStatus, vehicleStatus, userStatus: 'ACTIVE', isGpsPosition: false,
     }
     providers.set(id, provider)
     socketToRole.set(socket.id, { role: 'provider', id })
@@ -417,13 +430,21 @@ io.on('connection', (socket) => {
     }
   })
 
+  socket.on('provider:position', (data: { lat: number; lng: number }) => {
+    const role = socketToRole.get(socket.id)
+    if (!role || role.role !== 'provider') return
+    const p = providers.get(role.id)
+    if (!p) return
+    if (typeof data?.lat !== 'number' || typeof data?.lng !== 'number') return
+    p.position = { lat: data.lat, lng: data.lng }; p.isGpsPosition = true; emitProvider(p)
+  })
+
   socket.on('promo:validate', (data: { code: string; type: ServiceType; distanceKm: number }) => {
     const code = (data.code || '').trim().toUpperCase()
     const promo = PROMO_CODES[code]
     if (!promo) { socket.emit('promo:result', { valid: false, code, message: 'Cupom inválido ou expirado' }); return }
-    const base = calcPrice(data.type, data.distanceKm)
-    const { final, discount } = applyPromo(base, code)
-    socket.emit('promo:result', { valid: true, code, label: promo.label, type: promo.type, value: promo.value, originalPrice: base, discount, finalPrice: final, message: `Cupom aplicado: ${promo.label}` })
+    const bd = calcPriceBreakdown(data.type, { lat: 0, lng: 0 }, null, data.distanceKm, code)
+    socket.emit('promo:result', { valid: true, code, label: promo.label, type: promo.type, value: promo.value, originalPrice: Math.round(bd.beforeDiscount), discount: Math.round(bd.discountAmount), finalPrice: Math.round(bd.total), message: `Cupom aplicado: ${promo.label}` })
   })
 
   socket.on('service:request', async (data: {
@@ -437,9 +458,12 @@ io.on('connection', (socket) => {
     if (!client) return
 
     const distanceKm = haversineKm(data.pickup, data.destination)
-    const originalPrice = calcPrice(data.type, distanceKm)
-    const promoResult = applyPromo(originalPrice, data.promoCode || null)
-    const price = promoResult.valid ? promoResult.final : originalPrice
+    const promoCodeUpper = (data.promoCode || '').trim().toUpperCase()
+    const promoValid = !!(promoCodeUpper && PROMO_CODES[promoCodeUpper])
+    const breakdown = calcPriceBreakdown(data.type, data.pickup, data.destination, distanceKm, promoValid ? promoCodeUpper : null)
+    const originalPrice = Math.round(breakdown.beforeDiscount)
+    const price = Math.round(breakdown.total)
+    const discount = Math.round(breakdown.discountAmount)
     const etaMin = calcEta(distanceKm)
 
     const svc: ServiceRequest = {
@@ -447,17 +471,18 @@ io.on('connection', (socket) => {
       type: data.type, description: data.description,
       pickup: data.pickup, pickupLabel: data.pickupLabel,
       destination: data.destination, destinationLabel: data.destinationLabel,
-      price, originalPrice, discount: promoResult.discount,
-      promoCode: promoResult.valid ? (data.promoCode || '').trim().toUpperCase() : null,
+      price, originalPrice, discount,
+      promoCode: promoValid ? promoCodeUpper : null,
       distanceKm: Number(distanceKm.toFixed(2)), etaMin,
       status: 'searching', paymentMethod: data.paymentMethod || 'pix',
       providerId: null, notifiedProviderIds: [],
       createdAt: Date.now(),
       timeline: [{ status: 'searching', label: 'Solicitação enviada — procurando prestador próximo', at: Date.now() }],
       rating: null, loyaltyPoints: 0,
+      breakdown,
     }
-    if (promoResult.valid) {
-      svc.timeline.push({ status: 'searching', label: `Cupom ${svc.promoCode} aplicado: -R$ ${promoResult.discount}`, at: Date.now() })
+    if (promoValid) {
+      svc.timeline.push({ status: 'searching', label: `Cupom ${svc.promoCode} aplicado: -R$ ${discount}`, at: Date.now() })
     }
 
     // Persist ServiceRequest to DB
@@ -475,7 +500,7 @@ io.on('connection', (socket) => {
             destinationLabel: data.destinationLabel,
             distanceKm: svc.distanceKm,
             etaMin,
-            price, originalPrice, discount: promoResult.discount,
+            price, originalPrice, discount,
             promoCode: svc.promoCode,
             paymentMethod: PAYMENT_MAP[data.paymentMethod || 'pix'] as any,
             loyaltyPoints: 0,
@@ -483,9 +508,9 @@ io.on('connection', (socket) => {
           },
         })
         svc.dbServiceId = dbSvc.id
-        if (promoResult.valid) {
+        if (promoValid) {
           await db.serviceTimelineEvent.create({
-            data: { serviceId: dbSvc.id, status: 'REQUESTED', label: `Cupom ${svc.promoCode} aplicado: -R$ ${promoResult.discount}` }
+            data: { serviceId: dbSvc.id, status: 'REQUESTED', label: `Cupom ${svc.promoCode} aplicado: -R$ ${discount}` }
           })
         }
         // Create tracking share
@@ -499,8 +524,8 @@ io.on('connection', (socket) => {
     services.set(svc.id, svc)
     emitService(svc)
 
-    // Multi-provider notification
-    const candidates = Array.from(providers.values()).filter((p) => p.online && !p.currentServiceId)
+    // Multi-provider notification (FASE 25.4 — uses rankProvidersByDistance)
+    const candidates = rankProvidersByDistance(Array.from(providers.values()) as any, data.pickup, MATCHING_OPTIONS, MULTI_NOTIFY_COUNT) as unknown as Provider[]
     if (candidates.length === 0) {
       setTimeout(() => {
         const s = services.get(svc.id)
@@ -508,8 +533,7 @@ io.on('connection', (socket) => {
       }, 8000)
       return
     }
-    candidates.sort((a, b) => haversineKm(a.position, data.pickup) - haversineKm(b.position, data.pickup))
-    const toNotify = candidates.slice(0, Math.min(MULTI_NOTIFY_COUNT, candidates.length))
+    const toNotify = candidates
     svc.notifiedProviderIds = toNotify.map((p) => p.id)
     const primary = toNotify[0]
     svc.providerId = primary.id
@@ -527,7 +551,7 @@ io.on('connection', (socket) => {
         pushTimeline(s, 'expired', `Prestador(es) não respondeu(ram) a tempo — reofertando...`)
         persistServiceStatus(s)
         s.notifiedProviderIds.forEach((pid) => { const np = providers.get(pid); if (np && np.currentServiceId === s.id) { np.currentServiceId = null; emitProvider(np) } })
-        const nextBatch = Array.from(providers.values()).filter((p) => p.online && !p.currentServiceId && !s.notifiedProviderIds.includes(p.id)).sort((a, b) => haversineKm(a.position, s.pickup) - haversineKm(b.position, s.pickup)).slice(0, MULTI_NOTIFY_COUNT)
+        const nextBatch = rankProvidersByDistance(Array.from(providers.values()).filter((p) => !s.notifiedProviderIds.includes(p.id)) as any, s.pickup, MATCHING_OPTIONS, MULTI_NOTIFY_COUNT) as unknown as Provider[]
         if (nextBatch.length > 0) {
           s.notifiedProviderIds = nextBatch.map((p) => p.id); const np = nextBatch[0]; s.providerId = np.id; np.currentServiceId = s.id
           pushTimeline(s, 'offered', `Chamada enviada para ${nextBatch.length} prestador(es): ${nextBatch.map((p) => p.name).join(', ')}`)
@@ -582,7 +606,7 @@ io.on('connection', (socket) => {
     pushTimeline(svc, 'searching', `${p.name} recusou — ${svc.notifiedProviderIds.length} prestador(es) ainda notificado(s)`)
     persistServiceStatus(svc); emitService(svc)
     if (svc.notifiedProviderIds.length === 0) {
-      const nextBatch = Array.from(providers.values()).filter((x) => x.online && !x.currentServiceId).sort((a, b) => haversineKm(a.position, svc.pickup) - haversineKm(b.position, svc.pickup)).slice(0, MULTI_NOTIFY_COUNT)
+      const nextBatch = rankProvidersByDistance(Array.from(providers.values()) as any, svc.pickup, MATCHING_OPTIONS, MULTI_NOTIFY_COUNT) as unknown as Provider[]
       if (nextBatch.length > 0) {
         svc.notifiedProviderIds = nextBatch.map((x) => x.id); svc.providerId = nextBatch[0].id; nextBatch[0].currentServiceId = svc.id
         pushTimeline(svc, 'offered', `Chamada enviada para ${nextBatch.length} prestador(es): ${nextBatch.map((x) => x.name).join(', ')}`)
@@ -649,6 +673,39 @@ io.on('connection', (socket) => {
       io.to(client.socketId).emit('client:loyalty', { points: newPoints, tier: { name: newTier.name, color: newTier.color, perk: newTier.perk }, nextTierMin: nextTierMin(newPoints), earnedThisService: earned, tierUpgraded: newTier.name !== prevTier.name })
     }
     console.log(`[service] completed ${svc.id} — provider ${p.name} earned R$ ${svc.price}, client +${earned}pts`)
+  })
+
+  // FASE 25.3/25.4 — Payment persistence (PaymentRecord + PaymentEvent)
+  socket.on('payment:simulate', async (data: { serviceId: string; outcome: 'success' | 'failure' }) => {
+    const role = socketToRole.get(socket.id)
+    if (!role) return
+    if (IS_PROD) { socket.emit('payment:result', { ok: false, message: 'Simulated payments disabled in production' }); return }
+    const svc = services.get(data.serviceId)
+    if (!svc || !svc.dbServiceId) { socket.emit('payment:result', { ok: false, message: 'Service not found' }); return }
+    if (role.role === 'client' && svc.clientId !== role.id) { socket.emit('payment:result', { ok: false, message: 'Not authorized' }); return }
+    const method = svc.paymentMethod.toUpperCase()
+    const amount = svc.price
+    const platformFee = svc.breakdown ? Math.round(svc.breakdown.platformFee) : Math.round(amount * 0.2)
+    const providerPayout = svc.breakdown ? Math.round(svc.breakdown.providerPayout) : Math.round(amount * 0.8)
+    try {
+      let record = await db.paymentRecord.findFirst({ where: { serviceRequestId: svc.dbServiceId } })
+      if (!record) {
+        record = await db.paymentRecord.create({ data: { serviceRequestId: svc.dbServiceId, method, status: 'PENDING', amount, platformFee, providerPayout, discountAmount: svc.discount || 0, couponCode: svc.promoCode, provider: 'simulated', providerPaymentId: `pay_${Date.now().toString(36)}`, externalReference: `HB-${svc.dbServiceId.slice(-12).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`, idempotencyKey: `pay_${svc.dbServiceId.slice(-12)}_${Date.now().toString(36)}`, simulatedTransactionId: `SIM_${svc.dbServiceId.slice(-12).toUpperCase()}_${Date.now().toString(36)}`, events: { create: { eventType: 'CREATED', fromStatus: null, toStatus: 'PENDING', message: 'Payment intent created (simulated)' } } } })
+        await db.serviceRequest.update({ where: { id: svc.dbServiceId }, data: { paymentStatus: 'PENDING' } }).catch(() => {})
+      }
+      const toStatus = data.outcome === 'success' ? 'PAID' : 'FAILED'
+      const fromStatus = record.status as any
+      const VALID: Record<string, string[]> = { PENDING: ['AUTHORIZED', 'PAID', 'FAILED', 'CANCELED'], AUTHORIZED: ['PAID', 'FAILED', 'CANCELED'], FAILED: ['PENDING', 'AUTHORIZED', 'CANCELED'], PAID: ['REFUNDED'] }
+      if (!(VALID[fromStatus] || []).includes(toStatus)) { socket.emit('payment:result', { ok: false, message: `Transition not allowed: ${fromStatus} → ${toStatus}` }); return }
+      const eventType = toStatus === 'PAID' ? 'PAID' : 'FAILED'
+      const now = new Date()
+      const updated = await db.paymentRecord.update({ where: { id: record.id }, data: { status: toStatus, ...(toStatus === 'PAID' && { paidAt: now }), ...(toStatus === 'FAILED' && { failedAt: now, failureReason: 'Simulated failure' }), events: { create: { eventType, fromStatus, toStatus, message: `Simulated ${toStatus.toLowerCase()} (${method})` } } } })
+      await db.serviceRequest.update({ where: { id: svc.dbServiceId }, data: { paymentStatus: toStatus } }).catch(() => {})
+      const label = data.outcome === 'success' ? `Pagamento aprovado (${method}) — R$ ${amount}` : `Pagamento recusado (${method}) — tente novamente`
+      pushTimeline(svc, svc.status, label); persistServiceStatus(svc); emitService(svc)
+      socket.emit('payment:result', { ok: true, outcome: data.outcome, status: toStatus, paymentId: updated.id, amount, method })
+      console.log(`[payment] ${svc.id} simulated ${toStatus} (${method}) record=${updated.id}`)
+    } catch (e: any) { console.error('[payment:simulate] error:', e); socket.emit('payment:result', { ok: false, message: e.message || 'Payment error' }) }
   })
 
   socket.on('service:rate', (data: { serviceId: string; stars: number; comment: string }) => {
@@ -826,7 +883,7 @@ setInterval(() => {
   io.emit('leaderboard', leaderboard)
 }, 5000)
 
-const PORT = 3003
+const PORT = parseInt(process.env.RESCUE_SERVICE_PORT || '3003', 10)
 httpServer.listen(PORT, () => { console.log(`🚑 Help Bibi rescue-service running on port ${PORT} (with Prisma persistence)`) })
 
 process.on('SIGTERM', () => { httpServer.close(() => process.exit(0)) })

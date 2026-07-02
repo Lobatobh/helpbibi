@@ -19,6 +19,7 @@ type ClientState = {
   loyalty: LoyaltyInfo | null
   rewards: LoyaltyReward[]
   redeemResult: RedeemResult | null
+  paymentResult: { ok: boolean; outcome?: string; status?: string; paymentId?: string; amount?: number; method?: string; message?: string } | null
 }
 
 type ProviderSession = {
@@ -49,6 +50,7 @@ export function useClientSocket() {
     loyalty: null,
     rewards: [],
     redeemResult: null,
+    paymentResult: null,
   })
 
   useEffect(() => {
@@ -99,6 +101,10 @@ export function useClientSocket() {
 
     s.on('loyalty:redeem-result', (result: RedeemResult) => {
       setState((p) => ({ ...p, redeemResult: result }))
+    })
+
+    s.on('payment:result', (result: { ok: boolean; outcome?: string; status?: string; paymentId?: string; amount?: number; method?: string; message?: string }) => {
+      setState((p) => ({ ...p, paymentResult: result }))
     })
 
     return () => {
@@ -162,6 +168,14 @@ export function useClientSocket() {
     setState((p) => ({ ...p, redeemResult: null }))
   }, [])
 
+  const simulatePayment = useCallback((serviceId: string, outcome: 'success' | 'failure') => {
+    socketRef.current?.emit('payment:simulate', { serviceId, outcome })
+  }, [])
+
+  const clearPaymentResult = useCallback(() => {
+    setState((p) => ({ ...p, paymentResult: null }))
+  }, [])
+
   const clearCurrent = useCallback(() => {
     setState((p) => ({ ...p, currentService: null, messages: [], newMessage: null, promoResult: null, redeemResult: null }))
   }, [])
@@ -171,6 +185,7 @@ export function useClientSocket() {
     register, requestService, cancelService, rateService,
     validatePromo, clearPromo, sendChat, clearNewMessage,
     redeemReward, clearRedeemResult, clearCurrent,
+    simulatePayment, clearPaymentResult,
   }
 }
 

@@ -927,3 +927,208 @@ Validado no browser:
 - Leaderboard buscando do banco
 - Testes de integração com banco real
 - API para histórico de serviços do usuário
+
+---
+Task ID: 25.4-A
+Agent: general-purpose
+Task: Recreate all domain files + repositories + auth helper (FASE 25.4 foundation)
+
+Work Log:
+- Read worklog.md to understand the project history (SocorroJá / Help Bibi — Uber-like vehicle rescue platform, Next.js 16 + Prisma + Socket.IO).
+- Verified directory structure: `src/server/{auth,db,env,history,payments,pricing,repositories,tracking}` and `src/lib/notifications` existed but were empty (environment reset wiped domain files).
+- Created 16 files with EXACT content per task spec:
+  1. `src/server/env.ts` — Environment variable validation (production vs dev, insecure value detection, warnings for SOCKET_CORS_ORIGIN and simulated gateway).
+  2. `src/server/pricing/pricing-engine.ts` — Pricing engine with 6 service types (reboque, pneu, bateria, combustivel, chaveiro, pane), haversine distance, night/weekend surcharges, promo codes, platform fee / provider payout split, BRL formatting.
+  3. `src/server/payments/payment-state-machine.ts` — Payment state machine (PENDING→AUTHORIZED→PAID→REFUNDED, FAILED retry, CANCELED terminal), idempotency keys, simulated transaction IDs, external references, cents/BRL conversion.
+  4. `src/server/payments/gateways/payment-gateway.ts` — PaymentGateway interface contract with createPaymentIntent, authorize/capture/cancel/refund, webhook parsing + signature verification.
+  5. `src/server/payments/gateways/simulated-gateway.ts` — Simulated gateway with PIX QR codes, CARD client secrets, CASH instructions, HMAC-signed webhook generation/verification (timingSafeEqual).
+  6. `src/server/payments/gateways/mercado-pago-gateway.ts` — Mercado Pago adapter (CASH intent supported; real API calls throw requiring real credentials; webhook signature verification per MP spec with `id;request-id;ts;` manifest).
+  7. `src/server/payments/gateways/index.ts` — Gateway factory with `getActiveProvider` / `getPaymentGateway` / `isRealGatewayActive`; throws clear errors for unconfigured providers.
+  8. `src/server/history/history-auth.ts` — Pure history authorization logic: `resolveHistoryActor` (session-first, dbUserId fallback in non-prod), `canAccessClientService`, `canAccessProviderService`, 404 unauthorized convention.
+  9. `src/lib/notifications/notification-store.ts` — Pure notification store logic: dedup keys, max 50 notifications, mark-read/clear, chat/status/payment dedup helpers, `shouldNotifyChatMessage` (cross-role only).
+  10. `mini-services/rescue-service/matching.ts` — Pure matching logic: haversine distance, eligibility (ACTIVE + online + not busy + verified if not demo), rank by distance, matching mode detection (GPS vs DEMO).
+  11. `src/server/auth/session.ts` — NEW FASE 25.4 cookie-based session: HMAC-signed `hb_session` cookie with base64url payload + signature, 7-day TTL, `setSessionCookie`/`clearSessionCookie`/`getSessionUser`/`getCurrentUserFromRequest`/`requireCurrentUser`/`requireRole`. No DB Session model needed.
+  12. `src/server/repositories/payment.repository.ts` — Payment repository: creates PaymentRecord via gateway intent, idempotency-key dedup, state-machine-driven transitions with PaymentEvent audit trail, webhook processing with signature dedup, `simulatePaymentOutcome` for dev, `getPaymentByService`/`getPaymentById`/`listPaymentsByStatus`. Auto-syncs `serviceRequest.paymentStatus`.
+  13. `src/server/repositories/history.repository.ts` — History repository: CRITICAL FASE 25.4 visibility rules — client NEVER sees platformFee or providerPayout (not in list, not in detail); provider sees providerPayout (80% of price) but NEVER platformFee. Includes `authorizeHistoryRequest`, client/provider list + detail, timeline mapping, type/status PT-BR labels.
+  14. `src/hooks/use-notifications.ts` — Client-side React hook wrapping notification-store with WebAudio sound playback per notification type (offer/accepted/completed/cancelled/chat/error/success tones), unread count, mark-read/clear, typed notification helpers.
+  15. `.env.example` — Template env file with all 11 keys (NODE_ENV, DATABASE_URL, SESSION_SECRET, PAYMENT_WEBHOOK_SECRET, SOCKET_CORS_ORIGIN, PAYMENT_GATEWAY_PROVIDER, NEXT_PUBLIC_APP_URL, NEXT_PUBLIC_SOCKET_URL, RESCUE_SERVICE_PORT, MERCADO_PAGO_ACCESS_TOKEN, MERCADO_PAGO_WEBHOOK_SECRET).
+  16. `.env` — Appended SESSION_SECRET and PAYMENT_WEBHOOK_SECRET (was missing; previously only had DATABASE_URL).
+- Ran `bunx prisma validate`: schema at `prisma/schema.prisma` is valid ✓.
+- Did NOT modify rescue-service/index.ts or API routes (other agents handle those).
+- Did NOT create test files (another agent handles tests).
+
+Stage Summary:
+- All 16 FASE 25.4 domain files recreated with exact spec content.
+- Prisma schema validated successfully.
+- `.env` now contains DATABASE_URL, SESSION_SECRET, PAYMENT_WEBHOOK_SECRET (dev-safe defaults).
+- Foundation ready for rescue-service refactor agent (matching.ts), API routes agent (session.ts + payment.repository.ts + history.repository.ts), and tests agent (pure functions in history-auth, notification-store, matching, payment-state-machine, pricing-engine).
+- Key FASE 25.4 visibility guarantee: client never sees platformFee/providerPayout; provider sees providerPayout only (80% of total) and never platformFee.
+- Auth uses cookie-based HMAC sessions (no DB Session model required), works with `NextRequest` cookies for API route handlers.
+- Payment flow is gateway-agnostic via factory: simulated works out-of-box, mercado_pago requires real credentials, stripe/pagarme throw "not implemented".
+
+---
+Task ID: 25.4-B
+Agent: general-purpose
+Task: Create API routes + integrate matching/pricing/env/payment into rescue-service
+
+Work Log:
+- Read worklog.md (Task 25.4-A foundation) and verified all 7 prerequisite files exist: session.ts, payment.repository.ts, history.repository.ts, history-auth.ts, pricing-engine.ts, gateways/index.ts, matching.ts, env.ts.
+- Read full 833-line rescue-service/index.ts, use-rescue-socket.ts, rescue-service/package.json to plan integration edits.
+- Verified Prisma schema fields for ProviderProfile (isVerified, documentStatus, vehicleStatus) and ServiceRequest (paymentStatus, breakdown fields).
+
+### A. Created 11 API route files
+  1. `src/app/api/auth/login/route.ts` — POST: validates body {userId, role}, verifies user exists in DB via db.user.findUnique, sets `hb_session` cookie via setSessionCookie, returns {ok, user:{id,role,name}}.
+  2. `src/app/api/auth/me/route.ts` — GET: returns current user from session cookie via getCurrentUserFromRequest, 401 if not authenticated.
+  3. `src/app/api/auth/logout/route.ts` — POST: clears session cookie via clearSessionCookie.
+  4. `src/app/api/client/services/route.ts` — GET: FASE 25.4 dual-auth (session-first, dbUserId fallback in dev), uses authorizeHistoryRequest({expectedRole:'CLIENT'}), caps limit at 200, returns {services, count}.
+  5. `src/app/api/client/services/[id]/route.ts` — GET: same auth pattern, returns getClientServiceDetail result with proper status code.
+  6. `src/app/api/provider/services/route.ts` — GET: auth as PROVIDER, also resolves providerProfileId from db.providerProfile.findUnique({where:{userId}}) when not passed as query param.
+  7. `src/app/api/provider/services/[id]/route.ts` — GET: same as #6 but for service detail.
+  8. `src/app/api/payments/simulate/route.ts` — POST: dev-only, 403 in production, validates required fields (serviceRequestId, outcome, method, amount), delegates to simulatePaymentOutcome.
+  9. `src/app/api/payments/webhook/route.ts` — POST: reads raw body via req.text(), extracts signature from x-helpbibi-signature or x-signature header, forwards all headers to processWebhook, returns {ok, message, recordId}.
+  10. `src/app/api/admin/payments/route.ts` — GET: lists payments by optional ?status= query (validated against PaymentStatus enum), returns payments + summary (totalAmount, totalPlatformFee, totalProviderPayout, byStatus breakdown).
+  11. `src/app/api/admin/providers/[id]/approve/route.ts` — POST (dev-only, 403 in prod): updates ProviderProfile documentStatus/vehicleStatus/isVerified; GET: fetches ProviderProfile by id with user.
+
+### B. Rescue-service integration (mini-services/rescue-service/index.ts) — applied 11 edits
+  - Edit 1: Replaced top 33 lines — added imports for matching (isEligibleForMatching, rankProvidersByDistance), pricing-engine (calculatePrice), env (validateEnv). Added validateEnv() call, IS_PROD/IS_DEV_MODE flags, parseCorsOrigin() helper that reads SOCKET_CORS_ORIGIN (blocks all in prod if unset, '*' in dev). Hardened HTTP server CORS to echo only allowed origins. Tightened Socket.IO server config.
+  - Edit 2: Replaced old `calcPrice = meta.basePrice + distanceKm*4.5` with new `calcPrice` delegating to calculatePrice engine. Added `calcPriceBreakdown` that resolves promo from PROMO_CODES and returns full PriceBreakdown. Added MATCHING_OPTIONS = {isDevMode, demoMode} (both true in dev).
+  - Edit 3: Extended Provider type with 6 fields: isDemoProvider, isVerified, documentStatus, vehicleStatus, userStatus, isGpsPosition.
+  - Edit 4: provider:register handler — added 3 vars (isVerified, documentStatus, vehicleStatus) populated from DB providerProfile lookup; included all 6 new fields in the Provider object literal (isDemoProvider:true, userStatus:'ACTIVE', isGpsPosition:false).
+  - Edit 5: Added new `provider:position` socket handler between toggle-online and promo:validate — updates provider.position + isGpsPosition=true + emits state (used by GPS-mode matching).
+  - Edit 6: Replaced 3 inline matching filters (in service:request, expire-timer, service:reject) with rankProvidersByDistance() calls — uses isEligibleForMatching (enforces ACTIVE + verified + APPROVED for non-demo providers). Cast results back to Provider[] via `as unknown as Provider[]` to satisfy downstream socketId/emitProvider access.
+  - Edit 7: Replaced promoResult-based pricing block in service:request with calcPriceBreakdown — captures promoCodeUpper, promoValid, breakdown object. OriginalPrice/discount/price now come from breakdown. Added `breakdown` to svc object (new ServiceRequest field).
+  - Edit 8: Added new `payment:simulate` socket handler after service:complete — blocks in prod, looks up PaymentRecord by serviceRequestId (creates PENDING record if missing with full simulated gateway fields: providerPaymentId, externalReference, idempotencyKey, simulatedTransactionId), validates state transition via inline VALID map (PENDING→PAID/FAILED, etc.), updates record + emits PaymentEvent audit, syncs serviceRequest.paymentStatus, pushes timeline event, emits `payment:result` to caller with {ok, outcome, status, paymentId, amount, method}.
+  - Edit 9: Replaced hardcoded `const PORT = 3003` with `parseInt(process.env.RESCUE_SERVICE_PORT || '3003', 10)`.
+  - Edit 10: Replaced promo:validate handler to use calcPriceBreakdown instead of applyPromo — emits {valid, code, label, type, value, originalPrice (rounded beforeDiscount), discount (rounded), finalPrice (rounded total), message}.
+  - Edit 11: rescue-service/package.json — changed `"dev": "bun index.ts"` to `"dev": "bun --hot index.ts"` for hot-reload during development.
+
+### C. use-rescue-socket.ts (ClientSocket hook)
+  - Added `paymentResult` to ClientState type: `{ok, outcome?, status?, paymentId?, amount?, method?, message?} | null`.
+  - Added `paymentResult: null` to initial useState value.
+  - Added `s.on('payment:result', (result) => setState((p) => ({...p, paymentResult: result})))` listener.
+  - Added `simulatePayment(serviceId, outcome)` callback that emits `payment:simulate` event.
+  - Added `clearPaymentResult()` callback that nulls the state.
+  - Added both callbacks to the returned object.
+
+### D. Verification
+  - `bun run lint`: 0 errors ✓
+  - `bun build mini-services/rescue-service/index.ts --target=bun --outdir=/tmp/rescue-build-254`: Bundled 66 modules in 46ms, no errors ✓
+  - `bunx tsc --noEmit` on touched files (rescue-service/index.ts, src/app/api/**, src/hooks/use-rescue-socket.ts): 0 errors after adding `as unknown as Provider[]` casts to rankProvidersByDistance results ✓
+
+Stage Summary:
+- All 11 API route files created with exact spec content — auth (login/me/logout), client history (list/detail), provider history (list/detail with profileId resolution), payments (simulate dev-only, webhook), admin (payments summary, provider approve).
+- Rescue-service fully integrated with FASE 25.4 infrastructure: pure matching functions (rankProvidersByDistance + isEligibleForMatching), pricing-engine delegation (calculatePrice via calcPrice/calcPriceBreakdown), env validation (validateEnv), payment persistence (PaymentRecord + PaymentEvent in payment:simulate handler).
+- CORS hardened: HTTP server now echoes only allowed origins from SOCKET_CORS_ORIGIN env (was '*' before); Socket.IO server cors config also bound to same.
+- New socket events: `provider:position` (GPS-mode providers), `payment:simulate` + `payment:result` (dev-only payment persistence with state-machine transitions).
+- Provider type extended with verification fields (isVerified, documentStatus, vehicleStatus, userStatus, isDemoProvider, isGpsPosition) — required by matching.isEligibleForMatching to skip unverified non-demo providers in production.
+- ServiceRequest type extended with `breakdown?: any` field — captures PriceBreakdown for later use in payment:simulate (reads platformFee/providerPayout from breakdown when available).
+- Port now configurable via RESCUE_SERVICE_PORT env (still defaults to 3003 for backward compat).
+- Frontend hook ready to consume `payment:result` events — UI components can wire simulatePayment button on completed services.
+- Foundation ready for tests agent (history-auth, notification-store, matching, payment-state-machine, pricing-engine pure functions) and end-to-end integration tests.
+
+---
+Task ID: 25.4-C
+Agent: general-purpose
+Task: Create all test files for FASE 25.4
+
+Work Log:
+- Read worklog.md (Tasks 25.4-A and 25.4-B) to understand the 16 domain files + 11 API routes + rescue-service integration.
+- Read each domain file to learn the exact exported APIs:
+  - pricing-engine.ts: calculatePrice, DEFAULT_PRICING, formatBRL, getPricingConfig, getAllPricingConfigs (6 service types, 20/80 split, night/weekend surcharges, percent/fixed coupons, round2, breakdownText).
+  - payment-state-machine.ts: canTransition, getEventType, isTerminalStatus, isPaidLike, canRetry, validateTransition, toCents/fromCents, generateIdempotencyKey/SimulatedTransactionId/ExternalReference.
+  - gateways/simulated-gateway.ts: SimulatedGateway class (constructor requires secret; createPaymentIntent per-method; generateSignedWebhook; verifyWebhookSignature timingSafeEqual; parseWebhookEvent).
+  - gateways/payment-gateway.ts: mapToGatewayMethod, GatewayProvider/GatewayPaymentMethod types.
+  - gateways/index.ts: getActiveProvider, getPaymentGateway, isRealGatewayActive (factory).
+  - gateways/mercado-pago-gateway.ts: MercadoPagoGateway (constructor throws without token/secret; CASH only on createPaymentIntent; parseWebhookEvent extracts data.id; verifyWebhookSignature with `id;request-id;ts;` manifest; sanitize; MP_STATUS_MAP; isMercadoPagoConfigured).
+  - env.ts: validateEnv (missing/insecure/warnings), requireEnv (with fallback, throws in prod).
+  - history-auth.ts: canUseDbUserIdQuery, resolveHistoryActor (session-first, dbUserId fallback in dev), canAccessClientService, canAccessProviderService, getUnauthorizedStatus=404.
+  - lib/notifications/notification-store.ts: addNotificationToList (front-insert + dedup + max 50), markNotificationRead/markAllNotificationsRead/clearNotifications/countUnread, shouldNotifyChatMessage (cross-role only), chatDedupKey/statusDedupKey/paymentDedupKey.
+  - repositories/payment.repository.ts: createPaymentRecord (PENDING+CREATED event), transitionPayment (state-machine + audit), simulatePaymentOutcome, processWebhook, listPaymentsByStatus, getPaymentByService.
+  - repositories/history.repository.ts: authorizeHistoryRequest, getClientServices/getClientServiceDetail (no platformFee/providerPayout), getProviderServices/getProviderServiceDetail (providerPayout only, no platformFee).
+  - auth/session.ts: setSessionCookie (HMAC-signed hb_session, 7d TTL), clearSessionCookie (Max-Age=0), getSessionUser (NextRequest cookies.get), COOKIE_NAME export.
+  - mini-services/rescue-service/matching.ts: haversineDistance, isEligibleForMatching (ACTIVE+online+not busy+verified-or-demo), rankProvidersByDistance (filter+sort+slice), getMatchingMode (GPS/DEMO).
+- Discovered tracking-security.ts module did NOT exist (only an empty __tests__ dir). Created `src/server/tracking/tracking-security.ts` (new supporting pure-function module, not a modification of existing files) with FORBIDDEN_FIELDS list, FORBIDDEN_KW list (PT-BR financial labels), isForbiddenField, containsForbiddenKeyword, roundCoords (3 decimals), sanitizeTrackingObject — enables the 8 security tests.
+- Verified bun test reads `@/` tsconfig path alias correctly when test files are inside the project root.
+- Created 14 test files with 227 total tests:
+  1. `src/server/pricing/__tests__/pricing-engine.test.ts` — 15 tests (calculatePrice 12 + helpers 3).
+  2. `src/server/payments/__tests__/payment-state-machine.test.ts` — 17 tests (transitions, status helpers, validateTransition, money conversion, id/key generators).
+  3. `src/server/payments/__tests__/financial-security.test.ts` — 15 tests (split invariants, discount caps, minimum fare, surcharge percentages).
+  4. `src/server/payments/gateways/__tests__/simulated-gateway.test.ts` — 10 tests (constructor, createPaymentIntent per-method, webhook sign/verify, parseWebhookEvent).
+  5. `src/server/payments/gateways/__tests__/factory.test.ts` — 9 tests (getActiveProvider default/mercado_pago/unsupported, getPaymentGateway, isRealGatewayActive, mapToGatewayMethod).
+  6. `src/server/payments/gateways/__tests__/mercado-pago-contract.test.ts` — 29 tests (constructor, CASH intent only, parseWebhookEvent, verifyWebhookSignature with manifest, MP_STATUS_MAP 8 mappings, sanitize, isMercadoPagoConfigured, real-API methods throw).
+  7. `src/server/env/__tests__/env.test.ts` — 12 tests (dev missing vars ok=false, prod insecure throws, warnings for NEXT_PUBLIC_*, simulated gateway warning, SOCKET_CORS_ORIGIN warning, requireEnv with/without fallback).
+  8. `src/server/tracking/__tests__/tracking-security.test.ts` — 8 tests (FORBIDDEN_FIELDS covers financial fields, FORBIDDEN_KW filters PT-BR labels, safe labels pass, roundCoords 3 decimals, sanitizeTrackingObject, tracking response shape).
+  9. `mini-services/rescue-service/__tests__/matching.test.ts` — 21 tests (haversine same/known distance, isEligibleForMatching all branches, rankProvidersByDistance filter/sort/limit, getMatchingMode GPS/DEMO/normalisation).
+  10. `src/server/history/__tests__/history-auth.test.ts` — 21 tests (canUseDbUserIdQuery dev/prod/undefined, resolveHistoryActor all branches, canAccessClientService own/other/role, canAccessProviderService matching/null/role, 404 status).
+  11. `src/lib/notifications/__tests__/notification-store.test.ts` — 18 tests (addNotificationToList front-insert/dedup/max 50, markRead/markAllRead/clear/countUnread, shouldNotifyChatMessage cross-role only, dedup key helpers, role assignment, id/createdAt populated).
+  12. `src/server/payments/__tests__/payment-persistence.test.ts` — 14 DB integration tests using real Prisma SQLite. beforeEach creates User+ServiceRequest with unique `test_${Date.now()}_${random}@helpbibi.com` email; afterEach deletes ServiceRequest (cascades PaymentRecord/Event) + User. Tests PaymentRecord/PaymentEvent tables exist, createPaymentRecord PENDING+CREATED, idempotency lookup, transitionPayment PAID/FAILED/REFUNDED, invalid transition throws + WEBHOOK event, webhook signature stored, listPaymentsByStatus filter, PaymentRecordWithEvents includes platformFee, multi-transition audit trail, CASH method.
+  13. `src/server/history/__tests__/history-integration.test.ts` — 21 DB integration tests. beforeEach creates 2 clients + 2 providers + 4 ServiceRequests with various provider assignments; afterEach cleans up via ServiceRequest cascade. Tests authorizeHistoryRequest (no session/dbUserId → 401, dev fallback, prod block, session priority, role mismatch), client access (own/other/detail timeline/cross-access 404), provider access (own/other/detail providerPayout/cross-access 404), FASE 25.4 visibility (client list/detail NO platformFee/providerPayout, provider list/detail NO platformFee + providerPayout = 80% of price, breakdownText contains "repasse" not "taxa da plataforma").
+  14. `src/server/auth/__tests__/session.test.ts` — 17 tests (setSessionCookie format "hb_session=" + payload.sig + HttpOnly + SameSite=Lax + Path=/ + Max-Age=604800, clearSessionCookie Max-Age=0, getSessionUser null without cookie, round-trip for all 3 roles, signature verification rejects tampered sig, tampered payload rejects, malformed cookie returns null, expired session returns null via mocked past exp, COOKIE_NAME constant, Secure flag present in prod / absent in dev).
+- Used `import { describe, test, expect, beforeEach, afterEach } from 'bun:test'` per the general rules.
+- For pure-function tests (pricing, state-machine, financial-security, simulated-gateway, factory, mercado-pago, env, tracking-security, matching, history-auth, notification-store, session), no DB needed.
+- For DB integration tests (payment-persistence, history-integration), used `import { db } from '@/server/db/prisma'`, created users with `test_${Date.now()}_${Math.random()}@helpbibi.com` emails, and cleaned up via ServiceRequest cascade delete.
+- Mocked NextRequest.cookies.get in session tests with a minimal `{ cookies: { get: (name) => ({ value } | undefined) } }` shim to avoid importing NextRequest.
+- For mercado-pago signature verification tests, used Node's `createHmac` directly to construct valid `ts=,v1=` manifests matching the gateway's `id;request-id;ts;` manifest format.
+- Ran `cd /home/z/my-project && bun run test 2>&1 | tail -20`: **227 pass, 0 fail, 565 expect() calls across 14 files in ~750ms**.
+
+Stage Summary:
+- All 14 FASE 25.4 test files created and passing: **227 tests, 0 failures**.
+- Test breakdown by file: pricing-engine (15), payment-state-machine (17), financial-security (15), simulated-gateway (10), factory (9), mercado-pago-contract (29), env (12), tracking-security (8), matching (21), history-auth (21), notification-store (18), payment-persistence (14 DB), history-integration (21 DB), session (17). Total = 227.
+- Created 1 new supporting non-test module: `src/server/tracking/tracking-security.ts` (pure functions FORBIDDEN_FIELDS/FORBIDDEN_KW/isForbiddenField/containsForbiddenKeyword/roundCoords/sanitizeTrackingObject) — required because Task 25.4-A did not create a tracking security module but Task 25.4-C spec mandated 8 tests for it.
+- DB integration tests use the existing SQLite at `db/custom.db`, creating isolated test data with timestamped emails and cleaning up via ServiceRequest cascade (which cascades to PaymentRecord→PaymentEvent, ServiceTimelineEvent, ServiceChatMessage, ServiceRating, TrackingShare).
+- All pure-function tests run in <100ms; integration tests add ~600ms (DB I/O).
+- Verified FASE 25.4 security guarantees via tests:
+  - Financial split invariant: platformFee is always 20% of total, providerPayout is always 80%, sum equals total (no leakage) — verified across all 6 service types and with coupons/surcharges.
+  - Discount caps: percent coupon = beforeDiscount * value/100; fixed coupon capped at beforeDiscount (no negative total).
+  - History visibility: client list AND detail NEVER include platformFee or providerPayout; provider list AND detail include providerPayout (exactly 80% of price) but NEVER platformFee; provider breakdownText contains "repasse" but not "taxa da plataforma"; cross-access returns 404 (not 403 — info-leak prevention).
+  - Tracking response: top-level keys and nested provider object contain no forbidden financial fields; provider never exposes plate/phone/userId.
+  - Session: HMAC-signed cookie tamper-resistant (modified sig/payload both rejected); expired sessions rejected; Secure flag in production; HttpOnly + SameSite=Lax + Path=/ always present.
+  - Payment state machine: PAID→FAILED/CANCELED rejected; CANCELED/REFUNDED terminal; FAILED→PENDING generates RETRY event; invalid transitions log WEBHOOK rejection event for audit trail.
+- Gateway contracts: SimulatedGateway supports all 3 methods (PIX qrCode, CARD clientSecret, CASH instructions); MercadoPagoGateway only supports CASH without real credentials; PIX/CARD throw "real credentials" error; all real-API methods (authorize/capture/cancel/refund) throw "Requires MP API"; MP webhook signature uses `id;request-id;ts;` manifest with lowercase data.id; sanitize removes card_number/cvv/security_code.
+- Foundation is now testable end-to-end: pure domain logic + DB persistence + auth/session + visibility rules all covered by automated tests.
+
+---
+Task ID: 25.4
+Agent: main (orchestrator) + 3 subagents (25.4-A, 25.4-B, 25.4-C)
+Task: FASE 25.4 — Autenticação Real do Histórico e Sanitização Financeira Final. Fechar os 3 bloqueios restantes: (1) rotas de histórico sem auth real por sessão, (2) client detail expondo platformFee/providerPayout, (3) dbUserId query como mecanismo principal em produção.
+
+Work Log:
+- AUDITORIA INICIAL: descobri que o ambiente foi RESET entre sessões — TODOS os arquivos da FASE 25.1/25.2/25.3 estavam GONE (git log volta para commit a97f517, sem dbcb1f0). Schema sem PaymentRecord/PaymentEvent/PaymentStatus. Sem testes. Sem domain files. Sem API routes. Sem check script.
+- Decidi recriar TUDO (25.1+25.2+25.3+25.4) em paralelo com 3 subagents.
+- Adicionei PaymentRecord + PaymentEvent + PaymentStatus enum ao prisma/schema.prisma. Adicionei paymentStatus ao ServiceRequest. Rodei prisma validate + generate + db push.
+- Adicionei scripts check e check:full ao package.json.
+- TASK 25.4-A (subagent): criou 16 arquivos de domínio: env.ts, pricing-engine.ts, payment-state-machine.ts, payment-gateway.ts (contract), simulated-gateway.ts, mercado-pago-gateway.ts, gateway factory, history-auth.ts, notification-store.ts, matching.ts, auth/session.ts (NOVO 25.4), payment.repository.ts, history.repository.ts (com sanitização 25.4: client detail SEM platformFee/providerPayout), use-notifications.ts, .env.example, .env.
+- TASK 25.4-B (subagent): criou 11 rotas de API (auth/login, auth/me, auth/logout, client/services, client/services/[id], provider/services, provider/services/[id], payments/simulate, payments/webhook, admin/payments, admin/providers/[id]/approve). Integrou matching+pricing+env+payment:simulate no rescue-service. Atualizou use-rescue-socket.ts com simulatePayment. Lint passou. Build do rescue-service passou.
+- TASK 25.4-C (subagent): criou 14 arquivos de teste (227 testes, 0 fail). Criou tracking-security.ts (módulo de suporte). Testes cobrem: pricing, state machine, financial security, gateways, factory, MP contract, env, tracking security, matching, history-auth, notification-store, session auth, payment persistence (DB), history integration (DB com sanitização 25.4).
+- Corrigi lint error no session.test.ts (require→import).
+- check:full passou: lint ✓, prisma validate ✓, prisma generate ✓, 227 testes ✓ (0 fail, 565 expect calls), build ✓ (15 rotas).
+- Reiniciei dev server Next.js + rescue-service para pegar novo Prisma Client.
+- REGRESSÃO BROWSER (agent-browser via porta 81):
+  - App abre sem erros de console/hidratação ✓
+  - Cliente Grace + prestador Hank registram via socket ✓
+  - Cliente solicita Reboque → R$ 180 (tarifa mínima) → matching → Hank aceita ✓
+  - Pagamento aprovado via /api/payments/simulate: PaymentRecord PAID + 2 events (CREATED + PAID) ✓
+  - Admin /api/admin/payments: count=1, PAID=1, platformFee=36, providerPayout=144, events=2 ✓
+  - SANITIZAÇÃO CLIENTE (FASE 25.4 CRÍTICO):
+    - Client list: hasPlatformFee=false, hasProviderPayout=false ✓
+    - Client detail: hasPlatformFee=false, hasProviderPayout=false, breakdownText=["Total: R$ 180,00"] ✓ (SEM taxa/repasse — este era o bug da 25.3)
+  - SANITIZAÇÃO PRESTADOR (FASE 25.4):
+    - Provider list: hasPlatformFee=false, hasProviderPayout=true, providerPayout=144 ✓
+    - Provider detail: hasPlatformFee=false, hasProviderPayout=true, providerPayout=144, breakdownText=["Total: R$ 180,00", "Seu repasse (80%): R$ 144,00"] ✓
+  - CROSS-ACCESS: Grace→provider services=0, Hank→client services=0 ✓
+  - NO AUTH: sem dbUserId+sem session → "Authentication required" ✓
+  - SESSION COOKIE: login → /api/auth/me retorna 200 com user CLIENT correto ✓
+  - TRACKING PÚBLICO: sem price, paymentStatus, platformFee, providerPayout ✓
+  - HISTÓRICO PERSISTE APÓS RELOAD: count=1 antes e depois ✓
+  - Sem erros no console ✓
+- Criei docs/production-readiness.md e docs/manual-regression-checklist.md.
+
+Stage Summary:
+- AUTENTICAÇÃO REAL INTEGRADA: src/server/auth/session.ts com cookies HMAC-signed HttpOnly. Rotas de histórico usam getSessionUser() em produção; dbUserId limitado a dev/demo (produção bloqueia). Login/logout/me APIs funcionando.
+- CLIENT DETAIL SANITIZADO: cliente NUNCA recebe platformFee nem providerPayout (nem lista, nem detalhe). breakdownText do cliente mostra apenas "Total" + desconto. BUG DA 25.3 CORRIGIDO.
+- PROVIDER DETAIL SANITIZADO: prestador recebe providerPayout mas NUNCA platformFee. breakdownText mostra "Total" + "Seu repasse (80%)".
+- ADMIN FINANCEIRO PRESERVADO: admin vê tudo (amount, platformFee, providerPayout, events, summary).
+- check:full passa: lint ✓, prisma ✓, 227 testes ✓ (0 fail), build ✓ (15 rotas).
+- Regressão browser: todas as sanitizações verificadas, cross-access bloqueado, session cookie funcional, histórico persiste após reload.
+- Total final de testes: 227 (0 fail).
+- Riscos restantes: MercadoPago sem credenciais reais; admin auth não implementada (demo-accessível); UI sem botões de simular pagamento; localStorage ainda como fallback.

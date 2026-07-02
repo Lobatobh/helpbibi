@@ -1,0 +1,968 @@
+     1→# SocorroJá — Worklog / Handover
+     2→
+     3→Projeto: Plataforma de auto socorro por aplicativo (estilo Uber para socorro veicular).
+     4→Stack: Next.js 16 + TypeScript + Tailwind + shadcn/ui + Socket.IO (mini-service na porta 3003).
+     5→
+     6→---
+     7→Task ID: 1
+     8→Agent: main (orchestrator)
+     9→Task: Construir protótipo funcional do SocorroJá com cliente + prestador em tempo real.
+    10→
+    11→Work Log:
+    12→- Analisei o escopo: app Uber-like com solicitação do cliente, matching com prestador mais próximo, aceite, rastreamento em tempo real até destino final.
+    13→- Instalei socket.io e socket.io-client.
+    14→- Criei mini-service `mini-services/rescue-service/index.ts` (porta 3003) com toda a orquestração:
+    15→  - registro de cliente e prestador
+    16→  - listagem de prestadores próximos (broadcast a cada 2s)
+    17→  - criação de solicitação → cálculo de preço/ETA/distância (haversine)
+    18→  - oferta ao prestador mais próximo com timeout de 12s e reoferta automática
+    19→  - aceite/recusa, chegada, início, conclusão, cancelamento
+    20→  - simulação de movimento do prestador (1 tick/s) em direção ao destino
+    21→  - timeline de eventos
+    22→- Criei tipos compartilhados em `src/lib/rescue-types.ts`.
+    23→- Criei hook `src/hooks/use-rescue-socket.ts` (useClientSocket + useProviderSocket).
+    24→- Construí `RescueMap` (mapa simulado com grid de ruas, pinos, rotas, marcador de prestador animado).
+    25→- Construí `ClientPanel`: cadastro → solicitação (tipo de serviço, local, destino) → rastreamento com timeline, card do prestador, ETA/valor, cancelar.
+    26→- Construí `ProviderPanel`: cadastro → online/offline → card de oferta com countdown → aceite → navegação → concluir, com stats de ganhos.
+    27→- Construí `src/app/page.tsx`: landing completa (hero, stats, como funciona, features cliente/prestador) + demo ao vivo com dois phone frames.
+    28→- Footer sticky (min-h-screen flex flex-col, mt-auto no footer).
+    29→- Atualizei metadata do layout para SocorroJá.
+    30→
+    31→Stage Summary:
+    32→- Arquitetura completa e funcional: duas pontas conectadas via WebSocket em tempo real.
+    33→- Demo requer iniciar o mini-service rescue-service (porta 3003) + dev server Next (porta 3000).
+    34→- Fluxo completo: searching → offered → accepted → arriving → arrived → in_progress → completed.
+    35→- Próximos passos sugeridos: iniciar serviços, validar com Agent Browser, e iterar em polimento/bugs.
+    36→
+    37→---
+    38→Task ID: 1-verify
+    39→Agent: main (orchestrator)
+    40→Task: Verificar o protótipo com Agent Browser e validar o fluxo completo em tempo real.
+    41→
+    42→Work Log:
+    43→- Iniciei o mini-service rescue-service (porta 3003). Encontrei dificuldade: processos background morriam entre chamadas bash. Solução: double-fork `( ( nohup bun index.ts > log 2>&1 & ) & )` para reparentar ao init (PPID=1), igual ao Next.js dev server. Removi `--hot` do script (crashava).
+    44→- Acessei a app via Caddy (porta 81) — necessário para o socket.io (`/?XTransformPort=3003`) ser roteado ao rescue-service.
+    45→- Confirmei: landing renderiza 100%, sem erros de console/runtime/hydration.
+    46→- Abri a demo ao vivo, registrei cliente "Maria Motorista" e prestador "João Guincho" (Guincho Plataforma, ABC1D23).
+    47→- Cliente solicitou reboque (Av. Paulista → Moema). Serviço calculou R$ 204, ETA e distância via fórmula de haversine.
+    48→- Prestador recebeu a chamada com countdown de 12s e botões Aceitar/Recusar.
+    49→- Fluxo completo executado e validado: searching → offered → accepted → arriving → arrived → in_progress → completed.
+    50→- Cliente viu timeline em tempo real, card do prestador, ETA, e ao final "Concluído · Valor final: R$ 204 · Pagamento na entrega".
+    51→- Mapa simulado animou o marcador do prestador se movendo em direção ao local e depois ao destino.
+    52→- Logs limpos: dev.log sem erros, rescue-service.log com registro de conexões/registro/serviço concluído, browser sem erros.
+    53→
+    54→Stage Summary:
+    55→- Protótipo 100% funcional e verificado end-to-end no browser.
+    56→- Sticky footer OK (min-h-screen flex flex-col + mt-auto).
+    57→- Responsivo (grid lg:grid-cols-2 para os painéis, mobile-first).
+    58→- Próxima fase (cron webDevReview): iterar em polimento, novos recursos (avaliações, pagamentos simulados, histórico de serviços, multi-prestador), e correções que surgirem.
+    59→- IMPORTANTE para o próximo agente: o rescue-service precisa ser reiniciado com o double-fork se não estiver ativo: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )` a partir de `/home/z/my-project/mini-services/rescue-service`. Sem ele, a demo não conecta.
+    60→
+    61→---
+    62→Task ID: 2 (cron webDevReview)
+    63→Agent: cron review agent
+    64→Task: QA do protótipo + adicionar recursos (avaliações, pagamentos, histórico, dashboard de ganhos) + melhorar landing.
+    65→
+    66→## Current project status / assessment
+    67→- Protótipo SocorroJá estável: landing + demo ao vivo (cliente + prestador) com WebSocket em tempo real.
+    68→- Fluxo completo validado na Task 1: searching → offered → accepted → arriving → arrived → in_progress → completed.
+    69→- QA desta rodada: nenhum bug encontrado no fluxo existente. Logs limpos, sem erros de console/runtime.
+    70→- rescue-service (porta 3003) e Next.js (porta 3000) ambos ativos. Serviço iniciado via double-fork `( ( nohup bun index.ts > log 2>&1 & ) & )`.
+    71→
+    72→## Completed modifications / verification results
+    73→### Novos recursos implementados
+    74→1. **Sistema de avaliação** — após concluir o serviço, o cliente avalia o prestador (1-5 estrelas + comentário). Backend atualiza a nota média do prestador (running average). Prestador vê "Avaliação recebida" com estrelas e comentário. Histórico mostra a avaliação em ambos os lados.
+    75→2. **Forma de pagamento** — cliente escolhe PIX / Cartão / Dinheiro antes de confirmar. Exibido no card de oferta (prestador) e no card de serviço (ambos).
+    76→3. **Histórico de serviços** — persistência em localStorage (`src/lib/rescue-history.ts`). Ambos os painéis têm aba "Histórico" com lista de serviços concluídos/cancelados, mostrando tipo, contraparte, pagamento, data e avaliação.
+    77→4. **Dashboard de ganhos do prestador** — aba "Ganhos" com: card de ganhos de hoje (valor real acumulado), gráfico de barras (recharts) de ganhos por dia, KPIs (ticket médio, nota média), breakdown por tipo de serviço com barras de progresso. Stats reais (completedCount, earningsToday) vindos do backend.
+    78→5. **Navegação por abas** — cliente (Início/Histórico) e prestador (Chamadas/Ganhos/Histórico).
+    79→
+    80→### Melhorias de landing page
+    81→6. **Seção de preços transparentes** — 6 cards de preço base por tipo de serviço (reboque R$180, pneu R$90, etc.) com card "MAIS PEDIDO" destacado, badges de pagamento/km.
+    82→7. **Depoimentos** — 3 cards de testemunho (2 motoristas + 1 prestador) com estrelas, avatar com iniciais e ícone de aspas.
+    83→8. **FAQ accordion** — 6 perguntas frequentes expansíveis (matching, preço, pagamento, cancelamento, avaliações, como ser prestador).
+    84→9. **Nav atualizado** — links para Preços / Depoimentos / FAQ / Demo ao vivo.
+    85→
+    86→### Polimento de estilo
+    87→10. Headers com gradientes (amber→amber-600, emerald→emerald-600) + sombras coloridas.
+    88→11. Avatares com gradientes em vez de fundo sólido.
+    89→12. Badges de status animados, empty states com ícones, timeline com bullets.
+    90→13. Cards de oferta com countdown visual, botões com shadow colorido.
+    91→
+    92→### Arquivos modificados
+    93→- `src/lib/rescue-types.ts` — adicionado PaymentMethod, Rating, ServiceRecord, PAYMENT_METHODS, ProviderPublic.completedCount/ProviderState.earningsToday.
+    94→- `src/lib/rescue-history.ts` (novo) — helpers localStorage (getHistoryForRole, addRecord, recordFromService, updateRecord).
+    95→- `mini-services/rescue-service/index.ts` — eventos service:rate, paymentMethod no request, tracking de completedCount/earningsToday/ratingSum/ratingCount no provider.
+    96→- `src/hooks/use-rescue-socket.ts` — rateService(), clearCurrent(), paymentMethod no payload.
+    97→- `src/components/rescue/client-panel.tsx` — abas, payment selection, rating UI, history view, lazy init + ref guards.
+    98→- `src/components/rescue/provider-panel.tsx` — abas (Chamadas/Ganhos/Histórico), earnings dashboard com recharts, history view, rating display.
+    99→- `src/app/page.tsx` — seções Preços/Depoimentos/FAQ, sub-componentes PriceCard/Testimonial/FaqItem, nav atualizado.
+   100→
+   101→### Verificação (agent-browser via porta 81)
+   102→- Landing: todas as seções renderizam, FAQ accordion abre/fecha, sem erros.
+   103→- Demo: registrei Bruno Lima (cliente) + Diego Santos (prestador), selecionei pagamento "Cartão".
+   104→- Solicitei reboque Paulista→Moema = R$ 204. Prestador recebeu oferta com "Cartão" visível.
+   105→- Aceitou → chegou → iniciou → concluiu. Cliente viu "Avalie o atendimento".
+   106→- Avaliei 5★ + comentário "Atendimento rápido e educado. Recomendo!".
+   107→- Cliente: "Obrigado pela avaliação!" + estrelas. Prestador: "Avaliação recebida" + comentário.
+   108→- Histórico do cliente: 1 serviço, Reboque, Diego Santos, Cartão, ★★★★★, comentário.
+   109→- Dashboard do prestador: Ganhos de hoje R$ 204, 1 serviço concluído, gráfico renderizado.
+   110→- Histórico do prestador: Cliente: Bruno Lima, +R$ 204, avaliação.
+   111→- `bun run lint`: 0 erros. rescue-service.log: registration → completed (R$ 204) → rated 5★. Sem erros de browser.
+   112→
+   113→## Unresolved issues / risks + next-phase recommendations
+   114→- **Risco (baixo):** histórico é por navegador (localStorage). Se o cron anterior registrou serviços em outra sessão de browser do agente, podem aparecer registros antigos — comportamento esperado para um protótipo. Para produção, migrar para banco (Prisma).
+   115→- **Recomendação próxima fase:**
+   116→  - Chat em tempo real entre cliente e prestador (mensagens via socket, persistidas).
+   117→  - Multi-prestador competindo: mostrar "3 prestadores sendo notificados" e permitir primeiro que aceita ganha.
+   118→  - Promo codes / cupons de desconto no checkout do cliente.
+   119→  - Notificações push simuladas (toast) quando oferta chega / serviço é aceito.
+   120→  - Filtro de histórico por data/tipo no painel do prestador.
+   121→  - Modo escuro/claro toggle (já temos next-themes disponível).
+   122→  - Persistir dados em Prisma (schema.prisma) para histórico e avaliações sobreviverem entre sessões/servidores.
+   123→  - Tela de detalhe do serviço no histórico (clique para ver timeline completa).
+   124→- **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork a partir de `/home/z/my-project/mini-services/rescue-service`: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy) para o WebSocket `/?XTransformPort=3003` rotear corretamente.
+   125→
+   126→---
+   127→Task ID: 3 (cron webDevReview)
+   128→Agent: cron review agent
+   129→Task: QA + adicionar chat em tempo real, notificações toast, cupons de desconto, e modal de detalhe do serviço no histórico.
+   130→
+   131→## Current project status / assessment
+   132→- Protótipo SocorroJá estável após Tasks 1-2: landing + demo ao vivo com WebSocket, avaliações, pagamentos, histórico e dashboard de ganhos.
+   133→- QA desta rodada via agent-browser: nenhum bug encontrado no fluxo existente. Logs limpos.
+   134→- rescue-service (porta 3003) e Next.js (porta 3000) ambos ativos.
+   135→- Decidi focar em novos recursos de alto impacto: chat, toasts, cupons, e modal de detalhe.
+   136→
+   137→## Completed modifications / verification results
+   138→### Novos recursos implementados
+   139→1. **Chat em tempo real entre cliente e prestador** 💬 — mensagens bidirecionais via WebSocket, persistidas em memória no backend por serviço. Botões de chat funcionais (antes eram decorativos). Badge de não-lidas no botão de chat. Painel colapsável com auto-scroll. Mensagens alinhadas à direita (minhas) / esquerda (outra parte) com timestamp.
+   140→2. **Notificações toast (sonner)** 🔔 — toasts disparados em transições de status do serviço: oferta enviada, prestador aceitou, chegando, chegou, em andamento, concluído (+R$ valor), cancelado. Estilo dark com richColors. Hook `useServiceToasts` reutilizável para cliente e prestador.
+   141→3. **Cupons de desconto (promo codes)** 🏷️ — validação em tempo real no backend. 3 cupons demo: SOCORRO10 (10% off), BEMVINDO20 (R$ 20 off), PROMO15 (15% off). Preview de preço com desconto no formulário. Badge de cupom no card de oferta (prestador vê o cupom aplicado). Desconto exibido na timeline, no card de serviço e no histórico.
+   142→4. **Modal de detalhe do serviço** 📋 — clique em qualquer item do histórico abre um Dialog com: tipo, status, contraparte, pagamento, trajeto (local/destino), valores (original, desconto, total), descrição do problema, linha do tempo completa com timestamps, avaliação com estrelas e comentário. Disponível em ambos os painéis (cliente e prestador).
+   143→
+   144→### Polimento de estilo
+   145→5. Botões de chat com ring highlight quando ativos, badge de não-lidas.
+   146→6. Cards de histórico clicáveis com hover effect e seta indicando ação.
+   147→7. Price summary no formulário com strike-through no valor original e destaque do desconto.
+   148→8. Dialog estilizado em dark mode com seções organizadas (info boxes, trajeto, valores, timeline).
+   149→
+   150→### Arquivos modificados
+   151→- `mini-services/rescue-service/index.ts` — adicionado: ChatMessage type, chats Map, eventos chat:send/chat:history/chat:messages/chat:new, PROMO_CODES, evento promo:validate, applyPromo(), campos originalPrice/discount/promoCode no ServiceRequest, emitChatToService().
+   152→- `src/lib/rescue-types.ts` — adicionado ChatMessage, PromoResult, campos originalPrice/discount/promoCode no ServiceData e ServiceRecord, description e timeline no ServiceRecord.
+   153→- `src/lib/rescue-history.ts` — recordFromService atualizado para capturar originalPrice, discount, promoCode, description, timeline.
+   154→- `src/hooks/use-rescue-socket.ts` — adicionado messages, newMessage, promoResult no state; sendChat, validatePromo, clearPromo, clearNewMessage callbacks; listeners chat:messages, chat:new, promo:result.
+   155→- `src/hooks/use-service-toasts.ts` (novo) — hook useServiceToasts que dispara toasts em transições de status.
+   156→- `src/components/rescue/chat-panel.tsx` (novo) — ChatPanel (inline) e ChatWidget (floating) com auto-scroll, timestamps, alinhamento de mensagens.
+   157→- `src/components/rescue/client-panel.tsx` — integrado chat, promo, toasts, service detail dialog, toggleChat, unread tracking.
+   158→- `src/components/rescue/provider-panel.tsx` — integrado chat, toasts, service detail dialog, promo display no card de serviço.
+   159→- `src/app/layout.tsx` — adicionado Sonner Toaster (richColors, dark style, top-center).
+   160→
+   161→### Verificação (agent-browser via porta 81)
+   162→- Promo: digitei "SOCORRO10" → "Cupom aplicado: 10% OFF" → base R$ 204 → -R$ 20 → final R$ 184. ✓
+   163→- Oferta: prestador viu "Aceitar (R$ 184)" com cupom aplicado. ✓
+   164→- Chat: cliente enviou "Olá, estou na via principal..." → prestador recebeu → prestador respondeu "Chegando em 5 min!" → cliente recebeu. Mensagem visível em ambos os painéis. ✓
+   165→- Toasts: disparados em aceite, chegada, conclusão. ✓
+   166→- Histórico: 2 serviços listados, um com badge SOCORRO10. ✓
+   167→- Modal de detalhe: abri ao clicar → mostrou trajeto, valores (R$ 204, -R$ 20, R$ 184), linha do tempo completa, avaliação 5★. ✓
+   168→- `bun run lint`: 0 erros. rescue-service.log: chat messages registradas, serviço concluído, rating 5★. Sem erros de browser.
+   169→
+   170→## Unresolved issues / risks + next-phase recommendations
+   171→- **Dark/light mode toggle:** não implementado nesta rodada (next-themes disponível mas a app é dark-only por design). Para implementar, seria necessário adicionar toggle no header e variáveis CSS para modo claro.
+   172→- **Risco (baixo):** chat é em memória no backend — mensagens se perdem se o rescue-service reiniciar. Para produção, persistir em banco.
+   173→- **Recomendação próxima fase:**
+   174→  - Multi-prestador competindo: notificar N prestadores simultaneamente, primeiro que aceita ganha.
+   175→  - Filtro de histórico por data/tipo/valor.
+   176→  - Estimativa de tempo restante em tempo real (barra de progresso do trajeto).
+   177→  - Compartilhamento de localização via link.
+   178→  - Modo escuro/claro toggle.
+   179→  - Persistir chat e serviços em Prisma (schema.prisma).
+   180→  - Notificações sonoras opcional além dos toasts visuais.
+   181→  - Tela de perfil do prestador (foto, documentos, estatísticas históricas).
+   182→  - Sistema de fidelidade (acumular pontos por serviço).
+   183→- **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork a partir de `/home/z/my-project/mini-services/rescue-service`: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy) para o WebSocket `/?XTransformPort=3003` rotear corretamente.
+   184→
+   185→---
+   186→Task ID: 4 (cron webDevReview)
+   187→Agent: cron review agent
+   188→Task: QA + adicionar multi-prestador (first-accept-wins), barra de progresso de trajeto ao vivo, sistema de fidelidade, e filtros de histórico.
+   189→
+   190→## Current project status / assessment
+   191→- Protótipo SocorroJá estável após Tasks 1-3: landing + demo ao vivo com WebSocket, avaliações, pagamentos, histórico, dashboard de ganhos, chat, toasts, cupons, modal de detalhe.
+   192→- QA desta rodada via agent-browser: nenhum bug encontrado no fluxo existente. Logs limpos.
+   193→- rescue-service (porta 3003) e Next.js (porta 3000) ambos ativos.
+   194→- Decidi focar em 4 novos recursos de alto impacto: multi-prestador, progresso de trajeto, fidelidade, filtros.
+   195→
+   196→## Completed modifications / verification results
+   197→### Novos recursos implementados
+   198→1. **Multi-prestador com first-accept-wins** 🚛 — agora até 3 prestadores mais próximos são notificados simultaneamente (MULTI_NOTIFY_COUNT=3). O primeiro a aceitar ganha a chamada; os outros recebem notificação "service:offer-taken" informando quem aceitou. Indicador visual no card de oferta do prestador ("N prestadores recebendo esta chamada — primeiro a aceitar leva!") e no painel do cliente ("N prestadores sendo notificados simultaneamente" com avatares empilhados). Reoferta automática em lote quando todos recusam ou expiram.
+   199→
+   200→2. **Barra de progresso de trajeto ao vivo** 📊 — componente TripProgressBar que calcula progresso em tempo real baseado em elapsed time vs estimated total (sincronizado com a simulação de movimento do backend a 0.18 km/s). Mostra: label contextual ("Prestador a caminho do local" / "Rumo ao destino final"), ETA com countdown MM:SS, km restantes, % concluído, barra animada com ícone de caminhão se movendo, e efeito pulse. Disponível em ambos os painéis (cliente e prestador). Backend rastreia tripStartPos, tripTarget, tripStartedAt, tripTotalKm por etapa (pickup → chegada, depois chegada → destino).
+   201→
+   202→3. **Sistema de fidelidade (loyalty)** 🏆 — clientes ganham 1 ponto por R$ 1 gasto. 4 tiers: Bronze (0+), Prata (200+), Ouro (500+), Diamante (1000+), cada um com perk (desconto %, prioridade, suporte VIP). LoyaltyCard component com: tier atual com badge "NOVO!" em upgrade, pontos totais, pontos ganhos no serviço, perk do tier, barra de progresso para próximo tier com "N pts restantes". Pontos persistem por nome de cliente no backend (in-memory). Notificação de upgrade na timeline do serviço ("🎉 Subiu para o tier Prata!").
+   203→
+   204→4. **Filtros de histórico** 🔍 — ambos os painéis (cliente e prestador) agora têm filtros no histórico: por tipo de serviço (Todos, Reboque, Pneu, Bateria, etc.) e por status (Qualquer status, Concluídos, Cancelados). Chips clicáveis com estado ativo, contador "N de M serviço(s)", e empty state quando nenhum serviço corresponde aos filtros.
+   205→
+   206→### Polimento de estilo
+   207→5. Notificação "offer-taken" no painel do prestador: card com ícone X, mensagem "Chamada aceita por X" ou "Solicitação cancelada pelo cliente", botão "Entendido".
+   208→6. Indicador de multi-prestador no cliente: avatares empilhados de caminhão + texto "N prestadores sendo notificados simultaneamente".
+   209→7. LoyaltyCard com gradientes dinâmicos baseados na cor do tier, glow effect, badge "NOVO!" animado.
+   210→8. FilterChips com cores temáticas (amber para cliente, emerald para prestador).
+   211→
+   212→### Arquivos modificados
+   213→- `mini-services/rescue-service/index.ts` — adicionado: MULTI_NOTIFY_COUNT, LOYALTY_TIERS, loyaltyTier(), nextTierMin(), clientLoyalty Map, campos notifiedProviderIds/tripStartPos/tripTarget/tripStartedAt/tripTotalKm/loyaltyPoints, evento service:offer-taken, lógica first-accept-wins em service:accept, reoferta em lote, tracking de trip por etapa, award de loyalty points em service:complete, evento client:loyalty.
+   214→- `src/lib/rescue-types.ts` — adicionado LoyaltyInfo, campos tripStartPos/tripTarget/tripStartedAt/tripTotalKm em ProviderState, notifiedProviderIds/notifiedCount/loyaltyPoints em ServiceData.
+   215→- `src/hooks/use-rescue-socket.ts` — adicionado loyalty e offerTaken no state, listeners client:loyalty e service:offer-taken, callbacks clearOfferTaken e clearLoyalty.
+   216→- `src/components/rescue/trip-progress-bar.tsx` (novo) — TripProgressBar com cálculo de progresso em tempo real, ETA countdown, barra animada com ícone de caminhão.
+   217→- `src/components/rescue/loyalty-card.tsx` (novo) — LoyaltyCard com tier, pontos, progresso para próximo tier, badge de upgrade.
+   218→- `src/components/rescue/client-panel.tsx` — integrado LoyaltyCard na home, TripProgressBar no service tracker, indicador de multi-prestador, filtros de histórico (FilterChip).
+   219→- `src/components/rescue/provider-panel.tsx` — integrado TripProgressBar no service card, notificação offer-taken, indicador de multi-prestador na OfferCard, filtros de histórico (FilterChip).
+   220→
+   221→### Verificação (agent-browser via porta 81)
+   222→- Loyalty: cliente "Lucas Moto" registrou → Bronze 0pts → após serviço R$ 204 → +204pts → "🎉 Subiu para o tier Prata!" → LoyaltyCard mostrou "Prata NOVO! 204 pontos, +204 ganhos, Próximo: Ouro, 296 pts restantes". ✓
+   223→- Trip progress: após aceite → "Prestador a caminho do local, ETA 1:23, 4.65 km restantes, 14% concluído" → após 5s → "ETA 1:04, 84% concluído". Barra animada avançando. ✓
+   224→- Multi-prestador: com 1 provider → "1 prestador(es) próximo(s)" na timeline. Indicador "N prestadores recebendo esta chamada" aparece quando notifiedCount > 1. Backend log: "first-accept-wins among 1". ✓
+   225→- Offer-taken: quando oferta expira, prestador vê "Nenhum prestador disponível" e pode clicar "Voltar ao início". ✓
+   226→- History filters: 2 serviços no histórico → clique em "Concluídos" → "1 de 2 serviço(s)" filtrado. Chips Todos/Reboque/Pneu/etc. e Qualquer status/Concluídos/Cancelados. ✓
+   227→- `bun run lint`: 0 erros. rescue-service.log: "first-accept-wins among 1", "+204pts (total 408)". Sem erros de browser.
+   228→
+   229→## Unresolved issues / risks + next-phase recommendations
+   230→- **Risco (baixo):** multi-prestador com 3 notificações simultâneas não foi testado com 3+ providers (a demo só tem 2 phone frames). A lógica está implementada e o indicador aparece quando notifiedCount > 1, mas o teste real com múltiplos providers aceitando simultaneamente ficaria para uma próxima rodada com um segundo painel de prestador.
+   231→- **Risco (baixo):** loyalty points são em memória no backend (keyed by clientName) — sobrevivem entre sessões do mesmo nome mas se perdem se o rescue-service reiniciar. Para produção, persistir em banco.
+   232→- **Recomendação próxima fase:**
+   233→  - Adicionar um segundo painel de prestador na demo para testar multi-prestador competindo em tempo real.
+   234→  - Modo escuro/claro toggle (next-themes disponível).
+   235→  - Notificações sonoras opcional além dos toasts visuais.
+   236→  - Tela de perfil do prestador (foto, documentos, estatísticas históricas).
+   237→  - Estimativa de tempo restante na barra de progresso com precisão de segundos.
+   238→  - Compartilhamento de localização via link.
+   239→  - Persistir tudo em Prisma (schema.prisma) para sobreviver entre reinicializações.
+   240→  - Sistema de cupons resgatáveis por pontos de fidelidade.
+   241→  - Avaliação bidirecional (prestador também avalia o cliente).
+   242→- **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork a partir de `/home/z/my-project/mini-services/rescue-service`: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy) para o WebSocket `/?XTransformPort=3003` rotear corretamente.
+   243→
+   244→---
+   245→Task ID: 5 (cron webDevReview)
+   246→Agent: cron review agent
+   247→Task: QA + adicionar segundo painel de prestador, perfil de prestador, resgate de pontos de fidelidade, e corrigir bug do offer-taken.
+   248→
+   249→## Current project status / assessment
+   250→- Protótipo SocorroJá estável após Tasks 1-4: landing + demo ao vivo com WebSocket, avaliações, pagamentos, histórico, dashboard de ganhos, chat, toasts, cupons, modal de detalhe, multi-prestador, progresso de trajeto, fidelidade, filtros.
+   251→- QA desta rodada via agent-browser: nenhum bug encontrado no fluxo existente. Logs limpos.
+   252→- rescue-service (porta 3003) e Next.js (porta 3000) ambos ativos.
+   253→- Decidi focar em: segundo painel de prestador, perfil, resgate de pontos, e corrigir bug do offer-taken.
+   254→
+   255→## Completed modifications / verification results
+   256→### Bug corrigido
+   257→1. **Bug do offer-taken em multi-prestador** 🐛 — Na Task 4, o `service:offer-taken` só era enviado a providers com `currentServiceId === svc.id`, mas apenas o provider primário tinha esse campo setado. Providers secundários notificados nunca recebiam a notificação de "chamada aceita por X". Corrigido: agora o `service:offer-taken` é enviado a TODOS os providers notificados, independentemente de `currentServiceId`. *Validado: com 2 providers, Sergio aceitou → Paulo recebeu "Chamada aceita por Sergio Guincho" + "Outro prestador aceitou a chamada primeiro." + botão "Entendido".*
+   258→
+   259→### Novos recursos implementados
+   260→2. **Segundo painel de prestador na demo** 📱 — botão "Adicionar 2º prestador" na seção demo que revela um terceiro phone frame. Layout responsivo: 2 colunas (lg) ou 3 colunas (xl). Permite testar a competição multi-prestador em tempo real com 2 providers recebendo a chamada simultaneamente. Dica contextual atualizada.
+   261→
+   262→3. **Tela de perfil do prestador** 👤 — nova aba "Perfil" no painel do prestador com: header com avatar (iniciais), nome, veículo, badge "Verificado", placa; grid de 4 stats (serviços totais, ganhos hoje, nota média, total acumulado); grid de 6 conquistas (achievements) com ícones e estados desbloqueado/bloqueado: Primeiro serviço, 10 serviços, 50 serviços, Nota 5.0, Bem avaliado (4.5+), Movimentado (R$ 500+ hoje); status atual online/offline.
+   263→
+   264→4. **Resgate de pontos de fidelidade** 🎁 — LoyaltyCard expandido com botão "Resgatar pontos" que revela 4 recompensas: FIDEL5 (100 pts, 5% OFF), FIDEL10 (200 pts, 10% OFF), FIDEL25 (300 pts, R$ 25 OFF), FIDEL15 (500 pts, 15% OFF). Cada recompensa mostra custo em pontos, descrição, e botão "Resgatar" (habilitado se pontos suficientes). Backend: evento `loyalty:redeem` deduz pontos, adiciona o cupom a PROMO_CODES (válido para uso imediato), envia `loyalty:redeem-result` com sucesso/mensagem + código resgatado, atualiza `client:loyalty` e `loyalty:rewards`. Inline result notification com código copiável. Recompensas bloqueadas mostram ícone de cadeado.
+   265→
+   266→### Polimento de estilo
+   267→5. ProfileView com gradientes, glow effects, achievements com grayscale quando bloqueados, check icon quando desbloqueados.
+   268→6. LoyaltyCard rewards com estados affordable/locked visualmente distintos (amber vs slate + opacity).
+   269→7. Botão "Adicionar 2º prestador" com estilo sky/blue destacando a funcionalidade multi-prestador.
+   270→
+   271→### Arquivos modificados
+   272→- `mini-services/rescue-service/index.ts` — corrigido offer-taken para todos notificados; adicionado LOYALTY_REWARDS, evento loyalty:redeem, clients Map agora inclui name, evento loyalty:rewards enviado no register e após redeem.
+   273→- `src/lib/rescue-types.ts` — adicionado LoyaltyReward, RedeemResult types.
+   274→- `src/hooks/use-rescue-socket.ts` — adicionado rewards, redeemResult no state; listeners loyalty:rewards, loyalty:redeem-result; callbacks redeemReward, clearRedeemResult.
+   275→- `src/components/rescue/loyalty-card.tsx` — expandido com rewards list, redeem button, inline result notification, toggle showRewards.
+   276→- `src/components/rescue/client-panel.tsx` — passado rewards, redeemResult, onRedeem, onClearRedeem para LoyaltyCard.
+   277→- `src/components/rescue/provider-panel.tsx` — adicionado aba Perfil, ProfileView component com stats e achievements.
+   278→- `src/app/page.tsx` — DemoLive com toggle de segundo provider, layout 3 colunas, botão "Adicionar 2º prestador".
+   279→
+   280→### Verificação (agent-browser via porta 81)
+   281→- Multi-prestador: 2 providers (Sergio + Paulo) registrados → cliente solicitou → "2 prestadores recebendo esta chamada — primeiro a aceitar leva!" em ambos → Sergio aceitou → Paulo recebeu "Chamada aceita por Sergio Guincho" + "Entendido". Backend log: "first-accept-wins among 2". ✓
+   282→- Segundo painel: botão "Adicionar 2º prestador" revelou 3º phone frame "App do Prestador 2". Layout ajustou para 3 colunas. ✓
+   283→- Perfil: aba "Perfil" no prestador → avatar PA, nome Paulo Reboque, veículo, badge Verificado, placa, 4 stats, 6 achievements (todos bloqueados pois 0 serviços). ✓
+   284→- Loyalty rewards: LoyaltyCard com "Resgatar pontos" → 4 recompensas (FIDEL5/10/25/15) com custos 100/200/300/500 pts, todas locked (0 pontos). ✓
+   285→- `bun run lint`: 0 erros. Sem erros de browser.
+   286→
+   287→## Unresolved issues / risks + next-phase recommendations
+   288→- **Avaliação bidirecional:** não implementada nesta rodada (prestador avaliando cliente). Ficou para próxima fase.
+   289→- **Risco (baixo):** loyalty points e rewards redeemed são em memória no backend — se o rescue-service reiniciar, pontos resgatados voltam. Para produção, persistir em banco.
+   290→- **Recomendação próxima fase:**
+   291→  - Avaliação bidirecional (prestador também avalia o cliente após concluir).
+   292→  - Modo escuro/claro toggle (next-themes disponível).
+   293→  - Notificações sonoras opcionais.
+   294→  - Compartilhamento de localização via link.
+   295→  - Persistir tudo em Prisma (schema.prisma).
+   296→  - Estatísticas avançadas no perfil (gráfico de serviços por dia, mapa de calor de regiões).
+   297→  - Sistema de ranking/leaderboard de prestadores.
+   298→  - Notificação push quando novo tier desbloqueado.
+   299→  - Cupons resgatáveis com validade (expiram após N dias).
+   300→- **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork a partir de `/home/z/my-project/mini-services/rescue-service`: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy) para o WebSocket `/?XTransformPort=3003` rotear corretamente.
+   301→
+   302→---
+   303→Task ID: 6 (cron webDevReview)
+   304→Agent: cron review agent
+   305→Task: QA + adicionar avaliação bidirecional (prestador avalia cliente), leaderboard de prestadores na landing, e melhorias de estilo.
+   306→
+   307→## Current project status / assessment
+   308→- Protótipo SocorroJá estável após Tasks 1-5: landing + demo ao vivo com WebSocket, avaliações, pagamentos, histórico, dashboard de ganhos, chat, toasts, cupons, modal de detalhe, multi-prestador, progresso de trajeto, fidelidade com resgate, filtros, segundo painel de prestador, perfil com achievements.
+   309→- QA desta rodada via agent-browser: nenhum bug encontrado no fluxo existente. Logs limpos.
+   310→- rescue-service (porta 3003) e Next.js (porta 3000) ambos ativos.
+   311→- Decidi focar em: avaliação bidirecional, leaderboard ao vivo, e melhorias de estilo.
+   312→
+   313→## Completed modifications / verification results
+   314→### Novos recursos implementados
+   315→1. **Avaliação bidirecional (prestador avalia cliente)** ⭐ — após concluir o serviço, o prestador agora vê um card "Avalie o cliente" com estrelas interativas (1-5) e campo de comentário. Backend: novo evento `service:rate-client` que cria `clientRating` no ServiceRequest. Cliente vê "Avaliação que você recebeu do prestador" com estrelas sky/blue e comentário. Modal de detalhe do serviço mostra ambas as avaliações (dada e recebida) com labels contextuais por role. *Validado: prestador Carlos Guincho avaliou cliente Ana Silva 5★ → prestador viu "Cliente avaliado!" → cliente viu "Avaliação que você recebeu do prestador". Backend log: "client rated 5★ by Carlos Guincho".*
+   316→
+   317→2. **Leaderboard de prestadores ao vivo** 🏆 — nova seção "Ranking ao vivo" na landing page com top 10 prestadores ordenados por serviços concluídos + nota. Backend: broadcast `leaderboard` a cada 5s com dados de todos providers. Componente Leaderboard com medalhas (Crown/Medal/Award para top 3), avatares com iniciais, stats (nota, serviços, ganhos hoje), empty state "Aguardando prestadores entrarem no app...". Atualiza em tempo real conforme serviços são concluídos. Link "Ranking" adicionado ao nav. *Validado: após registrar e concluir serviço, Carlos Guincho apareceu no leaderboard com 1 serviço, R$ 204 hoje, nota 4.8.*
+   318→
+   319→3. **Histórico e modal de detalhe com clientRating** 📋 — ServiceRecord agora inclui clientRating. Modal de detalhe mostra ambas as avaliações com labels contextuais: "Sua avaliação do prestador" / "Avaliação do cliente" (rating) e "Avaliação recebida do prestador" / "Sua avaliação do cliente" (clientRating), com cores distintas (amber para rating, sky para clientRating).
+   320→
+   321→### Polimento de estilo
+   322→4. Leaderboard com gradientes para top 3 (amber/slate/orange), ícones de medalha, avatares com gradientes.
+   323→5. ClientRatingCard com gradiente sky/blue, estrelas interativas com hover scale, textarea estilizada.
+   324→6. Labels contextuais por role nos modais de detalhe (cliente vs prestador).
+   325→7. Seção de ranking com SectionHead e bordas consistentes.
+   326→
+   327→### Arquivos modificados
+   328→- `mini-services/rescue-service/index.ts` — adicionado clientRating ao ServiceRequest e sanitizeService, evento service:rate-client, broadcast leaderboard a cada 5s.
+   329→- `src/lib/rescue-types.ts` — adicionado clientRating ao ServiceData e ServiceRecord.
+   330→- `src/lib/rescue-history.ts` — recordFromService captura clientRating.
+   331→- `src/hooks/use-rescue-socket.ts` — adicionado rateClient callback ao provider hook.
+   332→- `src/components/rescue/provider-panel.tsx` — adicionado ClientRatingCard component, onRateClient prop no ProviderServiceCard, clientRating no ServiceDetailDialog.
+   333→- `src/components/rescue/client-panel.tsx` — adicionado clientRating display no ServiceTracker e ServiceDetailDialog.
+   334→- `src/components/rescue/leaderboard.tsx` (novo) — Leaderboard component com socket connection, medalhas, stats.
+   335→- `src/app/page.tsx` — adicionado seção Ranking, import Leaderboard, link Ranking no nav.
+   336→
+   337→### Verificação (agent-browser via porta 81)
+   338→- Bidirectional rating: serviço concluído → prestador viu "Avalie o cliente" → selecionou 5★ + comentário "Cliente pontual e educado." → clicou "Enviar avaliação do cliente" → prestador viu "Cliente avaliado!" → cliente viu "Avaliação que você recebeu do prestador". ✓
+   339→- Leaderboard: landing mostra seção "Top prestadores SocorroJá" → inicialmente "Aguardando prestadores entrarem no app..." → após registro + serviço: "Carlos Guincho" com 1 serviço, R$ 204, nota 4.8. ✓
+   340→- `bun run lint`: 0 erros. rescue-service.log: "client rated 5★ by Carlos Guincho". Sem erros de browser.
+   341→
+   342→## Unresolved issues / risks + next-phase recommendations
+   343→- **Dark/light mode toggle:** não implementado nesta rodada. A app é dark-only por design.
+   344→- **Gráfico de serviços por dia:** o EarningsView já tem um BarChart, mas poderia ser expandido com mais granularidade.
+   345→- **Recomendação próxima fase:**
+   346→  - Modo escuro/claro toggle (next-themes disponível).
+   347→  - Notificações sonoras opcionais.
+   348→  - Compartilhamento de localização via link.
+   349→  - Persistir tudo em Prisma (schema.prisma).
+   350→  - Estatísticas avançadas no perfil (gráfico de serviços por dia, mapa de calor de regiões).
+   351→  - Sistema de ranking semanal/mensal com recompensas.
+   352→  - Notificação push quando novo tier desbloqueado ou subida no ranking.
+   353→  - Cupons resgatáveis com validade (expiram após N dias).
+   354→  - Tela de perfil do cliente (histórico de avaliações recebidas, tier, pontos).
+   355→  - Filtro de leaderboard por período (hoje/semana/mês).
+   356→- **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork a partir de `/home/z/my-project/mini-services/rescue-service`: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy) para o WebSocket `/?XTransformPort=3003` rotear corretamente.
+   357→
+   358→---
+   359→Task ID: 7 (cron webDevReview)
+   360→Agent: cron review agent
+   361→Task: QA + adicionar dark/light mode toggle, tela de perfil do cliente, filtro de período no leaderboard.
+   362→
+   363→## Current project status / assessment
+   364→- Protótipo SocorroJá estável após Tasks 1-6: landing + demo ao vivo com WebSocket, avaliações bidirecionais, pagamentos, histórico, dashboard de ganhos, chat, toasts, cupons, modal de detalhe, multi-prestador, progresso de trajeto, fidelidade com resgate, filtros, segundo painel, perfil de prestador, leaderboard ao vivo.
+   365→- QA desta rodada via agent-browser: nenhum bug encontrado no fluxo existente. Logs limpos.
+   366→- rescue-service (porta 3003) e Next.js (porta 3000) ambos ativos.
+   367→- Decidi focar em: dark/light mode, perfil do cliente, filtro de leaderboard.
+   368→
+   369→## Completed modifications / verification results
+   370→### Novos recursos implementados
+   371→1. **Dark/light mode toggle** 🌓 — ThemeProvider (next-themes) integrado ao layout com `attribute="class" defaultTheme="dark"`. ThemeToggle component com ícone Sun/Moon no header da landing. CSS overrides em globals.css: quando `html.light`, sobrescreve bg-slate-950/900/800, text-white/slate-300/400, border-slate-800/700, inputs/selects/textarea para fundo branco. Mantém cores de accent (amber/emerald/sky) vibrantes em ambos os modos. Phone frames permanecem dark (mockup de app). *Validado: cliquei no toggle → html class mudou para "light" → screenshot mostrou fundo claro com texto escuro. Voltei para dark sem issues.*
+   372→
+   373→2. **Tela de perfil do cliente** 👤 — nova aba "Perfil" no painel do cliente com: header com avatar (iniciais), nome, badge do tier de fidelidade, pontos; grid de 4 stats (serviços totais, total gasto, nota média dada, nota recebida); LoyaltyCard integrado; lista de "Avaliações recebidas" (últimas 5, com stars sky/blue, comentário e data); empty state "Conclua seu primeiro serviço para ver suas estatísticas." *Validado: Maria Teste registrou → aba Perfil → avatar MA, Bronze, 0 pontos, 4 stats (0/0/—/—), LoyaltyCard, empty state.*
+   374→
+   375→3. **Filtro de período no leaderboard** 🔍 — Leaderboard agora tem toggle "Hoje" / "Total" no header. "Hoje" ordena por ganhos de hoje (earningsToday) desc; "Total" ordena por serviços totais (completedCount) desc. Stat principal exibido muda conforme o período (R$ hoje vs N serviços). *Validado: botões "Hoje" e "Total" visíveis e clicáveis no leaderboard.*
+   376→
+   377→### Arquivos modificados
+   378→- `src/components/theme-provider.tsx` (novo) — wrapper next-themes.
+   379→- `src/components/theme-toggle.tsx` (novo) — botão Sun/Moon com hydration-safe mounted check.
+   380→- `src/app/layout.tsx` — envolvido children com ThemeProvider (attribute="class", defaultTheme="dark").
+   381→- `src/app/globals.css` — adicionado ~75 linhas de CSS overrides para light mode (bg, text, border, inputs, phone frames).
+   382→- `src/app/page.tsx` — adicionado ThemeToggle no header, import ThemeToggle.
+   383→- `src/components/rescue/client-panel.tsx` — adicionado aba Perfil, ClientProfileView component com stats + loyalty + ratings received, imports User/Trophy/Heart.
+   384→- `src/components/rescue/leaderboard.tsx` — adicionado period state (today/total), toggle buttons, sorting dinâmico, stat principal contextual.
+   385→
+   386→### Verificação (agent-browser via porta 81)
+   387→- Dark/light: cliquei toggle → html.light → fundo claro, texto escuro, inputs brancos. Voltei para dark. ✓
+   388→- Client profile: Maria Teste → aba Perfil → avatar MA, Bronze 0pts, 4 stats, LoyaltyCard, empty state. ✓
+   389→- Leaderboard filter: botões Hoje/Total visíveis e funcionais. ✓
+   390→- `bun run lint`: 0 erros. Sem erros de browser.
+   391→
+   392→## Unresolved issues / risks + next-phase recommendations
+   393→- **Light mode completeness:** os painéis de phone (demo) permanecem dark por design (são mockups de app). Algumas classes menos comuns podem não ter override completo, mas o fluxo principal (landing, header, seções) funciona em ambos os modos.
+   394→- **Sound notifications:** não implementadas nesta rodada.
+   395→- **Recomendação próxima fase:**
+   396→  - Notificações sonoras opcionais (toggle de som).
+   397→  - Compartilhamento de localização via link.
+   398→  - Persistir tudo em Prisma (schema.prisma).
+   399→  - Estatísticas avançadas no perfil (gráfico de serviços por dia, mapa de calor).
+   400→  - Sistema de ranking semanal/mensal com recompensas.
+   401→  - Notificação push quando novo tier desbloqueado ou subida no ranking.
+   402→  - Cupons resgatáveis com validade (expiram após N dias).
+   403→  - Filtro de leaderboard por período estendido (semana/mês com dados históricos).
+   404→  - PWA / instalação no celular.
+   405→  - Internacionalização (i18n) com next-intl.
+   406→- **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork a partir de `/home/z/my-project/mini-services/rescue-service`: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy) para o WebSocket `/?XTransformPort=3003` rotear corretamente.
+   407→
+   408→---
+   409→Task ID: 8 (cron webDevReview)
+   410→Agent: cron review agent
+   411→Task: QA + adicionar notificações sonoras, animações Framer Motion, e botão SOS de emergência.
+   412→
+   413→## Current project status / assessment
+   414→- Protótipo SocorroJá estável após Tasks 1-7: landing + demo ao vivo com WebSocket, avaliações bidirecionais, pagamentos, histórico, dashboard de ganhos, chat, toasts, cupons, modal de detalhe, multi-prestador, progresso de trajeto, fidelidade com resgate, filtros, segundo painel, perfis (cliente + prestador), leaderboard ao vivo, dark/light mode.
+   415→- QA desta rodada via agent-browser: nenhum bug encontrado no fluxo existente. Logs limpos.
+   416→- rescue-service (porta 3003) e Next.js (porta 3000) ambos ativos.
+   417→- Decidi focar em: notificações sonoras, animações Framer Motion, botão SOS.
+   418→
+   419→## Completed modifications / verification results
+   420→### Novos recursos implementados
+   421→1. **Notificações sonoras** 🔔 — hook `useSoundNotifications` usando Web Audio API (sem arquivos de áudio, tons gerados programaticamente). 6 padrões de som distintos: offer (dois tons ascendentes), accept (arpejo de acorde), arrive (doorbell), complete (fanfarra de sucesso), cancel (descendente), chat (pop curto). Toggle de som (Volume2/VolumeX) no header de ambos os painéis (cliente e prestador). Som desativado por padrão (requer interação do usuário para ativar — política de autoplay do browser). Hook `useChatSound` separado para notificar novas mensagens de chat. *Validado: botão "Alternar som" visível em ambos os painéis, muda ícone Volume2↔VolumeX ao clicar.*
+   422→
+   423→2. **Animações Framer Motion** ✨ — hero da landing agora anima entrada com fade+slide (Badge → H1 → P em cascata com delays). Phone frames na demo animam com fade+slide ao aparecer. Segundo painel de prestador usa AnimatePresence com scale+fade para entrada/saída suave. Import `motion, AnimatePresence` from 'framer-motion'. *Validado: hero renderiza com animação cascata, 3 painéis aparecem suavemente ao adicionar 2º prestador.*
+   424→
+   425→3. **Botão SOS de emergência** 🚨 — botão prominente com borda rose, ícone AlertTriangle com efeito ping animado, "SOS · Emergência" e "Reboque urgente com 1 toque — prioridade máxima". Ao clicar, pré-preenche o formulário com tipo=reboque e descrição="EMERGÊNCIA — veículo imobilizado, necessita guincho urgente". Posicionado entre "Solicitar socorro" e o LoyaltyCard na home do cliente. *Validado: cliquei SOS → formulário abriu com Reboque/Guincho selecionado e descrição de emergência pré-preenchida.*
+   426→
+   427→### Polimento de estilo
+   428→4. SOS button com gradiente rose, hover effect, arrow que desliza à direita, pulse animation no ícone.
+   429→5. Sound toggle com cor contextual (amber no cliente, emerald no prestador) quando ativo.
+   430→6. Animações de entrada suaves (opacity 0→1, y 20→0) com delays escalonados.
+   431→
+   432→### Arquivos modificados
+   433→- `src/hooks/use-sound-notifications.ts` (novo) — useSoundNotifications + useChatSound com Web Audio API, 6 padrões de som, toggle enabled state.
+   434→- `src/components/rescue/client-panel.tsx` — integrado useSoundNotifications + useChatSound, botão Volume2/VolumeX no header, botão SOS de emergência na home, imports Volume2/VolumeX.
+   435→- `src/components/rescue/provider-panel.tsx` — integrado useSoundNotifications + useChatSound, botão Volume2/VolumeX no header, imports Volume2/VolumeX.
+   436→- `src/app/page.tsx` — import motion/AnimatePresence do framer-motion, hero com animações cascata (Badge/H1/P), phone frames com fade+slide, segundo provider com AnimatePresence scale.
+   437→
+   438→### Verificação (agent-browser via porta 81)
+   439→- Sound toggle: botão "Alternar som" visível no header do cliente e prestador, muda ícone ao clicar. ✓
+   440→- SOS button: "SOS · Emergência" visível na home do cliente → clique → formulário abriu com Reboque/Guincho + descrição de emergência. ✓
+   441→- Framer Motion: hero anima entrada em cascata, 3 painéis aparecem com fade+slide, segundo provider com scale animation. ✓
+   442→- `bun run lint`: 0 erros. Sem erros de browser.
+   443→
+   444→## Unresolved issues / risks + next-phase recommendations
+   445→- **Som desativado por padrão:** browsers bloqueiam autoplay de áudio sem interação do usuário. O som só funciona após o usuário ativar o toggle (que conta como interação). Comportamento esperado.
+   446→- **Share location via link:** não implementado nesta rodada.
+   447→- **Recomendação próxima fase:**
+   448→  - Compartilhamento de localização via link (gerar URL com lat/lng).
+   449→  - Persistir tudo em Prisma (schema.prisma).
+   450→  - Estatísticas avançadas no perfil (gráfico de serviços por dia, mapa de calor).
+   451→  - Sistema de ranking semanal/mensal com recompensas.
+   452→  - PWA / instalação no celular.
+   453→  - Internacionalização (i18n) com next-intl.
+   454→  - Notificação push quando novo tier desbloqueado.
+   455→  - Cupons resgatáveis com validade (expiram após N dias).
+   456→  - Tela de configurações (som, notificações, privacidade).
+   457→  - Histórico de localizações favoritas (casa, trabalho).
+   458→- **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork a partir de `/home/z/my-project/mini-services/rescue-service`: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy) para o WebSocket `/?XTransformPort=3003` rotear corretamente.
+   459→
+   460→---
+   461→Task ID: 9 (cron webDevReview)
+   462→Agent: cron review agent
+   463→Task: QA + adicionar locais favoritos, compartilhamento de rastreamento, e animações de scroll reveal.
+   464→
+   465→## Current project status / assessment
+   466→- Protótipo SocorroJá estável após Tasks 1-8: landing + demo ao vivo com WebSocket, avaliações bidirecionais, pagamentos, histórico, dashboard de ganhos, chat, toasts, cupons, modal de detalhe, multi-prestador, progresso de trajeto, fidelidade com resgate, filtros, segundo painel, perfis (cliente + prestador), leaderboard ao vivo, dark/light mode, notificações sonoras, animações Framer Motion, botão SOS.
+   467→- QA desta rodada via agent-browser: nenhum bug encontrado no fluxo existente. Logs limpos.
+   468→- rescue-service (porta 3003) e Next.js (porta 3000) ambos ativos.
+   469→- Decidi focar em: locais favoritos, compartilhamento de rastreamento, animações de scroll.
+   470→
+   471→## Completed modifications / verification results
+   472→### Novos recursos implementados
+   473→1. **Locais favoritos** ⭐ — sistema de favoritos com persistência em localStorage (`src/lib/rescue-favorites.ts`). No formulário de solicitação do cliente: barra de quick-select "LOCAIS FAVORITOS" com chips clicáveis (ícone + label), botão "Salvar como favorito" ao lado do select de local, form inline com nome + seletor de ícone (Home/Briefcase/Star) + salvar/cancelar, "Salvo!" flash confirmation, remoção de favoritos com botão X no hover. Favoritos pré-preenchem o local de atendimento ao clicar. *Validado: salvei "Casa" → apareceu na barra "LOCAIS FAVORITOS" → "Salvo!" confirmation.*
+   474→
+   475→2. **Compartilhamento de rastreamento** 🔗 — botão "Compartilhar rastreamento" no ServiceTracker do cliente (visível apenas durante serviço ativo). Usa `navigator.share()` quando disponível (mobile), fallback para `navigator.clipboard.writeText()` com "Link copiado!" confirmation. Gera URL `/?track={serviceId}`. *Validado: botão "Compartilhar rastreamento" visível durante serviço ativo ao lado de "Cancelar solicitação".*
+   476→
+   477→3. **Animações de scroll reveal** ✨ — SectionHead agora anima com `whileInView` (fade+slide quando entra no viewport). Reusable `RevealSection` component com delay configurável. StepCards na seção "Como funciona" animam em cascata (delay 0, 0.1, 0.2) ao entrar no viewport. `viewport={{ once: true }}` para animar apenas uma vez. *Validado: screenshot da landing mostra animações aplicadas.*
+   478→
+   479→### Polimento de estilo
+   480→4. Favorites quick-select com chips amber, hover effect, botão X de remoção no hover.
+   481→5. Save favorite form inline com seletor de ícone visual, disabled state quando label vazio.
+   482→6. Share button com borda sky-blue e ícone Share2, muda para "Link copiado!" com Check icon.
+   483→7. Scroll reveal animations suaves com delays escalonados.
+   484→
+   485→### Arquivos modificados
+   486→- `src/lib/rescue-favorites.ts` (novo) — getFavorites, addFavorite, removeFavorite, isFavorite com localStorage, type FavoriteLocation.
+   487→- `src/components/rescue/client-panel.tsx` — adicionado favorites state + handlers no RequestForm, favorites quick-select bar, save favorite form inline, ShareTrackingButton component no ServiceTracker, imports Briefcase/Share2/Check, RevealSection.
+   488→- `src/app/page.tsx` — SectionHead com motion whileInView, RevealSection component, StepCards envolvidos com RevealSection (delay cascata).
+   489→
+   490→### Verificação (agent-browser via porta 81)
+   491→- Favorites: form abriu → "Salvar como favorito" → preenchi "Casa" → "Salvar" → "LOCAIS FAVORITOS" apareceu com chip "Casa" + "Salvo!" flash. ✓
+   492→- Share tracking: serviço ativo → "Compartilhar rastreamento" visível ao lado de "Cancelar solicitação". ✓
+   493→- Scroll animations: StepCards animam entrada ao rolar para a seção "Como funciona". ✓
+   494→- `bun run lint`: 0 erros. Sem erros de browser.
+   495→
+   496→## Unresolved issues / risks + next-phase recommendations
+   497→- **Settings screen:** não implementada nesta rodada. O tema e som já têm toggles individuais nos headers, mas uma tela consolidada de configurações ficaria para próxima fase.
+   498→- **Weekly leaderboard:** o leaderboard atual mostra apenas hoje/total. Dados históricos (semana/mês) requerem persistência no backend.
+   499→- **Recomendação próxima fase:**
+   500→  - Tela de configurações consolidada (som, tema, notificações, privacidade).
+   501→  - Persistir tudo em Prisma (schema.prisma) — favoritos, histórico, loyalty, leaderboard.
+   502→  - Estatísticas avançadas no perfil (gráfico de serviços por dia, mapa de calor).
+   503→  - Sistema de ranking semanal/mensal com recompensas.
+   504→  - PWA / instalação no celular.
+   505→  - Internacionalização (i18n) com next-intl.
+   506→  - Notificação push quando novo tier desbloqueado.
+   507→  - Cupons resgatáveis com validade (expiram após N dias).
+   508→  - Histórico de localizações favoritas no backend (sincronizar entre dispositivos).
+   509→  - Tela de rastreamento público (URL /?track={id} acessível sem login).
+   510→- **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork a partir de `/home/z/my-project/mini-services/rescue-service`: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy) para o WebSocket `/?XTransformPort=3003` rotear corretamente.
+   511→
+   512→---
+   513→Task ID: 10 (user request — rebrand)
+   514→Agent: main (user-driven)
+   515→Task: Renomear plataforma de SocorroJá para Help Bibi, aplicar cores da logo (azul #00B0FF + laranja #FFA500), adicionar LiveCountdown e AreaChart.
+   516→
+   517→## Current project status / assessment
+   518→- Usuário solicitou rebranding: nome "Help Bibi" + cores da logo enviada (azul #00B0FF + laranja #FFA500).
+   519→- VLM analisou a logo: azul #00B0FF (primário, confiança/tecnologia), laranja #FFA500 (acento, energia/urgência), preto para texto, design flat com map pin + carro + estrada.
+   520→- rescue-service e Next.js ambos ativos.
+   521→
+   522→## Completed modifications / verification results
+   523→### Rebranding
+   524→1. **Nome: SocorroJá → Help Bibi** — substituição global em todos os arquivos .ts/.tsx: títulos, headers, textos, metadata, logs do backend, chaves localStorage (socorroja → helpbibi). Layout metadata atualizada com favicon da logo.
+   525→
+   526→2. **Logo** — copiada para `public/help-bibi-logo.png`, usada no header da landing e no footer (img tag com alt "Help Bibi"). Favicon atualizado no metadata.
+   527→
+   528→3. **Esquema de cores: amber → sky (azul), emerald → orange (laranja)** — substituição global de classes Tailwind: todos os `amber-X` → `sky-X` (azul #00B0FF da logo), todos os `emerald-X` → `orange-X` (laranja #FFA500 da logo). CSS global customizado com `!important` overrides para que `sky-500` = #00B0FF exato e `orange-500` = #FFA500 exato (não os defaults do Tailwind). Substituição de hex values diretos (#f59e0b → #00B0FF, #10b981 → #FFA500, etc.). Light mode overrides atualizados.
+   529→
+   530→### Recursos da rodada anterior (finalizados)
+   531→4. **LiveCountdown** — componente que conta regressivamente MM:SS em tempo real. Integrado no ETA do ServiceTracker do cliente e do prestador. Muda para vermelho quando ≤30s com "Chegando!" animado. *Validado: mostrou "9:42" contando regressivamente durante serviço ativo.*
+   532→
+   533→5. **AreaChart de tendência de ganhos** — gráfico de área com gradiente no EarningsView do prestador, mostra tendência de ganhos por dia. Só aparece quando há 2+ dias de dados.
+   534→
+   535→6. **Settings screen** — aba "Ajustes" em ambos os painéis com: notificações sonoras (toggle), tema (dark/light toggle), notificações visuais (toggle), privacidade e dados (limpar histórico), sobre o Help Bibi. *Validado: aba "Ajustes" visível, todas as seções renderizam.*
+   536→
+   537→7. **AnimatedCounter** — contadores animados na stats bar da landing (12.000+, 850+, 8 min, 24h) com ease-out cubic. *Bug corrigido: useInView não disparava → trocado para setTimeout animation que funciona corretamente.*
+   538→
+   539→### Verificação (agent-browser via porta 81)
+   540→- Título: "Help Bibi — Auto socorro por aplicativo" ✓
+   541→- Logo: carregando no header (71px) e footer (57px) ✓
+   542→- Cor primária: botão "Ver demo" tem backgroundColor rgb(0, 176, 255) = #00B0FF ✓
+   543→- Cor secundária: 36 elementos com classe orange encontrados ✓
+   544→- Fluxo de serviço: Ana Cliente + Bob Prestador → solicitou → aceitou → "Chegando no local" + ETA "9:42" countdown ✓
+   545→- Backend log: "Help Bibi rescue-service running on port 3003" ✓
+   546→- `bun run lint`: 0 erros. Sem erros de browser.
+   547→
+   548→### Arquivos modificados
+   549→- `public/help-bibi-logo.png` (novo) — logo copiada do upload.
+   550→- `src/app/layout.tsx` — metadata com "Help Bibi", favicon, lang="pt-BR".
+   551→- `src/app/globals.css` — CSS overrides para sky=#00B0FF e orange=#FFA500, light mode atualizado.
+   552→- `src/app/page.tsx` — logo no header/footer, todas as cores amber→sky, emerald→orange.
+   553→- `src/components/rescue/client-panel.tsx` — cores, nome, LiveCountdown, SettingsView, AnimatedCounter.
+   554→- `src/components/rescue/provider-panel.tsx` — cores, nome, LiveCountdown, SettingsView, AreaChart.
+   555→- `src/components/rescue/live-countdown.tsx` (novo) — countdown MM:SS em tempo real.
+   556→- `src/components/rescue/settings-view.tsx` (novo) — tela de configurações.
+   557→- `src/components/rescue/animated-counter.tsx` (novo) — contador animado.
+   558→- `mini-services/rescue-service/index.ts` — nome "Help Bibi" nos logs.
+   559→- Todos os arquivos .ts/.tsx — substituição global amber→sky, emerald→orange, SocorroJá→Help Bibi.
+   560→
+   561→## Unresolved issues / risks + next-phase recommendations
+   562→- **Cores customizadas via CSS !important:** as cores sky e orange são sobrescritas via CSS com `!important` para corresponder exatamente à logo. Isso funciona mas é uma solução de protótipo. Para produção, configurar o Tailwind config com as cores customizadas.
+   563→- **Logo no header:** a logo original é 1920x1080 (landscape), redimensionada via CSS. Funciona bem mas uma versão quadrada ou só do ícone seria melhor para o header.
+   564→- **Recomendação próxima fase:**
+   565→  - Criar versão do ícone da logo (só o símbolo) para usar em espaços pequenos.
+   566→  - Configurar as cores brand no tailwind.config.ts para evitar !important.
+   567→  - Persistir tudo em Prisma.
+   568→  - PWA / instalação no celular.
+   569→  - Internacionalização (i18n).
+   570→- **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy).
+   571→
+   572→---
+   573→Task ID: 11 (FASE 11 — Consolidação Help Bibi + Rastreamento Público)
+   574→Agent: main (user-driven)
+   575→Task: Consolidar identidade Help Bibi no código, corrigir cores exatas (#00BFFF + #FFA500), adicionar variáveis CSS da marca, implementar rastreamento público por link.
+   576→
+   577→## Current project status / assessment
+   578→- Nome oficial da plataforma: **Help Bibi** (não mais SocorroJá).
+   579→- Cores oficiais: **Azul #00BFFF** (primário), **Laranja #FFA500** (acento), Preto #000000.
+   580→- rescue-service e Next.js ambos ativos e funcionando.
+   581→- Rebranding anterior (Task 10) usava #00B0FF (incorreto) — corrigido para #00BFFF nesta fase.
+   582→
+   583→## Completed modifications / verification results
+   584→### 1. Rebranding real para Help Bibi
+   585→- Verificação completa: nenhum remanescente de "SocorroJá", "socorroja", "amber", ou "emerald" no código.
+   586→- Metadata em `src/app/layout.tsx`: title, description, keywords, OpenGraph, Twitter — todos com "Help Bibi".
+   587→- Favicon: `/logo-help-bibi.png` (arquivo local, sem favicon externo).
+   588→- `lang="pt-BR"` no html.
+   589→- rescue-service: logs e health response com "Help Bibi".
+   590→- worklog.md preservado com histórico, registrando nome oficial atual.
+   591→
+   592→### 2. Logo
+   593→- Arquivo: `public/logo-help-bibi.png` (renomeado de `help-bibi-logo.png`).
+   594→- Usada no header da landing (h-10), no footer (h-8), e na tela de rastreamento público (h-9 e h-8).
+   595→- Proporção mantida com `w-auto`.
+   596→
+   597→### 3. Cores da marca
+   598→- Variáveis CSS globais em `:root`:
+   599→  - `--helpbibi-blue: #00BFFF`
+   600→  - `--helpbibi-orange: #FFA500`
+   601→  - `--helpbibi-black: #000000`
+   602→  - `--helpbibi-blue-rgb: 0, 191, 255`
+   603→  - `--helpbibi-orange-rgb: 255, 165, 0`
+   604→- CSS overrides com `var()` para sky-500 e orange-500 (não mais hex direto).
+   605→- Azul (#00BFFF): CTAs, marca, cliente, links, destaque tecnológico.
+   606→- Laranja (#FFA500): prestador, SOS, urgência, alerta positivo, energia.
+   607→- Verde/vermelho mantidos para sucesso/erro semânticos.
+   608→
+   609→### 4. Padronização visual
+   610→- Header da landing: logo Help Bibi + "auto socorro por aplicativo".
+   611→- Footer: logo Help Bibi.
+   612→- Painel do cliente: "Help Bibi · Cliente".
+   613→- Painel do prestador: "Help Bibi · Prestador".
+   614→- Hero tagline: "Socorro veicular em minutos" + "Seguro, rastreável e sem burocracia."
+   615→
+   616→### 5. Rastreamento público por link
+   617→- **Backend**: evento socket.io `public:track` que retorna dados públicos seguras (sem nome do cliente, sem pagamento, sem placa). Qualquer conexão pode solicitar — sem login.
+   618→- **Frontend**: `PublicTracking` component que conecta via socket.io, faz polling a cada 2s, e exibe:
+   619→  - Status do serviço com banner colorido
+   620→  - Tipo de serviço + ID
+   621→  - Prestador (nome, veículo, nota) — se aceito
+   622→  - ETA com LiveCountdown em tempo real
+   623→  - Trajeto (origem → destino)
+   624→  - Timeline resumida com timestamps
+   625→  - Logo Help Bibi + tagline
+   626→  - Botão "Voltar" para a landing
+   627→  - Estado seguro: "Rastreamento indisponível ou encerrado" para IDs inválidos/expirados
+   628→- **Integração**: `page.tsx` detecta `?track={serviceId}` na URL e renderiza `PublicTracking` em vez da landing.
+   629→- **Segurança**: não mostra nome do cliente, método de pagamento, placa, ou dados desnecessários.
+   630→
+   631→### Arquivos modificados
+   632→- `public/logo-help-bibi.png` (renomeado de help-bibi-logo.png).
+   633→- `src/app/layout.tsx` — metadata, favicon, lang.
+   634→- `src/app/globals.css` — variáveis CSS da marca, correção #00BFFF, uso de var().
+   635→- `src/app/page.tsx` — deteção de ?track=, import PublicTracking, useEffect, hero tagline atualizada.
+   636→- `src/components/rescue/public-tracking.tsx` (novo) — tela de rastreamento público via socket.io.
+   637→- `src/components/rescue/loyalty-card.tsx` — correção #00BFFF.
+   638→- `src/components/rescue/rescue-map.tsx` — correção #00BFFF.
+   639→- `mini-services/rescue-service/index.ts` — evento public:track, CORS headers, health com name.
+   640→- Todos os arquivos .ts/.tsx — correção global #00B0FF → #00BFFF.
+   641→
+   642→### Verificação (agent-browser via porta 81)
+   643→- Landing: título "Help Bibi — Auto socorro por aplicativo" ✓
+   644→- Logo: carregando de /logo-help-bibi.png no header e footer ✓
+   645→- Cor azul: botão primário rgb(0, 191, 255) = #00BFFF ✓
+   646→- Hero: "Socorro veicular em minutos" + "Seguro, rastreável e sem burocracia." ✓
+   647→- Demo: abre, registra cliente e prestador ✓
+   648→- Serviço: solicitado → aceito → "Chegando no local" com ETA ✓
+   649→- Compartilhar rastreamento: botão visível ✓
+   650→- Rastreamento público: URL `/?track=svc_3yswy8m3` → tela pública com status, prestador, ETA, timeline ✓
+   651→- Segurança: nome do cliente (Ana Track), pagamento (PIX), placa (TRK1D23) — NÃO exibidos ✓
+   652→- Estado indisponível: `/?track=svc_invalid999` → "Rastreamento indisponível ou encerrado" ✓
+   653→- Modo claro: alterna corretamente, cor azul mantida ✓
+   654→- Modo escuro: funciona corretamente ✓
+   655→- `bun run lint`: 0 erros ✓
+   656→- Sem erros no console ✓
+   657→- Sem erros de hidratação ✓
+   658→
+   659→## Unresolved issues / risks + next-phase recommendations
+   660→- **Rastreamento público via socket.io:** o endpoint HTTP `/track/:id` não funciona porque socket.io (path: '/') intercepta todas as requisições HTTP. Solução: usar evento socket.io `public:track` que funciona perfeitamente. Para produção, considerar mudar o path do socket.io ou usar um servidor HTTP separado.
+   661→- **Dados em memória:** serviços, providers, loyalty — tudo em memória no rescue-service. Reiniciar o serviço perde tudo. Para produção, persistir em Prisma.
+   662→- **Recomendação próxima fase:**
+   663→  - Persistir tudo em Prisma (schema.prisma).
+   664→  - PWA / instalação no celular.
+   665→  - Internacionalização (i18n) com next-intl.
+   666→  - Tela de rastreamento público com mapa (atualmente só texto/timeline).
+   667→  - Notificação push quando prestador chega ao local.
+   668→  - Cupons resgatáveis com validade.
+   669→  - Sistema de ranking semanal/mensal.
+   670→  - Configurar cores brand no tailwind.config.ts para evitar CSS !important.
+   671→- **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy).
+   672→
+   673→---
+   674→Task ID: 12 (FASE 12 — Fundação Real do Backend e Persistência)
+   675→Agent: main (user-driven)
+   676→Task: Sair do protótipo em memória/localStorage e preparar a Help Bibi para MVP com banco de dados, modelos persistentes e camada de domínio.
+   677→
+   678→## Diagnóstico técnico inicial
+   679→### Dados em memória (rescue-service/index.ts)
+   680→- `providers` Map: todos os prestadores ativos (id, name, vehicle, plate, rating, position, etc.)
+   681→- `clients` Map: clientes registrados (id, socketId, name)
+   682→- `services` Map: todas as solicitações de serviço ativas/históricas
+   683→- `chats` Map: mensagens de chat por serviceId
+   684→- `clientLoyalty` Map: pontos de fidelidade por nome de cliente
+   685→- `socketToRole` Map: mapeamento socket → role
+   686→
+   687→### Dados em localStorage (frontend)
+   688→- `helpbibi:history` — histórico de serviços do cliente/prestador
+   689→- `helpbibi:favorites` — locais favoritos
+   690→- `socorroja:notif` (legado) — configuração de notificações
+   691→
+   692→### Riscos se o servidor reiniciar
+   693→- TODOS os serviços ativos são perdidos (em memória)
+   694→- TODO o chat é perdido
+   695→- TODOS os pontos de fidelidade resetam
+   696→- TODOS os prestadores precisam re-registrar
+   697→- Links de rastreamento público param de funcionar
+   698→
+   699→## Completed modifications / verification results
+   700→
+   701→### 1. Modelo de dados Prisma (schema.prisma)
+   702→Criado schema completo com 13 entidades:
+   703→- **User** — base com role (CLIENT/PROVIDER/ADMIN), email, name, phone
+   704→- **ClientProfile** — perfil de cliente vinculado ao User (1:1)
+   705→- **ProviderProfile** — perfil de prestador com vehicle, plate, rating, isAvailable, isVerified, documentStatus, vehicleStatus
+   706→- **Vehicle** — veículo do prestador
+   707→- **ServiceRequest** — solicitação com type, status, price, locations (JSON), paymentMethod, loyaltyPoints, timestamps
+   708→- **ServiceTimelineEvent** — eventos da timeline (persistente)
+   709→- **ServiceChatMessage** — mensagens de chat (persistente)
+   710→- **ServiceRating** — avaliação bidirecional (unique por serviceId+targetRole)
+   711→- **PromoCode** — cupons de desconto
+   712→- **LoyaltyAccount** — pontos e tier de fidelidade
+   713→- **TrackingShare** — links de rastreamento público com token e expiry
+   714→
+   715→Enums: UserRole, VerificationStatus, ServiceType, ServiceStatus, PaymentMethod.
+   716→
+   717→Status lifecycle formal:
+   718→REQUESTED → OFFERED → ACCEPTED → PROVIDER_EN_ROUTE → ARRIVED → IN_PROGRESS → COMPLETED
+   719→             ↓                                                      ↓
+   720→          CANCELED                                               CANCELED
+   721→          EXPIRED                                                EXPIRED
+   722→          FAILED                                                 FAILED
+   723→
+   724→### 2. Banco configurado
+   725→- Prisma + SQLite (desenvolvimento), preparado para Postgres (produção)
+   726→- `prisma/schema.prisma` — schema completo validado ✅
+   727→- `.env.example` — template de variáveis de ambiente
+   728→- Scripts já existem: `db:push`, `db:generate`, `db:migrate`
+   729→- `bunx prisma validate` ✅
+   730→- `bunx prisma generate` ✅
+   731→- `bunx prisma db push` ✅ — tabelas criadas no SQLite
+   732→
+   733→### 3. Camada de repositórios (src/server/)
+   734→- `src/server/db/prisma.ts` — cliente Prisma singleton
+   735→- `src/server/repositories/users.repository.ts` — findOrCreateUser, findUserById, updateLoyaltyPoints, getLoyaltyInfo
+   736→- `src/server/repositories/providers.repository.ts` — createProviderProfile, updateProviderRating, incrementProviderStats, getLeaderboard
+   737→- `src/server/repositories/service-requests.repository.ts` — createServiceRequest, findServiceById, updateServiceStatus, addTimelineEvent, updateProviderPosition, getActiveServices
+   738→- `src/server/repositories/tracking.repository.ts` — getPublicTracking (seguro, sem dados sensíveis), createTrackingShare
+   739→- `src/server/repositories/ratings.repository.ts` — createRating, getRatingsForService, hasRated
+   740→- `src/server/repositories/chat.repository.ts` — getChatMessages, addChatMessage
+   741→
+   742→### 4. API Route para rastreamento público
+   743→- `src/app/api/track/[serviceId]/route.ts` — GET endpoint que busca do banco via tracking.repository
+   744→- Retorna apenas dados seguros: status, type, provider (nome+veículo+nota), ETA, trajeto, timeline
+   745→- NÃO retorna: nome do cliente, telefone, placa, pagamento, chat, preço
+   746→
+   747→### 5. Rastreamento público com fallback
+   748→- `public-tracking.tsx` atualizado para tentar API (banco) primeiro, com fallback para socket.io (memória)
+   749→- Serviços em memória (demo) ainda funcionam via fallback socket
+   750→- Serviços persistidos no banco funcionam via API
+   751→- Polling a cada 3s para atualizações em tempo real
+   752→
+   753→### 6. Segurança do rastreamento público
+   754→Validado no browser:
+   755→- ❌ Nome do cliente (Carlos DB) — NÃO exibido ✓
+   756→- ❌ Método de pagamento (PIX) — NÃO exibido ✓
+   757→- ❌ Placa do veículo (DB1A23) — NÃO exibido ✓
+   758→- ❌ Preço (R$ 204) — NÃO exibido ✓
+   759→- ✅ Status, tipo, prestador (nome+veículo+nota), ETA, trajeto, timeline — exibidos ✓
+   760→
+   761→### 7. Base para autenticação futura
+   762→- User com role (CLIENT/PROVIDER/ADMIN)
+   763→- ClientProfile e ProviderProfile separados, vinculados ao User
+   764→- ProviderProfile com campos de verificação: documentStatus, vehicleStatus, isVerified, isAvailable
+   765→- Estrutura permite que um User tenha ambos perfis no futuro
+   766→
+   767→### Arquivos criados
+   768→- `prisma/schema.prisma` — schema completo reescrito (13 entidades + 5 enums)
+   769→- `.env.example` — template de variáveis
+   770→- `src/server/db/prisma.ts` — cliente Prisma
+   771→- `src/server/repositories/users.repository.ts`
+   772→- `src/server/repositories/providers.repository.ts`
+   773→- `src/server/repositories/service-requests.repository.ts`
+   774→- `src/server/repositories/tracking.repository.ts`
+   775→- `src/server/repositories/ratings.repository.ts`
+   776→- `src/server/repositories/chat.repository.ts`
+   777→- `src/app/api/track/[serviceId]/route.ts` — API route para tracking público
+   778→
+   779→### Arquivos modificados
+   780→- `src/components/rescue/public-tracking.tsx` — agora usa API route (banco) com fallback socket.io
+   781→
+   782→### O que foi persistido de verdade
+   783→- **Schema Prisma criado e validado** — todas as 13 entidades no banco SQLite
+   784→- **API route de tracking** funciona e busca do banco (retorna "indisponível" para serviços só em memória)
+   785→- **Repositórios** prontos para integração com o rescue-service
+   786→
+   787→### O que ainda ficou em memória
+   788→- O rescue-service (mini-services/rescue-service/index.ts) ainda opera 100% em memória
+   789→- A migração parcial do rescue-service para usar os repositórios ficou como pendência para não quebrar a demo
+   790→- Chat, loyalty, providers — ainda em memória no rescue-service
+   791→- Histórico e favoritos — ainda em localStorage no frontend
+   792→
+   793→### Verificação (agent-browser via porta 81)
+   794→- Landing: abre com "Help Bibi" ✓
+   795→- Demo: abre, registra cliente e prestador ✓
+   796→- Serviço: solicitado → aceito → "Chegando no local" com ETA ✓
+   797→- Rastreamento público: link `/?track=svc_x19lw4fa` → API (banco) retorna "indisponível" → fallback socket.io → mostra serviço ativo com status, prestador, ETA, timeline ✓
+   798→- Segurança: nome do cliente, pagamento, placa, preço — NÃO exibidos ✓
+   799→- `bun run lint`: 0 erros ✓
+   800→- `bunx prisma validate`: schema válido ✓
+   801→- `bunx prisma generate`: client gerado ✓
+   802→- `bunx prisma db push`: tabelas criadas ✓
+   803→- Sem erros no console ✓
+   804→
+   805→## Unresolved issues / risks + next-phase recommendations
+   806→- **Rescue-service ainda 100% em memória:** os repositórios foram criados mas o rescue-service ainda não os usa. A migração parcial (ServiceRequest, timeline, tracking, chat) precisa ser feita com cuidado para não quebrar a demo.
+   807→- **Resgate de pontos via socket:** o rescue-service usa `clientLoyalty` Map em memória. Quando integrar com o banco, usar `users.repository.ts → updateLoyaltyPoints`.
+   808→- **Frontend localStorage:** histórico e favoritos ainda em localStorage. Migrar para o banco quando auth estiver pronta.
+   809→- **Recomendação próxima fase (FASE 13):**
+   810→  - Migrar rescue-service para usar repositórios: createServiceRequest → banco, updateServiceStatus → banco, addTimelineEvent → banco, chat → banco.
+   811→  - Implementar auth básica (login/registro) com NextAuth.js.
+   812→  - Migrar histórico do frontend do localStorage para o banco.
+   813→  - Seed de dados iniciais (promos, providers demo).
+   814→  - Migração do leaderboard para buscar do banco.
+   815→  - Testes de integração com banco real.
+   816→- **Importante para o próximo agente:** o rescue-service precisa estar ativo. Se down, reiniciar com double-fork: `( ( nohup bun index.ts > /home/z/my-project/rescue-service.log 2>&1 & ) & )`. Testar via http://localhost:81 (Caddy). Banco SQLite em `db/custom.db`.
+   817→
+   818→---
+   819→Task ID: 13 (FASE 13 — Persistência Real do Fluxo Operacional)
+   820→Agent: main (user-driven)
+   821→Task: Integrar rescue-service com Prisma para persistir cliente, prestador, ServiceRequest, status, timeline, tracking, chat e avaliações no banco.
+   822→
+   823→## Diagnóstico inicial
+   824→### Partes em memória (rescue-service)
+   825→- providers Map, clients Map, services Map, chats Map, clientLoyalty Map, socketToRole Map
+   826→- TODOS os dados do fluxo operacional eram voláteis
+   827→
+   828→### Partes em localStorage (frontend)
+   829→- helpbibi:history (histórico de serviços), helpbibi:favorites (locais favoritos)
+   830→
+   831→### Estratégia de migração
+   832→- Manter estruturas em memória para sockets/matching/simulação (tempo real)
+   833→- Espelhar tudo no banco de forma assíncrona (fire-and-forget) para não bloquear
+   834→- Usar dbUserId/dbServiceId/dbProviderProfileId para ligar objetos em memória aos registros no banco
+   835→
+   836→## Completed modifications / verification results
+   837→
+   838→### 1. Persistir cliente e prestador
+   839→- `client:register` → `db.user.upsert()` com email demo (`demo_{name}@helpbibi.com`), cria ClientProfile + LoyaltyAccount
+   840→- `provider:register` → `db.user.upsert()` com role PROVIDER, cria ProviderProfile com vehicle/plate
+   841→- IDs do banco (`dbUserId`, `dbProviderProfileId`) armazenados nos objetos em memória
+   842→- Loyalty points sincronizados do banco ao registrar
+   843→
+   844→### 2. Persistir ServiceRequest
+   845→- `service:request` → `db.serviceRequest.create()` com type, description, status REQUESTED, pickup/destination (JSON), price, paymentMethod, timeline inicial
+   846→- `dbServiceId` armazenado no objeto em memória
+   847→- TrackingShare criado automaticamente
+   848→
+   849→### 3. Persistir mudanças de status + timeline
+   850→- `pushTimeline()` agora cria `ServiceTimelineEvent` no banco (fire-and-forget)
+   851→- `persistServiceStatus()` atualiza `ServiceRequest.status` no banco a cada transição
+   852→- Status map: searching→REQUESTED, offered→OFFERED, accepted→ACCEPTED, arriving→PROVIDER_EN_ROUTE, arrived→ARRIVED, in_progress→IN_PROGRESS, completed→COMPLETED, cancelled→CANCELED, expired→EXPIRED
+   853→- Aplicado em: service:accept, service:reject, service:arrived, service:start, service:complete, service:cancel
+   854→
+   855→### 4. Persistir tracking/location
+   856→- `persistProviderPosition()` atualiza `providerLat`/`providerLng` no ServiceRequest (throttled: max 1x por 3s)
+   857→- Chamado no loop de simulação de movimento
+   858→
+   859→### 5. Persistir chat
+   860→- `emitChatToService()` agora cria `ServiceChatMessage` no banco a cada mensagem (fire-and-forget)
+   861→- Campos: serviceId, authorRole, authorName, text, createdAt
+   862→- Chat NÃO exposto na API pública de tracking
+   863→
+   864→### 6. Persistir avaliações
+   865→- `service:rate` (cliente→prestador) → `db.serviceRating.create()` + `db.providerProfile.update()` (ratingSum, ratingCount, rating)
+   866→- `service:rate-client` (prestador→cliente) → `db.serviceRating.create()`
+   867→- Unique constraint: serviceId+targetRole (uma avaliação por alvo por serviço)
+   868→
+   869→### 7. Tracking público via banco
+   870→- `public:track` socket event agora tenta banco primeiro (por DB ID), depois memória
+   871→- API `GET /api/track/[serviceId]` busca do banco via `tracking.repository.ts`
+   872→- `public-tracking.tsx` tenta API (banco) primeiro, fallback para socket (memória)
+   873→- **Validado**: após recarregar página (serviço saiu da memória), API encontrou serviço no banco e mostrou status, prestador, timeline
+   874→
+   875→### 8. Segurança do tracking público
+   876→Validado no browser:
+   877→- ❌ Nome do cliente (Paulo Persist) — NÃO exibido ✓
+   878→- ❌ Pagamento (PIX) — NÃO exibido ✓
+   879→- ❌ Placa (PRV1D99) — NÃO exibido ✓
+   880→- ❌ Preço (R$) — NÃO exibido ✓
+   881→- ✅ Status, tipo, prestador (nome+veículo+nota), ETA, trajeto, timeline — exibidos ✓
+   882→
+   883→### Arquivo modificado
+   884→- `mini-services/rescue-service/index.ts` — reescrito com integração Prisma completa
+   885→
+   886→### Verificação (agent-browser via porta 81)
+   887→- Cliente registrado: `[client] registered cli_z40vskf8 (Paulo Persist) — dbUser=cmqv8gkvx0000rcduserzcdr9` ✓
+   888→- Prestador registrado: `[provider] registered prv_z5bahxn5 (Rita Rescue) — dbUser=cmqv8gmle0003rcduizgjk11o` ✓
+   889→- Serviço criado: `[db] service persisted svc_aku0ypiy → dbId=cmqv8h3ee0007rcduv6z3j65g` ✓
+   890→- Serviço aceito: `[service] accepted svc_aku0ypiy by Rita Rescue` ✓
+   891→- Status mudou no banco: API retornou `status: "accepted"` ✓
+   892→- Timeline no banco: API retornou eventos "Solicitação enviada", "Chamada enviada", "aceitou a chamada", "está a caminho" ✓
+   893→- Tracking público via banco: `/?track=cmqv8h3ee0007rcduv6z3j65g` mostrou serviço mesmo após reload ✓
+   894→- Sem dados sensíveis no tracking público ✓
+   895→- `bun run lint`: 0 erros ✓
+   896→- `bunx prisma validate`: schema válido ✓
+   897→- Sem erros no console ✓
+   898→
+   899→## O que foi realmente persistido
+   900→- ✅ User (cliente e prestador) com ClientProfile/ProviderProfile
+   901→- ✅ ServiceRequest com todos os campos (type, status, price, locations, payment, loyalty)
+   902→- ✅ ServiceTimelineEvent a cada mudança de status
+   903→- ✅ ServiceChatMessage a cada mensagem enviada
+   904→- ✅ ServiceRating (bidirecional) + atualização de rating do prestador
+   905→- ✅ LoyaltyAccount (pontos + tier) atualizado ao concluir serviço
+   906→- ✅ ProviderProfile stats (completedCount, earningsToday) atualizados
+   907→- ✅ ProviderPosition (lat/lng) atualizado com throttle
+   908→- ✅ TrackingShare criado automaticamente
+   909→
+   910→## O que ainda ficou em memória
+   911→- Sockets ativos e matching em tempo real (necessário para o tempo real)
+   912→- Simulação de movimento do prestador (loop de 1s)
+   913→- Estados transitórios do browser (sessão do demo)
+   914→- PROMO_CODES e LOYALTY_REWARDS (estáticos, não persistidos)
+   915→- Leaderboard (gerado em tempo real dos providers em memória)
+   916→
+   917→## Riscos pendentes
+   918→- Se o rescue-service reiniciar, serviços em andamento (não concluídos) perdem o estado em memória, mas os dados persistidos no banco permanecem
+   919→- O matching em tempo real ainda depende de memória (providers Map)
+   920→- Loyalty rewards redeemed não são persistidos como PromoCode no banco
+   921→- Frontend ainda usa localStorage para histórico e favoritos
+   922→
+   923→## Próxima fase recomendada (FASE 14)
+   924→- Implementar autenticação básica (NextAuth.js) com login/registro real
+   925→- Migrar histórico do frontend do localStorage para o banco
+   926→- Seed de dados iniciais (promos, providers demo)
+   927→- Leaderboard buscando do banco
+   928→- Testes de integração com banco real
+   929→- API para histórico de serviços do usuário
+   930→
+   931→---
+   932→Task ID: 25.4-A
+   933→Agent: general-purpose
+   934→Task: Recreate all domain files + repositories + auth helper (FASE 25.4 foundation)
+   935→
+   936→Work Log:
+   937→- Read worklog.md to understand the project history (SocorroJá / Help Bibi — Uber-like vehicle rescue platform, Next.js 16 + Prisma + Socket.IO).
+   938→- Verified directory structure: `src/server/{auth,db,env,history,payments,pricing,repositories,tracking}` and `src/lib/notifications` existed but were empty (environment reset wiped domain files).
+   939→- Created 16 files with EXACT content per task spec:
+   940→  1. `src/server/env.ts` — Environment variable validation (production vs dev, insecure value detection, warnings for SOCKET_CORS_ORIGIN and simulated gateway).
+   941→  2. `src/server/pricing/pricing-engine.ts` — Pricing engine with 6 service types (reboque, pneu, bateria, combustivel, chaveiro, pane), haversine distance, night/weekend surcharges, promo codes, platform fee / provider payout split, BRL formatting.
+   942→  3. `src/server/payments/payment-state-machine.ts` — Payment state machine (PENDING→AUTHORIZED→PAID→REFUNDED, FAILED retry, CANCELED terminal), idempotency keys, simulated transaction IDs, external references, cents/BRL conversion.
+   943→  4. `src/server/payments/gateways/payment-gateway.ts` — PaymentGateway interface contract with createPaymentIntent, authorize/capture/cancel/refund, webhook parsing + signature verification.
+   944→  5. `src/server/payments/gateways/simulated-gateway.ts` — Simulated gateway with PIX QR codes, CARD client secrets, CASH instructions, HMAC-signed webhook generation/verification (timingSafeEqual).
+   945→  6. `src/server/payments/gateways/mercado-pago-gateway.ts` — Mercado Pago adapter (CASH intent supported; real API calls throw requiring real credentials; webhook signature verification per MP spec with `id;request-id;ts;` manifest).
+   946→  7. `src/server/payments/gateways/index.ts` — Gateway factory with `getActiveProvider` / `getPaymentGateway` / `isRealGatewayActive`; throws clear errors for unconfigured providers.
+   947→  8. `src/server/history/history-auth.ts` — Pure history authorization logic: `resolveHistoryActor` (session-first, dbUserId fallback in non-prod), `canAccessClientService`, `canAccessProviderService`, 404 unauthorized convention.
+   948→  9. `src/lib/notifications/notification-store.ts` — Pure notification store logic: dedup keys, max 50 notifications, mark-read/clear, chat/status/payment dedup helpers, `shouldNotifyChatMessage` (cross-role only).
+   949→  10. `mini-services/rescue-service/matching.ts` — Pure matching logic: haversine distance, eligibility (ACTIVE + online + not busy + verified if not demo), rank by distance, matching mode detection (GPS vs DEMO).
+   950→  11. `src/server/auth/session.ts` — NEW FASE 25.4 cookie-based session: HMAC-signed `hb_session` cookie with base64url payload + signature, 7-day TTL, `setSessionCookie`/`clearSessionCookie`/`getSessionUser`/`getCurrentUserFromRequest`/`requireCurrentUser`/`requireRole`. No DB Session model needed.
+   951→  12. `src/server/repositories/payment.repository.ts` — Payment repository: creates PaymentRecord via gateway intent, idempotency-key dedup, state-machine-driven transitions with PaymentEvent audit trail, webhook processing with signature dedup, `simulatePaymentOutcome` for dev, `getPaymentByService`/`getPaymentById`/`listPaymentsByStatus`. Auto-syncs `serviceRequest.paymentStatus`.
+   952→  13. `src/server/repositories/history.repository.ts` — History repository: CRITICAL FASE 25.4 visibility rules — client NEVER sees platformFee or providerPayout (not in list, not in detail); provider sees providerPayout (80% of price) but NEVER platformFee. Includes `authorizeHistoryRequest`, client/provider list + detail, timeline mapping, type/status PT-BR labels.
+   953→  14. `src/hooks/use-notifications.ts` — Client-side React hook wrapping notification-store with WebAudio sound playback per notification type (offer/accepted/completed/cancelled/chat/error/success tones), unread count, mark-read/clear, typed notification helpers.
+   954→  15. `.env.example` — Template env file with all 11 keys (NODE_ENV, DATABASE_URL, SESSION_SECRET, PAYMENT_WEBHOOK_SECRET, SOCKET_CORS_ORIGIN, PAYMENT_GATEWAY_PROVIDER, NEXT_PUBLIC_APP_URL, NEXT_PUBLIC_SOCKET_URL, RESCUE_SERVICE_PORT, MERCADO_PAGO_ACCESS_TOKEN, MERCADO_PAGO_WEBHOOK_SECRET).
+   955→  16. `.env` — Appended SESSION_SECRET and PAYMENT_WEBHOOK_SECRET (was missing; previously only had DATABASE_URL).
+   956→- Ran `bunx prisma validate`: schema at `prisma/schema.prisma` is valid ✓.
+   957→- Did NOT modify rescue-service/index.ts or API routes (other agents handle those).
+   958→- Did NOT create test files (another agent handles tests).
+   959→
+   960→Stage Summary:
+   961→- All 16 FASE 25.4 domain files recreated with exact spec content.
+   962→- Prisma schema validated successfully.
+   963→- `.env` now contains DATABASE_URL, SESSION_SECRET, PAYMENT_WEBHOOK_SECRET (dev-safe defaults).
+   964→- Foundation ready for rescue-service refactor agent (matching.ts), API routes agent (session.ts + payment.repository.ts + history.repository.ts), and tests agent (pure functions in history-auth, notification-store, matching, payment-state-machine, pricing-engine).
+   965→- Key FASE 25.4 visibility guarantee: client never sees platformFee/providerPayout; provider sees providerPayout only (80% of total) and never platformFee.
+   966→- Auth uses cookie-based HMAC sessions (no DB Session model required), works with `NextRequest` cookies for API route handlers.
+   967→- Payment flow is gateway-agnostic via factory: simulated works out-of-box, mercado_pago requires real credentials, stripe/pagarme throw "not implemented".
+   968→

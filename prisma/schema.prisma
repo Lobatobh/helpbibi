@@ -106,6 +106,7 @@ model ServiceRequest {
 
   // Payment
   paymentMethod   PaymentMethod    @default(PIX)
+  paymentStatus   PaymentStatus    @default(PENDING)
 
   // Locations (stored as JSON strings for SQLite compatibility)
   pickup          String           // JSON: { lat, lng }
@@ -132,6 +133,7 @@ model ServiceRequest {
   chatMessages    ServiceChatMessage[]
   ratings         ServiceRating[]
   trackingShares  TrackingShare[]
+  paymentRecords  PaymentRecord[]
 
   @@index([clientId])
   @@index([providerId])
@@ -164,6 +166,15 @@ enum PaymentMethod {
   PIX
   CARD
   CASH
+}
+
+enum PaymentStatus {
+  PENDING
+  AUTHORIZED
+  PAID
+  FAILED
+  CANCELED
+  REFUNDED
 }
 
 // ============================================================
@@ -258,4 +269,64 @@ model TrackingShare {
   viewCount   Int      @default(0)
 
   @@index([serviceId])
+}
+
+// ============================================================
+// PAYMENT RECORD & EVENTS (FASE 25.3/25.4 — financial persistence)
+// ============================================================
+
+model PaymentRecord {
+  id                  String   @id @default(cuid())
+  serviceRequestId    String
+  serviceRequest      ServiceRequest @relation(fields: [serviceRequestId], references: [id], onDelete: Cascade)
+
+  method              String
+  status              PaymentStatus @default(PENDING)
+  amount              Float      @default(0)
+  platformFee         Float      @default(0)
+  providerPayout      Float      @default(0)
+  discountAmount      Float?     @default(0)
+  couponCode          String?
+
+  provider            String?
+  providerPaymentId   String?
+  externalReference   String?
+  idempotencyKey      String?   @unique
+
+  simulatedTransactionId String?
+  paidAt              DateTime?
+  failedAt            DateTime?
+  failureReason       String?
+
+  metadata            String?
+  rawPayload          String?
+
+  lastWebhookSignature String?
+  webhookVerifiedAt   DateTime?
+
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  events              PaymentEvent[]
+
+  @@index([serviceRequestId])
+  @@index([providerPaymentId])
+  @@index([status])
+}
+
+model PaymentEvent {
+  id              String   @id @default(cuid())
+  paymentRecordId String
+  paymentRecord   PaymentRecord @relation(fields: [paymentRecordId], references: [id], onDelete: Cascade)
+
+  eventType       String
+  fromStatus      PaymentStatus?
+  toStatus        PaymentStatus?
+  message         String?
+  rawPayload      String?
+
+  createdAt       DateTime @default(now())
+
+  @@index([paymentRecordId])
+  @@index([eventType])
 }
