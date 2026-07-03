@@ -11,6 +11,8 @@
     "test:watch": "bun test --watch",
     "check": "bun run lint && bunx prisma validate && bunx prisma generate && bun run test",
     "check:full": "bun run lint && bunx prisma validate && bunx prisma generate && bun run test && bun run build",
+    "health:local": "curl -s http://localhost:3000/api/health && echo '' && curl -s http://localhost:3000/api/health/db",
+    "git:hygiene": "git status --short && git ls-files db && git log --all --oneline -- 'db/*.db' 'db/*.sqlite' 'db/*.bak*' || echo '(no sqlite in history)'",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

@@ -44,7 +44,7 @@ export function useServiceToasts(svc: ServiceData | null, perspective: 'client' 
           case 'in_progress': return 'Serviço em andamento — rumo ao destino'
           case 'completed': return { msg: 'Serviço concluído! Avalie o atendimento.', type: 'success' as const }
           case 'cancelled': return { msg: 'Solicitação cancelada', type: 'error' as const }
-          case 'expired': return { msg: 'Nenhum prestador disponível', type: 'error' as const }
+          case 'expired': return { msg: 'Nenhum prestador respondeu a tempo. Tente novamente.', type: 'error' as const }
         }
       } else {
         switch (curr) {

@@ -168,3 +168,54 @@ model AuditLog {
 ## Próxima Fase Recomendada
 
 - FASE 30: Obter credenciais sandbox reais MP, validar fluxo end-to-end via ngrok, homologar adapter MP, configurar cron diário de reconciliação.
+
+---
+
+## FASE 30 — Release Candidate Local + Critérios de Bloqueio Honestos
+
+### Status: RELEASE CANDIDATE LOCAL ✅ (NÃO é produção real)
+
+A Help Bibi está pronta como Release Candidate local. Produção real está bloqueada pelos itens abaixo.
+
+### Bloqueios Formais para Produção Real
+
+| # | Bloqueio | Status | Ação Necessária |
+|---|----------|--------|-----------------|
+| 1 | PostgreSQL runtime não validado | ⛔ Bloqueado | Instalar Docker, testar schema.postgres.prisma com `db push` |
+| 2 | Redis runtime não validado | ⛔ Bloqueado | Instalar Docker, testar RedisRateLimitBackend com servidor real |
+| 3 | Mercado Pago não homologado | ⛔ Bloqueado | Obter credenciais sandbox, configurar webhook URL pública, testar PIX/CARD |
+| 4 | Deploy VPS/Dokploy não realizado | ⛔ Adiado | Provisionar VPS, configurar domínio/HTTPS |
+| 5 | Domínio/HTTPS/webhook real pendente | ⛔ Bloqueado | Provisionar domínio, SSL/TLS, URL pública para webhook MP |
+| 6 | Backup real não configurado | ⛔ Bloqueado | Configurar pg_dump automatizado + WAL archiving |
+| 7 | Monitoramento real pendente | ⛔ Bloqueado | Configurar log aggregation, alertas, uptime monitoring |
+
+### O Que Está Pronto para Produção (quando bloqueios forem resolvidos)
+
+- ✅ Schema PostgreSQL validado (`schema.postgres.prisma`)
+- ✅ Redis rate limiter implementado (ioredis, interface async, fake client testes)
+- ✅ Mercado Pago adapter seguro (webhook não aprova sem status real)
+- ✅ Docker Compose dev + prod example prontos
+- ✅ Env validation bloqueia SQLite/memory/seed em produção
+- ✅ Security headers (CSP, HSTS, X-Frame-Options)
+- ✅ Rate limiting (memory dev / redis prod)
+- ✅ AuditLog persistente (database backend)
+- ✅ Admin auth (sessão HMAC, requireRole ADMIN)
+- ✅ PaymentRecord/PaymentEvent com cancel/refund/reconcile
+- ✅ Histórico sanitizado (cliente sem platformFee, prestador sem platformFee)
+- ✅ Tracking público sem dados financeiros
+- ✅ 408 testes automatizados
+
+### Total de Testes (FASE 30)
+- **408 testes, 0 falhas, 1147 expect() calls, 30 arquivos**
+- `bun run check:full` passa: lint ✓, prisma ✓, testes ✓, build ✓
+
+### Documentação FASE 30
+- `docs/release-candidate.md` — status RC local, módulos, critérios de aceite
+- `docs/operational-runbook.md` — guia operacional completo
+- `docs/production-readiness.md` — este documento (bloqueios honestos)
+- `docs/manual-regression-checklist.md` — checklist de regressão
+
+### Próximos Passos (quando ambiente disponível)
+1. FASE 31: Docker disponível → validar PostgreSQL + Redis em container
+2. FASE 32: Credenciais MP sandbox → homologação MP
+3. FASE 33: VPS provisionado → deploy VPS/Dokploy

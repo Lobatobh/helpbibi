@@ -16,9 +16,9 @@ const STATUS_INFO: Record<string, { label: string; color: string }> = {
   arriving: { label: 'Chegando no local', color: 'orange' },
   arrived: { label: 'No local do atendimento', color: 'orange' },
   in_progress: { label: 'Serviço em andamento', color: 'sky' },
-  completed: { label: 'Concluído', color: 'orange' },
-  cancelled: { label: 'Cancelado', color: 'rose' },
-  expired: { label: 'Encerrado', color: 'rose' },
+  completed: { label: 'Serviço concluído', color: 'orange' },
+  cancelled: { label: 'Solicitação cancelada pelo cliente', color: 'rose' },
+  expired: { label: 'Solicitação encerrada', color: 'rose' },
 }
 
 type PublicService = {

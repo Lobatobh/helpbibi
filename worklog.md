@@ -1720,3 +1720,74 @@ Stage Summary:
 - check:full: PASSOU (lint ✓, prisma ✓, 408 testes ✓, build ✓).
 - Total de testes: 408 (0 fail, 1147 expect calls, 30 arquivos).
 - Mercado Pago NÃO homologado — precisa credenciais sandbox reais + webhook URL pública + implementar getPaymentStatus/cancelPayment/refundPayment com API real.
+
+---
+Task ID: 30-A
+Agent: general-purpose
+Task: UX polish — empty states, error messages, loading states, Portuguese text
+
+Work Log:
+- Li o worklog e os 5 arquivos alvo (admin/page.tsx, client-panel.tsx, provider-panel.tsx, public-tracking.tsx, settings-view.tsx).
+- Mapeei o estado atual de cada arquivo: identifiquei quais estados vazios/erro/loading já existiam (em sua maioria já estavam bem cobertos) e quais textos poderiam ser polidos.
+- admin/page.tsx: polido texto de empty state de pagamentos "Nenhum pagamento registrado." → "Nenhum pagamento registrado ainda." com padding py-8 (era py-6). Empty state de auditoria, loading (skeleton + "Carregando…" + "Verificando sessão…") e error banner (dashboardError amber) já estavam corretos em PT-BR — mantidos.
+- client-panel.tsx:
+  - Adicionado banner de erro de conexão no topo do body quando `!connected` (após registro): "Conexão perdida. Reconectando..." com Loader2 spinner (amber).
+  - Polido empty state de "nenhum prestador próximo": "Aguardando prestadores entrarem no app..." → "Nenhum prestador disponível no momento. Tente novamente em alguns minutos."
+  - Polido empty state do histórico (client): "Nenhum serviço no histórico" → "Você ainda não possui serviços. Solicite seu primeiro socorro!" (mantida ramificação por role).
+- provider-panel.tsx:
+  - Adicionado banner de erro de conexão no topo do body quando `!connected`: "Conexão perdida. Reconectando..." (mesmo padrão do client).
+  - Polido empty state de "sem ofertas": "Aguarde — assim que um cliente solicitar socorro próximo, você receberá a chamada." → "Nenhuma chamada no momento. Mantenha-se online para receber solicitações."
+  - Polido empty state do histórico (provider): "Nenhum serviço no histórico" → "Você ainda não possui atendimentos."
+  - Polido subtitle do card de ganhos: quando completedCount===0 && earningsToday===0, exibe "Nenhum ganho registrado hoje." em vez de "0 serviço(s) concluído(s)".
+- public-tracking.tsx: polido labels do STATUS_INFO para estados terminais:
+  - completed: "Concluído" → "Serviço concluído"
+  - cancelled: "Cancelado" → "Solicitação cancelada pelo cliente"
+  - expired: "Encerrado" → "Solicitação encerrada"
+  - Loading ("Carregando rastreamento...") e invalid tracking ("Rastreamento indisponível ou encerrado") já estavam corretos — mantidos.
+- use-service-toasts.ts: polido toast de expiração no client: "Nenhum prestador disponível" → "Nenhum prestador respondeu a tempo. Tente novamente." (eram toasts genéricos; mantida a tipagem success/error existente).
+- settings-view.tsx: revisado — todos os textos já estavam em PT-BR claro e consistente (Configurações, Notificações sonoras, Tema, Privacidade, Sobre). Nenhuma alteração necessária.
+- Não adicionei estados de "GPS denied" nem mensagens de pagamento (Pagamento aprovado/recusado/pendente) pois esses fluxos não existem no painel atual — adicioná-los seria redesign/lógica nova, fora do escopo (regras: "do NOT redesign anything — just polish text and add missing empty/error states").
+- Verificação: `bun run lint` passou sem erros. `bun run test` passou com 408/408 testes (0 fail). `bunx tsc --noEmit` mostra apenas erros pré-existentes (4 em provider-panel.tsx — earningsToday em ProviderState, duplicate `sky` key em colorMap — não introduzidos por esta task, confirmado via git stash).
+
+Stage Summary:
+- 5 arquivos modificados, 30 inserções / 12 remoções. Diff cirúrgico, sem mudanças de layout/estrutura/lógica.
+- Empty states polidos em admin (pagamentos), client-panel (histórico + sem prestador), provider-panel (histórico + sem chamadas + sem ganhos hoje).
+- Error states adicionados: banner "Conexão perdida. Reconectando..." em ambos os painéis (client + provider) quando o socket cai após registro.
+- Mensagens de status terminais no rastreamento público mais descritivas ("Serviço concluído", "Solicitação cancelada pelo cliente", "Solicitação encerrada").
+- Toast de expiração do client mais acionável: "Nenhum prestador respondeu a tempo. Tente novamente."
+- Lint OK, testes 408/408 OK, sem regressões de TypeScript nos arquivos editados.
+
+---
+Task ID: 30
+Agent: main (orchestrator) + 1 subagent (30-A)
+Task: FASE 30 — Release Candidate Local e QA Final do Produto. Consolidar UX, fluxos, documentação, scripts, testes e critérios de aceite.
+
+Work Log:
+- DIAGNÓSTICO RC: 408 testes passando, 10 docs existentes, git limpo, scripts básicos presentes. Faltam: release-candidate.md, operational-runbook.md, scripts health:local/git:hygiene, polish UX.
+- TASK 30-A (subagent): polish UX em 5 arquivos. Adicionou estados vazios (histórico cliente/prestador, ganhos, sem chamadas), mensagens de conexão perdida, textos em português melhorados (tracking cancelado/expirado, toast expiração). 408 testes continuam passando.
+- Criei docs/release-candidate.md: status RC local, 28 módulos prontos, 4 bloqueados, como rodar, comandos, credenciais dev, fluxos de teste, critérios de aceite (17 itens verificados), riscos conhecidos, o que falta para produção/deploy.
+- Criei docs/operational-runbook.md: guia operacional completo (iniciar app, rescue-service, testes, health, admin, aprovar prestador, consultar pagamentos, reconcile, audit logs, limpar banco, git hygiene, cancel/refund, troubleshooting).
+- Adicionei scripts ao package.json: health:local (curl health + health/db) e git:hygiene (git status + ls-files db + log sqlite).
+- Atualizei docs/production-readiness.md com FASE 30: 7 bloqueios formais para produção real (PostgreSQL, Redis, MP, VPS, domínio/HTTPS, backup, monitoramento), status honesto, o que está pronto vs bloqueado.
+- Corrigi ADMIN_SEED_ENABLED=true no .env (estava ausente, admin login falhava).
+- check:full PASSOU: lint ✓, prisma ✓, 408 testes ✓ (0 fail, 1147 expect calls), build ✓.
+- REGRESSÃO BROWSER:
+  - App abre sem erros de console/hidratação ✓
+  - /api/health: status=ok, version=25.4.0 ✓
+  - /api/health/db: database=connected ✓
+  - Security headers: X-Content-Type-Options=nosniff, X-Frame-Options=DENY, CSP presente ✓
+  - Admin login com seed credentials funciona (após ADMIN_SEED_ENABLED=true) ✓
+  - Dashboard admin mostra "Bem-vindo, Admin" + Resumo Financeiro + links + Sair ✓
+  - /api/admin/reconcile: totalChecked=0, totalIssues=0 ✓
+  - Sem erros no console ✓
+
+Stage Summary:
+- RELEASE CANDIDATE LOCAL: Help Bibi consolidada como RC local. 28 módulos prontos, 4 bloqueados por ambiente externo.
+- UX POLISH: estados vazios, mensagens de erro/loading, textos em português melhorados.
+- DOCUMENTAÇÃO RC: docs/release-candidate.md (status, módulos, critérios, riscos) + docs/operational-runbook.md (guia operacional completo).
+- SCRIPTS: health:local + git:hygiene adicionados ao package.json.
+- PRODUCTION READINESS: 7 bloqueios formais documentados honestamente (PostgreSQL, Redis, MP, VPS, domínio, backup, monitoramento).
+- check:full: PASSOU (lint ✓, prisma ✓, 408 testes ✓, build ✓).
+- Regressão browser: app + admin + health + security headers funcionam.
+- Total de testes: 408 (0 fail, 1147 expect calls, 30 arquivos).
+- Próximos passos: FASE 31 (Docker → PostgreSQL+Redis runtime), FASE 32 (MP sandbox), FASE 33 (deploy VPS).

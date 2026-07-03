@@ -646,9 +646,9 @@ export default function AdminPage() {
                                 <tr>
                                   <td
                                     colSpan={4}
-                                    className="px-3 py-6 text-center text-slate-400"
+                                    className="px-3 py-8 text-center text-slate-400"
                                   >
-                                    Nenhum pagamento registrado.
+                                    Nenhum pagamento registrado ainda.
                                   </td>
                                 </tr>
                               )}
