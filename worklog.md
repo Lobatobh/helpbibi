@@ -1791,3 +1791,24 @@ Stage Summary:
 - Regressão browser: app + admin + health + security headers funcionam.
 - Total de testes: 408 (0 fail, 1147 expect calls, 30 arquivos).
 - Próximos passos: FASE 31 (Docker → PostgreSQL+Redis runtime), FASE 32 (MP sandbox), FASE 33 (deploy VPS).
+
+---
+Task ID: 30-tag
+Agent: main (orchestrator)
+Task: TAG DO RELEASE CANDIDATE LOCAL — marcar oficialmente o estado aprovado do RC Local no Git.
+
+Work Log:
+- Confirmei estado atual: working tree limpo, HEAD em 11336c9, apenas db/.gitkeep rastreado, nenhum SQLite no histórico.
+- Rodei `bun run check:full`: PASSOU (lint ✓, prisma ✓, 408 testes ✓ com 1147 expect calls, build ✓).
+- Criei tag anotada: `git tag -a v0.1.0-rc-local -m "Help Bibi v0.1.0 Release Candidate Local"` com mensagem detalhada incluindo: 408 testes, check:full passando, 28 módulos prontos, 4 bloqueados, Git limpo, e 7 bloqueios formais para produção real.
+- Verifiquei tag: `git tag --list` mostra `v0.1.0-rc-local`. `git show v0.1.0-rc-local --stat` confirma tag aponta para commit 11336c9.
+- Tag é LOCAL (sem remote configurado — não há push).
+
+Stage Summary:
+- TAG CRIADA: v0.1.0-rc-local (annotated, aponta para commit 11336c9)
+- COMMIT APONTADO: 11336c9 "chore: finalize local release candidate readiness"
+- CHECK:FULL: PASSOU (lint ✓, prisma ✓, 408 testes ✓ 0 fail, build ✓)
+- TOTAL DE TESTES: 408 (0 fail, 1147 expect calls, 30 arquivos)
+- STATUS: RC Local aprovado e marcado oficialmente no Git
+- PRODUÇÃO REAL: ainda bloqueada por 7 itens (PostgreSQL runtime, Redis runtime, Mercado Pago sandbox, VPS/Dokploy, domínio/HTTPS, backup, monitoramento)
+- PRÓXIMA FASE: FASE 31 (quando Docker disponível — validar PostgreSQL + Redis em container)
