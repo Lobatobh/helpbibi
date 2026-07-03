@@ -94,3 +94,79 @@
 - [ ] `git status --short` limpo após testes
 - [ ] `git ls-files db` mostra apenas `db/.gitkeep`
 - [ ] `git log --all -- 'db/*.db'` vazio
+
+## 15. FASE 29 — Cancel / Refund / Reconcile (Admin)
+
+### 15.1 Cancelamento
+- [ ] `POST /api/admin/payments/[id]/cancel` com PENDING → 200 + PaymentRecord CANCELED
+- [ ] `POST /api/admin/payments/[id]/cancel` com AUTHORIZED → 200 + PaymentRecord CANCELED
+- [ ] `POST /api/admin/payments/[id]/cancel` com PAID → 400 (invalid transition)
+- [ ] `POST /api/admin/payments/[id]/cancel` com REFUNDED → 400 (invalid transition)
+- [ ] Body `{ reason: "..." }` → reason aparece no message do PaymentEvent CANCELED
+- [ ] AuditLog registra `payment_failed` (cancel)
+
+### 15.2 Estorno (Refund)
+- [ ] `POST /api/admin/payments/[id]/refund` com PAID → 200 + PaymentRecord REFUNDED
+- [ ] `POST /api/admin/payments/[id]/refund` com PENDING → 400 (only PAID can be refunded)
+- [ ] `POST /api/admin/payments/[id]/refund` com REFUNDED → 400 (double refund blocked)
+- [ ] Body `{ amount: 100 }` → "Refund of R$ 100" aparece no message do PaymentEvent REFUNDED
+- [ ] AuditLog registra `payment_invalid_transition` (refund attempt)
+
+### 15.3 Reconciliação
+- [ ] `GET /api/admin/reconcile` → 200 com `{ issues, totalChecked, totalIssues }`
+- [ ] `totalChecked` bate com número de PaymentRecords no banco
+- [ ] PENDING >1h detectado como issue (severity: warning)
+- [ ] PAID sem PAID event detectado como issue (severity: error)
+- [ ] FAILED >24h detectado como issue (severity: warning)
+- [ ] REFUNDED sem REFUNDED event detectado como issue (severity: error)
+- [ ] Registros limpos (PAID com evento, CANCELED, etc.) não produzem issues
+- [ ] Issues têm shape: `{ paymentRecordId, serviceRequestId, issue, severity, currentStatus, amount }`
+
+## 16. FASE 29 — Mercado Pago Webhook Action Mapping
+
+- [ ] Webhook com `action: "payment_created"` → PaymentRecord transita para PAID
+- [ ] Webhook com `action: "approved"` → PaymentRecord transita para PAID
+- [ ] Webhook com `action: "paid"` → PaymentRecord transita para PAID
+- [ ] Webhook com `action: "authorized"` → PaymentRecord transita para AUTHORIZED
+- [ ] Webhook com `action: "rejected"` → PaymentRecord transita para FAILED
+- [ ] Webhook com `action: "failure"` → PaymentRecord transita para FAILED
+- [ ] Webhook com `action: "cancelled"` → PaymentRecord transita para CANCELED
+- [ ] Webhook com `action: "canceled"` (American) → PaymentRecord transita para CANCELED
+- [ ] Webhook com `action: "refunded"` → PaymentRecord transita para REFUNDED
+- [ ] Webhook com `action: "something_strange"` → fallback AUTHORIZED (admin revisa)
+- [ ] Webhook com JSON inválido → 400 (Invalid JSON)
+- [ ] Webhook sem `data.id` → 400 (Missing data.id)
+- [ ] `webhookId` extraído do body para `rawPayload.webhookId`
+- [ ] `action` aparece no `message` do evento
+- [ ] `rawPayload` sanitizado (sem `card_number`, `cvv`, `security_code`)
+
+## 17. FASE 29 — Financial Sanitization
+
+### 17.1 Admin view (`PaymentRecordWithEvents`)
+- [ ] Admin vê `platformFee`, `providerPayout` (valores reais)
+- [ ] Admin vê `providerPaymentId`, `externalReference` (com masking na camada de API)
+- [ ] Admin vê `idempotencyKey` (mascarado)
+- [ ] Admin vê eventos completos (eventType, fromStatus, toStatus, message, createdAt)
+
+### 17.2 Client view (`HistoryListItem`)
+- [ ] Cliente vê `price`, `discount`, `paymentStatus` (simplificado), `paymentMethod`
+- [ ] Cliente NÃO vê `platformFee`
+- [ ] Cliente NÃO vê `providerPayout`
+- [ ] Cliente NÃO vê `providerPaymentId`
+- [ ] Cliente NÃO vê `externalReference`
+
+### 17.3 Provider view (`HistoryListItem`)
+- [ ] Prestador vê `price`
+- [ ] Prestador vê `providerPayout` (80% do price)
+- [ ] Prestador NÃO vê `platformFee`
+- [ ] Prestador NÃO vê `providerPaymentId` / `externalReference`
+
+### 17.4 Tracking público
+- [ ] Tracking não expõe `price`, `originalPrice`, `discount`
+- [ ] Tracking não expõe `platformFee`, `providerPayout`
+- [ ] Tracking não expõe `paymentStatus`, `paymentMethod`, `paymentRecords`
+- [ ] Tracking não expõe `providerPaymentId`, `externalReference`, `idempotencyKey`
+- [ ] Tracking não expõe `paidAt`, `failedAt`, `failureReason`, `lastWebhookSignature`, `webhookVerifiedAt`
+- [ ] Tracking não expõe `couponCode`, `simulatedTransactionId`
+- [ ] `sanitizeTrackingObject` strips ALL financial fields
+

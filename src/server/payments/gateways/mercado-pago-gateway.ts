@@ -25,7 +25,16 @@ export class MercadoPagoGateway implements PaymentGateway {
   async parseWebhookEvent(rawBody: string, _h: Record<string,string>): Promise<GatewayWebhookEvent> {
     let b: any; try { b = JSON.parse(rawBody) } catch { throw new Error('Invalid JSON') }
     const pid = b?.data?.id; if (!pid) throw new Error('Missing data.id')
-    return { event:'AUTHORIZED', providerPaymentId:String(pid), message:`MP webhook: ${b.action||'updated'}`, rawPayload: sanitize({ provider:'mercado_pago', webhookId:b.id, action:b.action, paymentId:String(pid) }) }
+    // FASE 29: map action to event type
+    const action = (b.action || '').toLowerCase()
+    let event: GatewayWebhookEvent['event']
+    if (action.includes('authorized')) event = 'AUTHORIZED'
+    else if (action.includes('approved') || action.includes('paid') || action.includes('payment_created')) event = 'PAID'
+    else if (action.includes('rejected') || action.includes('failure')) event = 'FAILED'
+    else if (action.includes('cancelled') || action.includes('canceled')) event = 'CANCELED'
+    else if (action.includes('refunded')) event = 'REFUNDED'
+    else event = 'AUTHORIZED' // default to AUTHORIZED for unknown actions (safe fallback — admin reviews)
+    return { event, providerPaymentId:String(pid), message:`MP webhook: ${b.action||'updated'}`, rawPayload: sanitize({ provider:'mercado_pago', webhookId:b.id, action:b.action, paymentId:String(pid) }) }
   }
   async verifyWebhookSignature(rawBody: string, signature: string, options?: { dataId?: string; requestId?: string }): Promise<GatewayWebhookVerification> {
     if (!signature) return { valid:false, reason:'Missing x-signature' }

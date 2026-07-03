@@ -122,6 +122,49 @@ model AuditLog {
 4. **CSP unsafe-inline** — necessário para Next.js.
 5. **Audit backend memory** — perde em restart (produção usa database).
 
+## FASE 29 — Mercado Pago Sandbox Readiness
+
+### Status do Adapter MP
+- `MercadoPagoGateway.parseWebhookEvent` mapeia corretamente o campo `action` do webhook MP para o evento interno (AUTHORIZED / PAID / FAILED / CANCELED / REFUNDED). Fallback seguro para AUTHORIZED em ações desconhecidas (admin revisa).
+- `verifyWebhookSignature` valida HMAC-SHA256 com `timingSafeEqual` (proteção contra timing attacks).
+- `sanitize()` remove `card_number`, `card_cvv`, `card_exp_month`, `card_exp_year`, `security_code` do `rawPayload`.
+
+### Operações Financeiras (FASE 29)
+- `cancelPayment(paymentRecordId, reason?)` em `payment.repository.ts`: valida PENDING/AUTHORIZED, chama gateway se não-simulated, transita para CANCELED.
+- `refundPayment(paymentRecordId, amount?, reason?)`: valida PAID, previne double refund, chama gateway se não-simulated, transita para REFUNDED.
+- `reconcilePayments()`: detecta PENDING >1h, PAID sem PAID event, FAILED >24h, REFUNDED sem REFUNDED event. Retorna `{ issues, totalChecked, totalIssues }`.
+
+### Rotas Admin (FASE 29)
+- `POST /api/admin/payments/[id]/cancel` — body `{ reason? }`, audit `payment_failed`.
+- `POST /api/admin/payments/[id]/refund` — body `{ amount?, reason? }`, audit `payment_invalid_transition`.
+- `GET /api/admin/reconcile` — retorna `{ issues, totalChecked, totalIssues }`.
+- Todas com rate limiting + admin role guard (prod-only) + audit logging.
+
+### Ambiente
+- `.env.example` atualizado com todas as variáveis MP sandbox (`MERCADO_PAGO_ACCESS_TOKEN`, `MERCADO_PAGO_PUBLIC_KEY`, `MERCADO_PAGO_WEBHOOK_SECRET`, `PAYMENT_SUCCESS_URL`, `PAYMENT_FAILURE_URL`, `PAYMENT_PENDING_URL`, `PAYMENT_WEBHOOK_URL`).
+
+### Testes (FASE 29)
+- `src/server/payments/__tests__/cancel-refund.test.ts` — 12 testes cobrindo cancel/refund + transições inválidas + double refund + reason/amount em messages.
+- `src/server/payments/__tests__/reconcile.test.ts` — 10 testes cobrindo shape do resultado, detecção de PENDING >1h / PAID sem evento / FAILED >24h / REFUNDED sem evento, registros limpos.
+- `src/server/payments/gateways/__tests__/mercado-pago-webhook-mapping.test.ts` — 19 testes cobrindo action→event mapping (payment_created/approved/paid → PAID, authorized → AUTHORIZED, rejected/failure → FAILED, cancelled/canceled → CANCELED, refunded → REFUNDED, unknown → AUTHORIZED fallback), invalid JSON, missing data.id, webhookId extraction, action in message, rawPayload sanitization.
+- `src/server/payments/__tests__/financial-sanitization.test.ts` — 10 testes cobrindo admin view (PaymentRecordWithEvents com platformFee/providerPayout/providerPaymentId/externalReference), client view (sem platformFee/providerPayout/providerPaymentId/externalReference), provider view (com providerPayout mas sem platformFee), tracking público (sanitizeTrackingObject strips tudo).
+
+### Total de Testes (FASE 29)
+- Antes da FASE 29: 350 testes (26 arquivos).
+- Adicionados pela FASE 29: 51 novos testes em 4 arquivos.
+- **Total após FASE 29: 401 testes (30 arquivos)** — atualizado após `bun run test`.
+
+### Não Homologado
+- Credenciais sandbox reais do Mercado Pago ainda não configuradas.
+- URL pública de webhook ainda não provisionada (ngrok / Cloudflare Tunnel).
+- Fluxo end-to-end com MP sandbox precisa ser validado manualmente seguindo `docs/mercado-pago-sandbox.md`.
+
+### Documentação FASE 29
+- `docs/mercado-pago-sandbox.md` — guia de homologação sandbox, eventos esperados, validação de assinatura, checklist pré-homologação.
+- `docs/payment-operations.md` — visão geral de cancelamento, estorno, reconciliação, sanitização por role.
+- `docs/production-readiness.md` — esta seção.
+- `docs/manual-regression-checklist.md` — itens FASE 29 adicionados.
+
 ## Próxima Fase Recomendada
 
-- FASE 28: Implementar Redis real (ioredis), testar PostgreSQL via Docker, homologação MercadoPago.
+- FASE 30: Obter credenciais sandbox reais MP, validar fluxo end-to-end via ngrok, homologar adapter MP, configurar cron diário de reconciliação.

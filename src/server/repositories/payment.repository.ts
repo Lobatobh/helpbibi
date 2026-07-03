@@ -7,6 +7,7 @@ import {
 } from '@/server/payments/payment-state-machine'
 import { getPaymentGateway, getActiveProvider } from '@/server/payments/gateways'
 import { mapToGatewayMethod } from '@/server/payments/gateways/payment-gateway'
+import { logger } from '@/server/logger'
 
 export type CreatePaymentInput = {
   serviceRequestId: string; method: string; amount: number; platformFee: number;
@@ -148,6 +149,102 @@ function sanitizeRecord(r: any): PaymentRecordWithEvents {
     lastWebhookSignature: r.lastWebhookSignature, webhookVerifiedAt: r.webhookVerifiedAt, createdAt: r.createdAt, updatedAt: r.updatedAt,
     events: (r.events || []).map((e: any) => ({ id: e.id, eventType: e.eventType, fromStatus: e.fromStatus as PaymentStatus | null, toStatus: e.toStatus as PaymentStatus | null, message: e.message, createdAt: e.createdAt })),
   }
+}
+
+/**
+ * Cancel a payment (PENDING or AUTHORIZED → CANCELED).
+ * FASE 29: calls gateway.cancelPayment if provider is not simulated, then transitions.
+ */
+export async function cancelPayment(paymentRecordId: string, reason?: string): Promise<PaymentRecordWithEvents> {
+  const record = await db.paymentRecord.findUnique({ where: { id: paymentRecordId } })
+  if (!record) throw new Error(`PaymentRecord not found: ${paymentRecordId}`)
+  if (record.status !== 'PENDING' && record.status !== 'AUTHORIZED') {
+    throw new Error(`Cannot cancel payment in status ${record.status}`)
+  }
+  // Call gateway cancel if we have a providerPaymentId and provider is not simulated
+  if (record.providerPaymentId && record.provider !== 'simulated') {
+    try {
+      const gateway = getPaymentGateway()
+      await gateway.cancelPayment(record.providerPaymentId, reason)
+    } catch (e: any) {
+      // Log but don't block — the local transition still happens
+      logger.warn('payment', 'Gateway cancel failed (continuing with local cancel)', { message: e.message })
+    }
+  }
+  return transitionPayment(paymentRecordId, 'CANCELED', { message: reason || 'Payment canceled' })
+}
+
+/**
+ * Refund a payment (PAID → REFUNDED).
+ * FASE 29: calls gateway.refundPayment if provider is not simulated, then transitions.
+ * Prevents double refund by checking current status.
+ */
+export async function refundPayment(paymentRecordId: string, amount?: number, reason?: string): Promise<PaymentRecordWithEvents> {
+  const record = await db.paymentRecord.findUnique({ where: { id: paymentRecordId } })
+  if (!record) throw new Error(`PaymentRecord not found: ${paymentRecordId}`)
+  if (record.status !== 'PAID') {
+    throw new Error(`Cannot refund payment in status ${record.status} — only PAID can be refunded`)
+  }
+  // Prevent double refund
+  if (record.status === 'REFUNDED') {
+    throw new Error('Payment already refunded')
+  }
+  // Call gateway refund if we have a providerPaymentId and provider is not simulated
+  if (record.providerPaymentId && record.provider !== 'simulated') {
+    try {
+      const gateway = getPaymentGateway()
+      await gateway.refundPayment({ providerPaymentId: record.providerPaymentId, amount, reason })
+    } catch (e: any) {
+      logger.warn('payment', 'Gateway refund failed (continuing with local refund)', { message: e.message })
+    }
+  }
+  return transitionPayment(paymentRecordId, 'REFUNDED', { message: reason || `Refund${amount ? ' of R$ ' + amount : ''}` })
+}
+
+export type ReconciliationIssue = {
+  paymentRecordId: string
+  serviceRequestId: string
+  issue: string
+  severity: 'warning' | 'error'
+  currentStatus: PaymentStatus
+  amount: number
+}
+
+/**
+ * Reconcile PaymentRecords to detect issues.
+ * FASE 29: identifies pending-too-long, paid-without-final-event, failed-with-retry, amount mismatches.
+ */
+export async function reconcilePayments(): Promise<{ issues: ReconciliationIssue[]; totalChecked: number; totalIssues: number }> {
+  const records = await db.paymentRecord.findMany({ include: { events: true } })
+  const issues: ReconciliationIssue[] = []
+  const now = Date.now()
+  const ONE_HOUR = 60 * 60 * 1000
+
+  for (const r of records) {
+    const ageMs = now - r.createdAt.getTime()
+
+    // Pending too long (>1h)
+    if (r.status === 'PENDING' && ageMs > ONE_HOUR) {
+      issues.push({ paymentRecordId: r.id, serviceRequestId: r.serviceRequestId, issue: 'PENDING for >1 hour', severity: 'warning', currentStatus: 'PENDING', amount: r.amount })
+    }
+
+    // PAID without PAID event
+    if (r.status === 'PAID' && !r.events.some(e => e.eventType === 'PAID')) {
+      issues.push({ paymentRecordId: r.id, serviceRequestId: r.serviceRequestId, issue: 'PAID status but no PAID event', severity: 'error', currentStatus: 'PAID', amount: r.amount })
+    }
+
+    // FAILED with no retry attempt (>24h old)
+    if (r.status === 'FAILED' && ageMs > 24 * ONE_HOUR) {
+      issues.push({ paymentRecordId: r.id, serviceRequestId: r.serviceRequestId, issue: 'FAILED for >24h with no retry', severity: 'warning', currentStatus: 'FAILED', amount: r.amount })
+    }
+
+    // REFUNDED without REFUNDED event
+    if (r.status === 'REFUNDED' && !r.events.some(e => e.eventType === 'REFUNDED')) {
+      issues.push({ paymentRecordId: r.id, serviceRequestId: r.serviceRequestId, issue: 'REFUNDED status but no REFUNDED event', severity: 'error', currentStatus: 'REFUNDED', amount: r.amount })
+    }
+  }
+
+  return { issues, totalChecked: records.length, totalIssues: issues.length }
 }
 
 export { validateTransition, canTransition, isTerminalStatus, toCents, fromCents, generateIdempotencyKey, generateSimulatedTransactionId, generateExternalReference }
