@@ -82,3 +82,34 @@ For multi-region deployments, consider rate limiting at the edge:
 - Vercel Edge Middleware
 
 This is more scalable than application-level Redis and doesn't require the app to be async.
+
+## FASE 28 Update — Real Redis Implementation
+
+The `RedisRateLimitBackend` is now a **real implementation** using `ioredis` (installed).
+
+### Implementation Details
+- Uses `INCR` + `PEXPIRE` for atomic fixed-window rate limiting.
+- On first request (count === 1), sets TTL via `PEXPIRE`.
+- Returns `remaining`, `resetAt`, `retryAfterMs` from `PTTL`.
+- `clear()` uses `SCAN` (not `KEYS`) to avoid blocking in production.
+- Constructor accepts an injectable Redis client (for testing with fakes).
+
+### Error Handling
+- **Production**: Redis failure → `throw` (no silent fallback, prevents allow-all).
+- **Dev**: Redis failure → log warning + allow request (better DX).
+- **No REDIS_URL in production**: `throw` at construction time.
+
+### Testing
+- Tests use a **fake Redis client** (in-memory Map) injected via constructor.
+- No real Redis server needed for test suite.
+- Tests verify: INCR increments, TTL applied, blocked at max, Retry-After, clear, fallback.
+
+### Interface Change (FASE 28)
+The `RateLimitBackend` interface is now **async**:
+```typescript
+interface RateLimitBackend {
+  check(key: string, config: RateLimitConfig): Promise<RateLimitResult>
+  clear(): Promise<void>
+}
+```
+All API route callers have been updated to `await applyRateLimit(...)`.

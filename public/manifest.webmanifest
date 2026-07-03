@@ -1,0 +1,52 @@
+{
+  "name": "Help Bibi — Auto socorro por aplicativo",
+  "short_name": "Help Bibi",
+  "description": "Plataforma estilo Uber para socorro veicular. Cliente solicita, prestador mais próximo recebe a chamada e acompanha o serviço em tempo real até o destino final.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#000000",
+  "theme_color": "#00BFFF",
+  "orientation": "portrait",
+  "categories": ["navigation", "travel", "utilities"],
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "/logo-help-bibi.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo-help-bibi.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/logo-help-bibi.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/logo-help-bibi.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Solicitar socorro",
+      "short_name": "SOS",
+      "description": "Solicitar socorro veicular agora",
+      "url": "/?action=sos"
+    },
+    {
+      "name": "Painel do prestador",
+      "short_name": "Prestador",
+      "description": "Entrar como prestador",
+      "url": "/?role=provider"
+    }
+  ]
+}

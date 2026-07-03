@@ -1,7 +1,24 @@
-// Help Bibi — PostgreSQL compatibility tests (FASE 27)
-import { describe, test, expect } from 'bun:test'
+// Help Bibi — PostgreSQL compatibility tests (FASE 27/28)
+import { describe, test, expect, afterEach } from 'bun:test'
 import { validateEnv } from '@/server/env'
+import { _resetBackend } from '@/server/rate-limit'
 import { readFileSync, existsSync } from 'fs'
+
+const ENV_KEYS = ['NODE_ENV', 'DATABASE_URL', 'SESSION_SECRET', 'PAYMENT_WEBHOOK_SECRET', 'RATE_LIMIT_BACKEND', 'REDIS_URL', 'AUDIT_LOG_BACKEND']
+const ENV_BACKUP: Record<string, string | undefined> = {}
+
+afterEach(() => {
+  // Restore env vars modified by tests
+  for (const k of ENV_KEYS) {
+    if (ENV_BACKUP[k] === undefined) delete process.env[k]
+    else process.env[k] = ENV_BACKUP[k]
+    // Record original values on first run
+  }
+  _resetBackend()
+})
+
+// Backup original env values once
+for (const k of ENV_KEYS) ENV_BACKUP[k] = process.env[k]
 
 describe('PostgreSQL Compatibility (FASE 27)', () => {
   test('1. schema.prisma (dev) uses sqlite provider', () => {

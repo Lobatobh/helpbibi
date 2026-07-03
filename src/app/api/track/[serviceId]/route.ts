@@ -13,7 +13,7 @@ export async function GET(
   { params }: { params: Promise<{ serviceId: string }> }
 ) {
   // FASE 26: rate limiting
-  const rateLimited = applyRateLimit(req, 'track', RATE_LIMITS.track)
+  const rateLimited = await applyRateLimit(req, 'track', RATE_LIMITS.track)
   if (rateLimited) {
     audit('rate_limit_exceeded', { ip: getClientIp(req), route: 'track' })
     return rateLimited

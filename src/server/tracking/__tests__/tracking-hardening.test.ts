@@ -85,17 +85,17 @@ describe('tracking-hardening — response shape', () => {
 })
 
 describe('tracking-hardening — rate limit preset for track endpoint', () => {
-  beforeEach(() => { clearRateLimits() })
+  beforeEach(async () => { await clearRateLimits() })
 
-  test('6. RATE_LIMITS.track allows 60/min and blocks the 61st (429 logic)', () => {
+  test('6. RATE_LIMITS.track allows 60/min and blocks the 61st (429 logic)', async () => {
     const cfg = RATE_LIMITS.track
     // First 60 requests should be allowed
     for (let i = 0; i < cfg.maxRequests; i++) {
-      const r = rateLimit('track:ip_test_1', cfg)
+      const r = await rateLimit('track:ip_test_1', cfg)
       expect(r.allowed).toBe(true)
     }
     // The 61st should be blocked (rate limited → would return 429 in HTTP)
-    const blocked = rateLimit('track:ip_test_1', cfg)
+    const blocked = await rateLimit('track:ip_test_1', cfg)
     expect(blocked.allowed).toBe(false)
     expect(blocked.retryAfterMs).toBeGreaterThan(0)
   })

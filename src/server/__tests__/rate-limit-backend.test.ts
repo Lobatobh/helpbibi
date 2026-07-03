@@ -1,4 +1,4 @@
-// Help Bibi — Rate Limiter Backend tests (FASE 27)
+// Help Bibi — Rate Limiter Backend tests (FASE 27/28)
 import { describe, test, expect, beforeEach } from 'bun:test'
 import {
   rateLimit, clearRateLimits, applyRateLimit, getClientIp, RATE_LIMITS,
@@ -6,9 +6,48 @@ import {
   type RateLimitBackend,
 } from '@/server/rate-limit'
 
-describe('Rate Limiter Backend Interface (FASE 27)', () => {
-  beforeEach(() => {
-    clearRateLimits()
+// Fake Redis client for testing (no real Redis server needed)
+function createFakeRedis() {
+  const store = new Map<string, { value: number; expireAt: number }>()
+  return {
+    async incr(key: string): Promise<number> {
+      const now = Date.now()
+      const existing = store.get(key)
+      if (!existing || existing.expireAt < now) {
+        store.set(key, { value: 1, expireAt: now + 10000 })
+        return 1
+      }
+      existing.value += 1
+      return existing.value
+    },
+    async pexpire(key: string, ms: number): Promise<number> {
+      const existing = store.get(key)
+      if (existing) existing.expireAt = Date.now() + ms
+      return 1
+    },
+    async pttl(key: string): Promise<number> {
+      const existing = store.get(key)
+      if (!existing) return -2
+      const remaining = existing.expireAt - Date.now()
+      return remaining > 0 ? remaining : -2
+    },
+    async scan(cursor: string, _match: string, _count: number): Promise<[string, string[]]> {
+      const keys = Array.from(store.keys()).filter(k => k.startsWith('rl:'))
+      return ['0', keys]
+    },
+    async del(...keys: string[]): Promise<number> {
+      let deleted = 0
+      for (const k of keys) { if (store.delete(k)) deleted++ }
+      return deleted
+    },
+    on(_event: string, _cb: (...args: unknown[]) => void) {},
+    _store: store,
+  }
+}
+
+describe('Rate Limiter Backend Interface (FASE 27/28)', () => {
+  beforeEach(async () => {
+    await clearRateLimits()
   })
 
   test('1. MemoryRateLimitBackend implements RateLimitBackend', () => {
@@ -17,60 +56,115 @@ describe('Rate Limiter Backend Interface (FASE 27)', () => {
     expect(typeof backend.clear).toBe('function')
   })
 
-  test('2. MemoryRateLimitBackend allows up to max then blocks', () => {
+  test('2. MemoryRateLimitBackend allows up to max then blocks', async () => {
     const backend = new MemoryRateLimitBackend()
     const config = { maxRequests: 3, windowMs: 1000 }
-    expect(backend.check('key1', config).allowed).toBe(true)
-    expect(backend.check('key1', config).allowed).toBe(true)
-    expect(backend.check('key1', config).allowed).toBe(true)
-    expect(backend.check('key1', config).allowed).toBe(false)
+    expect((await backend.check('key1', config)).allowed).toBe(true)
+    expect((await backend.check('key1', config)).allowed).toBe(true)
+    expect((await backend.check('key1', config)).allowed).toBe(true)
+    expect((await backend.check('key1', config)).allowed).toBe(false)
   })
 
-  test('3. MemoryRateLimitBackend reset after window', () => {
+  test('3. MemoryRateLimitBackend reset after window', async () => {
     const backend = new MemoryRateLimitBackend()
     const config = { maxRequests: 2, windowMs: 100 }
-    backend.check('key1', config)
-    backend.check('key1', config)
-    expect(backend.check('key1', config).allowed).toBe(false)
+    await backend.check('key1', config)
+    await backend.check('key1', config)
+    expect((await backend.check('key1', config)).allowed).toBe(false)
     // Wait for window to expire
     const start = Date.now()
     while (Date.now() - start < 120) { /* busy wait */ }
-    expect(backend.check('key1', config).allowed).toBe(true)
+    expect((await backend.check('key1', config)).allowed).toBe(true)
   })
 
-  test('4. MemoryRateLimitBackend.clear resets all buckets', () => {
+  test('4. MemoryRateLimitBackend.clear resets all buckets', async () => {
     const backend = new MemoryRateLimitBackend()
     const config = { maxRequests: 1, windowMs: 10000 }
-    backend.check('key1', config)
-    expect(backend.check('key1', config).allowed).toBe(false)
-    backend.clear()
-    expect(backend.check('key1', config).allowed).toBe(true)
+    await backend.check('key1', config)
+    expect((await backend.check('key1', config)).allowed).toBe(false)
+    await backend.clear()
+    expect((await backend.check('key1', config)).allowed).toBe(true)
   })
 
-  test('5. RedisRateLimitBackend is a stub that falls back to memory', () => {
+  test('5. RedisRateLimitBackend with fake Redis: INCR increments + blocks at max', async () => {
+    const fakeRedis = createFakeRedis()
+    const backend = new RedisRateLimitBackend(fakeRedis)
+    const config = { maxRequests: 2, windowMs: 10000 }
+    expect((await backend.check('test_key', config)).allowed).toBe(true)
+    expect((await backend.check('test_key', config)).allowed).toBe(true)
+    expect((await backend.check('test_key', config)).allowed).toBe(false)
+  })
+
+  test('6. RedisRateLimitBackend with fake Redis: TTL applied on first request', async () => {
+    const fakeRedis = createFakeRedis()
+    const backend = new RedisRateLimitBackend(fakeRedis)
+    const config = { maxRequests: 5, windowMs: 30000 }
+    const result = await backend.check('ttl_key', config)
+    expect(result.allowed).toBe(true)
+    // Verify the fake Redis stored the key with TTL
+    expect(fakeRedis._store.has('rl:ttl_key')).toBe(true)
+  })
+
+  test('7. RedisRateLimitBackend with fake Redis: remaining decreases', async () => {
+    const fakeRedis = createFakeRedis()
+    const backend = new RedisRateLimitBackend(fakeRedis)
+    const config = { maxRequests: 3, windowMs: 10000 }
+    const r1 = await backend.check('rem_key', config)
+    expect(r1.remaining).toBe(2)
+    const r2 = await backend.check('rem_key', config)
+    expect(r2.remaining).toBe(1)
+    const r3 = await backend.check('rem_key', config)
+    expect(r3.remaining).toBe(0)
+  })
+
+  test('8. RedisRateLimitBackend with fake Redis: blocked returns retryAfterMs > 0', async () => {
+    const fakeRedis = createFakeRedis()
+    const backend = new RedisRateLimitBackend(fakeRedis)
+    const config = { maxRequests: 1, windowMs: 5000 }
+    await backend.check('retry_key', config)
+    const blocked = await backend.check('retry_key', config)
+    expect(blocked.allowed).toBe(false)
+    expect(blocked.retryAfterMs).toBeGreaterThan(0)
+  })
+
+  test('9. RedisRateLimitBackend with fake Redis: clear removes keys', async () => {
+    const fakeRedis = createFakeRedis()
+    const backend = new RedisRateLimitBackend(fakeRedis)
+    const config = { maxRequests: 1, windowMs: 10000 }
+    await backend.check('clear_key', config)
+    expect(fakeRedis._store.has('rl:clear_key')).toBe(true)
+    await backend.clear()
+    expect(fakeRedis._store.has('rl:clear_key')).toBe(false)
+  })
+
+  test('10. RedisRateLimitBackend without REDIS_URL falls back to memory in dev', async () => {
+    const oldUrl = process.env.REDIS_URL
+    delete process.env.REDIS_URL
+    const oldEnv = process.env.NODE_ENV
+    process.env.NODE_ENV = 'development'
     const backend = new RedisRateLimitBackend()
-    expect(typeof backend.check).toBe('function')
-    expect(typeof backend.clear).toBe('function')
-    // Should work (delegating to memory internally)
     const config = { maxRequests: 2, windowMs: 1000 }
-    expect(backend.check('redis_key1', config).allowed).toBe(true)
-    expect(backend.check('redis_key1', config).allowed).toBe(true)
-    expect(backend.check('redis_key1', config).allowed).toBe(false)
+    expect((await backend.check('fallback_key', config)).allowed).toBe(true)
+    expect((await backend.check('fallback_key', config)).allowed).toBe(true)
+    expect((await backend.check('fallback_key', config)).allowed).toBe(false)
+    process.env.REDIS_URL = oldUrl
+    process.env.NODE_ENV = oldEnv
   })
 
-  test('6. getRateLimitBackend returns a backend', () => {
+  test('11. getRateLimitBackend returns a backend', () => {
     const backend = getRateLimitBackend()
     expect(backend).toBeDefined()
     expect(typeof backend.check).toBe('function')
   })
 
-  test('7. getRateLimitBackend defaults to memory', () => {
-    // In dev (no RATE_LIMIT_BACKEND set, or set to memory), returns MemoryRateLimitBackend
-    const backend = getRateLimitBackend()
+  test('12. MemoryRateLimitBackend is the correct default type', () => {
+    const backend = new MemoryRateLimitBackend()
     expect(backend).toBeInstanceOf(MemoryRateLimitBackend)
+    expect(typeof backend.check).toBe('function')
+    expect(typeof backend.clear).toBe('function')
   })
 
-  test('8. RATE_LIMITS presets all exist', () => {
+  test('13. RATE_LIMITS presets all exist', () => {
     expect(RATE_LIMITS.login).toBeDefined()
     expect(RATE_LIMITS.me).toBeDefined()
     expect(RATE_LIMITS.webhook).toBeDefined()
@@ -81,43 +175,43 @@ describe('Rate Limiter Backend Interface (FASE 27)', () => {
     expect(RATE_LIMITS.health).toBeDefined()
   })
 
-  test('9. rateLimit function delegates to backend (backward compat)', () => {
+  test('14. rateLimit function delegates to backend (async)', async () => {
     const config = { maxRequests: 2, windowMs: 1000 }
-    expect(rateLimit('compat_key', config).allowed).toBe(true)
-    expect(rateLimit('compat_key', config).allowed).toBe(true)
-    expect(rateLimit('compat_key', config).allowed).toBe(false)
+    expect((await rateLimit('compat_key2', config)).allowed).toBe(true)
+    expect((await rateLimit('compat_key2', config)).allowed).toBe(true)
+    expect((await rateLimit('compat_key2', config)).allowed).toBe(false)
   })
 
-  test('10. applyRateLimit returns null when allowed', () => {
+  test('15. applyRateLimit returns null when allowed', async () => {
     const req = new Request('https://localhost/api/test', {
-      headers: { 'x-forwarded-for': '127.0.0.1' },
+      headers: { 'x-forwarded-for': '127.0.0.10' },
     })
-    const result = applyRateLimit(req, 'test_route', { maxRequests: 5, windowMs: 1000 })
+    const result = await applyRateLimit(req, 'test_route_15', { maxRequests: 5, windowMs: 1000 })
     expect(result).toBe(null)
   })
 
-  test('11. applyRateLimit returns 429 Response when blocked', () => {
+  test('16. applyRateLimit returns 429 Response when blocked', async () => {
     const req = new Request('https://localhost/api/test', {
-      headers: { 'x-forwarded-for': '127.0.0.2' },
+      headers: { 'x-forwarded-for': '127.0.0.20' },
     })
     const config = { maxRequests: 1, windowMs: 1000 }
-    applyRateLimit(req, 'test_block', config) // first call allowed
-    const blocked = applyRateLimit(req, 'test_block', config)
+    await applyRateLimit(req, 'test_block_16', config)
+    const blocked = await applyRateLimit(req, 'test_block_16', config)
     expect(blocked).not.toBe(null)
     expect(blocked!.status).toBe(429)
   })
 
-  test('12. 429 response includes Retry-After header', () => {
+  test('17. 429 response includes Retry-After header', async () => {
     const req = new Request('https://localhost/api/test', {
-      headers: { 'x-forwarded-for': '127.0.0.3' },
+      headers: { 'x-forwarded-for': '127.0.0.30' },
     })
     const config = { maxRequests: 1, windowMs: 5000 }
-    applyRateLimit(req, 'test_retry', config)
-    const blocked = applyRateLimit(req, 'test_retry', config)!
-    expect(blocked.headers.get('Retry-After')).not.toBe(null)
+    await applyRateLimit(req, 'test_retry_17', config)
+    const blocked = await applyRateLimit(req, 'test_retry_17', config)
+    expect(blocked!.headers.get('Retry-After')).not.toBe(null)
   })
 
-  test('13. different IPs have independent rate limits', () => {
+  test('18. different IPs have independent rate limits', async () => {
     const req1 = new Request('https://localhost/api/test', {
       headers: { 'x-forwarded-for': '1.1.1.1' },
     })
@@ -125,26 +219,26 @@ describe('Rate Limiter Backend Interface (FASE 27)', () => {
       headers: { 'x-forwarded-for': '2.2.2.2' },
     })
     const config = { maxRequests: 1, windowMs: 1000 }
-    expect(applyRateLimit(req1, 'multi_ip', config)).toBe(null)
-    expect(applyRateLimit(req2, 'multi_ip', config)).toBe(null) // different IP, allowed
-    expect(applyRateLimit(req1, 'multi_ip', config)).not.toBe(null) // same IP, blocked
+    expect(await applyRateLimit(req1, 'multi_ip_18', config)).toBe(null)
+    expect(await applyRateLimit(req2, 'multi_ip_18', config)).toBe(null)
+    expect(await applyRateLimit(req1, 'multi_ip_18', config)).not.toBe(null)
   })
 
-  test('14. getClientIp extracts from x-forwarded-for', () => {
+  test('19. getClientIp extracts from x-forwarded-for', () => {
     const req = new Request('https://localhost', {
       headers: { 'x-forwarded-for': '10.0.0.1, 10.0.0.2' },
     })
     expect(getClientIp(req)).toBe('10.0.0.1')
   })
 
-  test('15. getClientIp extracts from x-real-ip', () => {
+  test('20. getClientIp extracts from x-real-ip', () => {
     const req = new Request('https://localhost', {
       headers: { 'x-real-ip': '10.0.0.3' },
     })
     expect(getClientIp(req)).toBe('10.0.0.3')
   })
 
-  test('16. getClientIp defaults to unknown', () => {
+  test('21. getClientIp defaults to unknown', () => {
     const req = new Request('https://localhost')
     expect(getClientIp(req)).toBe('unknown')
   })

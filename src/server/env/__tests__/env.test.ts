@@ -1,6 +1,7 @@
-// Help Bibi — Environment validation tests (FASE 25.4)
+// Help Bibi — Environment validation tests (FASE 25.4/28)
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { validateEnv, requireEnv } from '@/server/env'
+import { _resetBackend } from '@/server/rate-limit'
 
 const ENV_BACKUP: Record<string, string | undefined> = {}
 
@@ -34,6 +35,7 @@ describe('env — validateEnv', () => {
   })
   afterEach(() => {
     restoreEnv(ENV_KEYS)
+    _resetBackend() // FASE 28: clear rate limit singleton so env changes don't leak
   })
 
   test('1. dev with missing vars returns ok=false but does NOT throw', () => {
@@ -139,6 +141,7 @@ describe('env — requireEnv', () => {
   })
   afterEach(() => {
     restoreEnv(ENV_KEYS)
+    _resetBackend() // FASE 28: clear rate limit singleton so env changes don't leak
   })
 
   test('9. requireEnv returns value if set', () => {

@@ -22,7 +22,7 @@ const ADMIN_SEED_PASSWORD = 'Admin123!'
 
 export async function POST(req: NextRequest) {
   // FASE 26: rate limiting (10/min per IP)
-  const rateLimited = applyRateLimit(req, 'admin/login', RATE_LIMITS.login)
+  const rateLimited = await applyRateLimit(req, 'admin/login', RATE_LIMITS.login)
   if (rateLimited) {
     audit('rate_limit_exceeded', { ip: getClientIp(req), route: 'admin/login' })
     return rateLimited

@@ -4,7 +4,7 @@ import { applyRateLimit, RATE_LIMITS } from '@/server/rate-limit'
 const startedAt = Date.now()
 
 export async function GET(req: Request) {
-  const rateLimited = applyRateLimit(req, 'health', RATE_LIMITS.health)
+  const rateLimited = await applyRateLimit(req, 'health', RATE_LIMITS.health)
   if (rateLimited) return rateLimited
   return NextResponse.json({
     status: 'ok',

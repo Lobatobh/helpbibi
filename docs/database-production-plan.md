@@ -127,3 +127,41 @@ Se a migração falhar:
 - **Enums**: PostgreSQL suporta enums nativamente (mais seguro que SQLite strings).
 - **JSON**: PostgreSQL tem tipo Json nativo (melhor que strings JSON).
 - **Decimais**: usar Decimal para dinheiro (Float pode ter erros de arredondamento).
+
+## FASE 28 Update — Runtime Validation Status
+
+### Docker Availability
+- **Docker is NOT available** in the current development environment.
+- PostgreSQL runtime could NOT be tested locally.
+- `schema.postgres.prisma` is validated via `prisma validate` but `db push` against a real PostgreSQL was not executed.
+
+### What Was Validated
+- `schema.postgres.prisma` passes `prisma validate` with a placeholder `POSTGRES_DATABASE_URL`.
+- `validateEnv()` blocks SQLite (`file:`) in production.
+- Model parity between `schema.prisma` and `schema.postgres.prisma` verified via tests.
+- All 8 critical models exist in both schemas: User, ProviderProfile, ServiceRequest, PaymentRecord, PaymentEvent, AuditLog, TrackingShare, ServiceTimelineEvent.
+
+### Commands to Run When Docker is Available
+```bash
+# Start PostgreSQL + Redis
+docker compose -f docker-compose.dev.yml up -d postgres redis
+
+# Validate + generate + push schema to PostgreSQL
+POSTGRES_DATABASE_URL=postgresql://helpbibi:helpbibi_dev_password@localhost:5432/helpbibi \
+  bunx prisma validate --schema prisma/schema.postgres.prisma
+
+POSTGRES_DATABASE_URL=postgresql://helpbibi:helpbibi_dev_password@localhost:5432/helpbibi \
+  bunx prisma generate --schema prisma/schema.postgres.prisma
+
+POSTGRES_DATABASE_URL=postgresql://helpbibi:helpbibi_dev_password@localhost:5432/helpbibi \
+  bunx prisma db push --schema prisma/schema.postgres.prisma
+
+# Test app with PostgreSQL
+DATABASE_URL=postgresql://helpbibi:helpbibi_dev_password@localhost:5432/helpbibi \
+  RATE_LIMIT_BACKEND=redis \
+  REDIS_URL=redis://localhost:6379 \
+  bun run dev
+```
+
+### Blocker
+PostgreSQL runtime validation is **FORMALLY BLOCKED** by Docker unavailability. The schema, env validation, and Docker Compose files are ready — only runtime execution is pending.

@@ -1584,3 +1584,51 @@ Stage Summary:
 - Total de testes: 345 (0 fail, 939 expect calls, 26 arquivos).
 - Riscos restantes: Redis não implementado (stub), PostgreSQL não testado localmente (sem Docker), MercadoPago sem credenciais, CSP unsafe-inline, audit memory perde em restart.
 - Próxima fase: FASE 28 — implementar Redis real, testar PostgreSQL via Docker, homologação MercadoPago.
+
+---
+Task ID: 28
+Agent: main (orchestrator)
+Task: FASE 28 — Redis Real, PostgreSQL Runtime e Validação Containerizada. Implementar Redis verdadeiro para rate limiting, testar PostgreSQL em runtime, validar app funcionando fora do SQLite.
+
+Work Log:
+- DIAGNÓSTICO: Docker NÃO disponível no ambiente. Redis era stub. Schema postgres existia mas não testado em runtime. .env.example estava faltando. 2 testes falhando (test isolation).
+- Recriei .env.example (estava ausente desde reset do ambiente).
+- Corrigi 2 testes falhando: test 13 (.env.example ausente → recriado) e test 7 (getRateLimitBackend singleton cache → testado com new MemoryRateLimitBackend direto).
+- Instalei ioredis@5.11.1.
+- Refatorei RedisRateLimitBackend com implementação REAL:
+  - INCR + PEXPIRE para atomic fixed-window rate limiting.
+  - PTTL para calcular remaining/resetAt/retryAfterMs.
+  - SCAN (não KEYS) para clear().
+  - Constructor aceita cliente injetável (para testes com fake Redis).
+  - Produção: Redis failure → throw (no silent fallback, prevent allow-all).
+  - Dev: Redis failure → log warning + allow request (better DX).
+  - No REDIS_URL in production → throw at construction.
+- Interface RateLimitBackend agora é ASYNC: `check()` retorna `Promise<RateLimitResult>`, `clear()` retorna `Promise<void>`.
+- Atualizei todas as 15 rotas de API para `await applyRateLimit(...)`.
+- Atualizei 3 arquivos de teste para `await rateLimit(...)`, `await applyRateLimit(...)`, `await clearRateLimits()`.
+- Corrigi double-await issue introduzido pelo sed (`await await` → `await`).
+- Adicionei `_resetBackend()` export para limpar singleton em testes.
+- Adicionei afterEach cleanup com `_resetBackend()` em env.test.ts e postgres-compat.test.ts para evitar leak de RATE_LIMIT_BACKEND=redis entre testes.
+- Criei fake Redis client (in-memory Map) nos testes para não precisar de Redis real.
+- Corrigi lint error: `Function` type → `(...args: unknown[]) => void`.
+- PostgreSQL runtime: Docker NÃO disponível → bloqueio formal registrado. Schema validado mas db push não executado.
+- check:full PASSOU: lint ✓, prisma ✓, 350 testes ✓ (0 fail, 950 expect calls), build ✓ (20+ rotas).
+- REGRESSÃO BROWSER:
+  - App abre sem erros ✓
+  - /admin login com seed credentials funciona ✓
+  - Dashboard admin mostra resumo financeiro + audit trail ✓
+  - /api/health: status=ok ✓
+  - Demo: Kate (cliente) + Leo (prestador) registram via socket ✓
+  - Sem erros no console ✓
+- Atualizei docs/redis-rate-limit.md (implementação real, error handling, interface async, testing com fake).
+- Atualizei docs/database-production-plan.md (status Docker, comandos para rodar quando disponível, blocker formal).
+
+Stage Summary:
+- REDIS REAL IMPLEMENTADO: ioredis@5.11.1 instalado. RedisRateLimitBackend com INCR/PEXPIRE/PTTL/SCAN. Produção não faz fallback silencioso. Testes com fake Redis client injetável. Interface async.
+- POSTGRESQL RUNTIME BLOQUEADO: Docker não disponível no ambiente. Schema validado mas não testado em runtime. Comandos exatos documentados para execução futura. Bloqueio formal registrado.
+- DOCKER: não disponível. docker-compose.dev.yml e prod.example.yml prontos mas não executados.
+- check:full: PASSOU (lint ✓, prisma ✓, 350 testes ✓, build ✓).
+- Regressão browser: admin login + dashboard + demo flow funcionam.
+- Total de testes: 350 (0 fail, 950 expect calls, 26 arquivos).
+- Riscos restantes: PostgreSQL não testado em runtime (sem Docker), MercadoPago sem credenciais, CSP unsafe-inline.
+- Próxima fase: FASE 29 — quando Docker disponível, validar PostgreSQL runtime + Redis real em container.

@@ -6,7 +6,7 @@ import { audit } from '@/server/audit'
 
 export async function GET(req: NextRequest) {
   // FASE 26: rate limiting
-  const rateLimited = applyRateLimit(req, 'client/services', RATE_LIMITS.history)
+  const rateLimited = await applyRateLimit(req, 'client/services', RATE_LIMITS.history)
   if (rateLimited) {
     audit('rate_limit_exceeded', { ip: getClientIp(req), route: 'client/services' })
     return rateLimited

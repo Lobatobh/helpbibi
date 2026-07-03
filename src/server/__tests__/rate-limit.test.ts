@@ -1,67 +1,67 @@
-// Help Bibi — Rate Limiter tests (FASE 26)
+// Help Bibi — Rate Limiter tests (FASE 26/28 — async)
 import { describe, test, expect, beforeEach } from 'bun:test'
 import {
   rateLimit, clearRateLimits, getClientIp, applyRateLimit, RATE_LIMITS,
 } from '@/server/rate-limit'
 
-describe('rate-limit — rateLimit()', () => {
-  beforeEach(() => { clearRateLimits() })
+describe('rate-limit — await rateLimit()', () => {
+  beforeEach(async () => { await clearRateLimits() })
 
-  test('1. allows up to maxRequests within the window', () => {
+  test('1. allows up to maxRequests within the window', async () => {
     const cfg = { maxRequests: 3, windowMs: 1000 }
-    expect(rateLimit('k1', cfg).allowed).toBe(true)
-    expect(rateLimit('k1', cfg).allowed).toBe(true)
-    expect(rateLimit('k1', cfg).allowed).toBe(true)
+    expect((await rateLimit('k1', cfg)).allowed).toBe(true)
+    expect((await rateLimit('k1', cfg)).allowed).toBe(true)
+    expect((await rateLimit('k1', cfg)).allowed).toBe(true)
   })
 
-  test('2. blocks requests exceeding maxRequests', () => {
+  test('2. blocks requests exceeding maxRequests', async () => {
     const cfg = { maxRequests: 2, windowMs: 1000 }
-    rateLimit('k2', cfg)
-    rateLimit('k2', cfg)
-    const third = rateLimit('k2', cfg)
+    await rateLimit('k2', cfg)
+    await rateLimit('k2', cfg)
+    const third = await rateLimit('k2', cfg)
     expect(third.allowed).toBe(false)
     expect(third.retryAfterMs).toBeGreaterThan(0)
   })
 
   test('3. resets after the window expires', async () => {
     const cfg = { maxRequests: 1, windowMs: 50 }
-    expect(rateLimit('k3', cfg).allowed).toBe(true)
-    expect(rateLimit('k3', cfg).allowed).toBe(false)
+    expect((await rateLimit('k3', cfg)).allowed).toBe(true)
+    expect((await rateLimit('k3', cfg)).allowed).toBe(false)
     await new Promise((r) => setTimeout(r, 80))
     // After window expires, the bucket resets and a new request is allowed
-    expect(rateLimit('k3', cfg).allowed).toBe(true)
+    expect((await rateLimit('k3', cfg)).allowed).toBe(true)
   })
 
-  test('4. different keys are independent (one does not affect the other)', () => {
+  test('4. different keys are independent (one does not affect the other)', async () => {
     const cfg = { maxRequests: 1, windowMs: 1000 }
-    expect(rateLimit('k4a', cfg).allowed).toBe(true)
-    expect(rateLimit('k4a', cfg).allowed).toBe(false)
+    expect((await rateLimit('k4a', cfg)).allowed).toBe(true)
+    expect((await rateLimit('k4a', cfg)).allowed).toBe(false)
     // k4b is a different key, so it should still be allowed
-    expect(rateLimit('k4b', cfg).allowed).toBe(true)
+    expect((await rateLimit('k4b', cfg)).allowed).toBe(true)
   })
 
-  test('5. remaining count decrements as requests are consumed', () => {
+  test('5. remaining count decrements as requests are consumed', async () => {
     const cfg = { maxRequests: 3, windowMs: 1000 }
-    const r1 = rateLimit('k5', cfg)
+    const r1 = await rateLimit('k5', cfg)
     expect(r1.remaining).toBe(2)
-    const r2 = rateLimit('k5', cfg)
+    const r2 = await rateLimit('k5', cfg)
     expect(r2.remaining).toBe(1)
-    const r3 = rateLimit('k5', cfg)
+    const r3 = await rateLimit('k5', cfg)
     expect(r3.remaining).toBe(0)
     // Once exceeded, remaining stays at 0
-    const r4 = rateLimit('k5', cfg)
+    const r4 = await rateLimit('k5', cfg)
     expect(r4.remaining).toBe(0)
   })
 })
 
-describe('rate-limit — clearRateLimits()', () => {
-  test('6. clearRateLimits allows previously-blocked key to be used again', () => {
+describe('rate-limit — await clearRateLimits()', () => {
+  test('6. clearRateLimits allows previously-blocked key to be used again', async () => {
     const cfg = { maxRequests: 1, windowMs: 10_000 }
-    expect(rateLimit('k6', cfg).allowed).toBe(true)
-    expect(rateLimit('k6', cfg).allowed).toBe(false)
-    clearRateLimits()
+    expect((await rateLimit('k6', cfg)).allowed).toBe(true)
+    expect((await rateLimit('k6', cfg)).allowed).toBe(false)
+    await clearRateLimits()
     // After clearing, the same key should be allowed again (fresh bucket)
-    expect(rateLimit('k6', cfg).allowed).toBe(true)
+    expect((await rateLimit('k6', cfg)).allowed).toBe(true)
   })
 })
 
@@ -100,22 +100,22 @@ describe('rate-limit — RATE_LIMITS presets', () => {
   })
 })
 
-describe('rate-limit — applyRateLimit()', () => {
-  beforeEach(() => { clearRateLimits() })
+describe('rate-limit — await applyRateLimit()', () => {
+  beforeEach(async () => { await clearRateLimits() })
 
-  test('11. returns null when request is within the limit', () => {
+  test('11. returns null when request is within the limit', async () => {
     const req = new Request('https://example.com')
-    const result = applyRateLimit(req, 'route_test', { maxRequests: 5, windowMs: 1000 })
+    const result = await applyRateLimit(req, 'route_test', { maxRequests: 5, windowMs: 1000 })
     expect(result).toBe(null)
   })
 
-  test('12. returns a 429 Response with Retry-After header when rate limited', () => {
+  test('12. returns a 429 Response with Retry-After header when rate limited', async () => {
     const cfg = { maxRequests: 1, windowMs: 1000 }
     const req = new Request('https://example.com')
     // First request allowed
-    expect(applyRateLimit(req, 'route_test2', cfg)).toBe(null)
+    expect(await applyRateLimit(req, 'route_test2', cfg)).toBe(null)
     // Second request rate limited
-    const blocked = applyRateLimit(req, 'route_test2', cfg)
+    const blocked = await applyRateLimit(req, 'route_test2', cfg)
     expect(blocked).not.toBe(null)
     expect(blocked!.status).toBe(429)
     const retryAfter = blocked!.headers.get('Retry-After')

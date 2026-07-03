@@ -7,7 +7,7 @@ import { requireRole } from '@/server/auth/session'
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   // FASE 26: rate limiting
-  const rateLimited = applyRateLimit(req, 'admin/approve', RATE_LIMITS.admin)
+  const rateLimited = await applyRateLimit(req, 'admin/approve', RATE_LIMITS.admin)
   if (rateLimited) {
     audit('rate_limit_exceeded', { ip: getClientIp(req), route: 'admin/approve' })
     return rateLimited
@@ -43,7 +43,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   // FASE 26: rate limiting
-  const rateLimited = applyRateLimit(req, 'admin/approve', RATE_LIMITS.admin)
+  const rateLimited = await applyRateLimit(req, 'admin/approve', RATE_LIMITS.admin)
   if (rateLimited) {
     audit('rate_limit_exceeded', { ip: getClientIp(req), route: 'admin/approve' })
     return rateLimited

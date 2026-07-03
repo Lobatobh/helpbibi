@@ -6,7 +6,7 @@ import { logger } from '@/server/logger'
 
 export async function POST(req: NextRequest) {
   // FASE 26: rate limiting
-  const rateLimited = applyRateLimit(req, 'payments/simulate', RATE_LIMITS.simulate)
+  const rateLimited = await applyRateLimit(req, 'payments/simulate', RATE_LIMITS.simulate)
   if (rateLimited) {
     audit('rate_limit_exceeded', { ip: getClientIp(req), route: 'payments/simulate' })
     return rateLimited

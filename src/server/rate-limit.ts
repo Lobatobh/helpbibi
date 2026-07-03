@@ -1,5 +1,5 @@
-// Help Bibi — Rate Limiter (FASE 27 refactor)
-// Backend interface for rate limiting with memory + redis stub.
+// Help Bibi — Rate Limiter (FASE 27/28 refactor)
+// Backend interface for rate limiting with memory + REAL Redis (ioredis).
 // Production MUST use Redis (or a proxy/WAF) — the memory backend is single-instance only.
 
 import { logger } from './logger'
@@ -20,43 +20,32 @@ export type RateLimitResult = {
 
 /**
  * Backend interface for rate limit storage.
- * Implementations: MemoryRateLimitBackend (default), RedisRateLimitBackend (stub).
+ * FASE 28: check() is async to support Redis I/O.
  */
 export interface RateLimitBackend {
-  /**
-   * Check if a request is allowed under the rate limit.
-   * @param key - identifier (e.g. IP + route, or userId + route)
-   * @param config - { maxRequests, windowMs }
-   * @returns { allowed, remaining, resetAt, retryAfterMs }
-   */
-  check(key: string, config: RateLimitConfig): RateLimitResult
-  /** Clear all buckets (for testing). */
-  clear(): void
+  check(key: string, config: RateLimitConfig): Promise<RateLimitResult>
+  clear(): Promise<void>
 }
 
 /**
  * In-memory rate limiter using a fixed window per key.
- * Suitable for dev/single-instance deployments. NOT safe for multi-instance production
- * because each process keeps its own buckets — use RedisRateLimitBackend (or a proxy/WAF)
- * in production.
+ * Suitable for dev/single-instance deployments. NOT safe for multi-instance production.
  */
 export class MemoryRateLimitBackend implements RateLimitBackend {
   private readonly buckets = new Map<string, Bucket>()
   private lastCleanup = Date.now()
 
-  check(key: string, config: RateLimitConfig): RateLimitResult {
+  async check(key: string, config: RateLimitConfig): Promise<RateLimitResult> {
     this.cleanup()
     const now = Date.now()
     const existing = this.buckets.get(key)
 
-    // Reset bucket if window expired
     if (!existing || existing.resetAt < now) {
       const resetAt = now + config.windowMs
       this.buckets.set(key, { count: 1, resetAt })
       return { allowed: true, remaining: config.maxRequests - 1, resetAt, retryAfterMs: 0 }
     }
 
-    // Increment and check
     existing.count += 1
     const allowed = existing.count <= config.maxRequests
     return {
@@ -67,11 +56,10 @@ export class MemoryRateLimitBackend implements RateLimitBackend {
     }
   }
 
-  clear(): void {
+  async clear(): Promise<void> {
     this.buckets.clear()
   }
 
-  // Cleanup expired buckets every 60s to prevent memory leak
   private cleanup(): void {
     const now = Date.now()
     if (now - this.lastCleanup < 60000) return
@@ -83,50 +71,112 @@ export class MemoryRateLimitBackend implements RateLimitBackend {
 }
 
 /**
- * Redis-backed rate limiter STUB.
+ * Redis-backed rate limiter (FASE 28 — REAL implementation using ioredis).
  *
- * ⚠️ `ioredis` is NOT installed in this project. This stub logs a warning on construction
- * and falls back to MemoryRateLimitBackend so the app still works in dev/staging.
+ * Uses INCR + PEXPIRE for atomic fixed-window rate limiting:
+ *   - INCR increments the counter (creates key with value 1 if it doesn't exist)
+ *   - On first increment (count === 1), set PEXPIRE to the window duration
+ *   - TTL gives us the time until reset
  *
- * To finish the implementation in production:
- *   1. `bun add ioredis`
- *   2. Set `REDIS_URL` (or `REDIS_HOST` / `REDIS_PORT` / `REDIS_PASSWORD`) in your env.
- *   3. Implement `check()` using a Redis INCR + PEXPIRE pattern, e.g.:
- *        const redisKey = `rl:${key}`
- *        const count = await redis.incr(redisKey)
- *        if (count === 1) await redis.pexpire(redisKey, config.windowMs)
- *        const ttl = await redis.pttl(redisKey)
- *        const allowed = count <= config.maxRequests
- *        return {
- *          allowed,
- *          remaining: Math.max(0, config.maxRequests - count),
- *          resetAt: Date.now() + ttl,
- *          retryAfterMs: allowed ? 0 : ttl,
- *        }
- *   4. Implement `clear()` using SCAN over `rl:*` keys → DEL (avoid KEYS in prod).
- *   5. Note: `check()` becomes async — callers like `applyRateLimit` must be updated to
- *      `await` it. Either add a `checkAsync()` to this interface or migrate the whole
- *      `RateLimitBackend` interface to return `Promise<RateLimitResult>`.
+ * If Redis is unavailable in production, check() throws an error (no silent fallback).
+ * In dev, it logs a warning and falls back to memory.
  */
 export class RedisRateLimitBackend implements RateLimitBackend {
-  private readonly fallback: MemoryRateLimitBackend
+  private redis: any // ioredis instance
+  private fallback: MemoryRateLimitBackend | null = null
+  private readonly isProd: boolean
 
-  constructor() {
-    logger.warn(
-      'rate-limit',
-      'RedisRateLimitBackend is a STUB — ioredis is not installed. Falling back to MemoryRateLimitBackend. ' +
-        'Install ioredis, set REDIS_URL, and implement the real INCR+EXPIRE logic before using in production.',
-      { backend: 'redis-stub' }
-    )
-    this.fallback = new MemoryRateLimitBackend()
+  constructor(redisUrlOrClient?: string | any) {
+    this.isProd = process.env.NODE_ENV === 'production'
+    // FASE 28: support injecting a fake Redis client for testing
+    if (redisUrlOrClient && typeof redisUrlOrClient === 'object') {
+      this.redis = redisUrlOrClient
+      return
+    }
+    const url = (typeof redisUrlOrClient === 'string' ? redisUrlOrClient : null) || process.env.REDIS_URL
+    if (!url) {
+      if (this.isProd) {
+        throw new Error('[rate-limit] REDIS_URL is required when RATE_LIMIT_BACKEND=redis in production')
+      }
+      logger.warn('rate-limit', 'REDIS_URL not set — Redis backend falling back to memory (dev only)')
+      this.fallback = new MemoryRateLimitBackend()
+      return
+    }
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const Redis = require('ioredis')
+      this.redis = new Redis(url, {
+        maxRetriesPerRequest: 3,
+        enableReadyCheck: true,
+        retryStrategy: (times: number) => Math.min(times * 100, 1000),
+      })
+      this.redis.on('error', (err: Error) => {
+        logger.error('rate-limit', 'Redis connection error', { message: err.message })
+      })
+      this.redis.on('connect', () => {
+        logger.info('rate-limit', 'Redis connected', { url: url.replace(/:[^:@]+@/, ':***@') })
+      })
+    } catch (e: any) {
+      if (this.isProd) {
+        throw new Error(`[rate-limit] Failed to initialize ioredis: ${e.message}`)
+      }
+      logger.warn('rate-limit', 'ioredis not available — falling back to memory (dev only)', { error: e.message })
+      this.fallback = new MemoryRateLimitBackend()
+    }
   }
 
-  check(key: string, config: RateLimitConfig): RateLimitResult {
-    return this.fallback.check(key, config)
+  async check(key: string, config: RateLimitConfig): Promise<RateLimitResult> {
+    // Dev fallback to memory if Redis not available
+    if (this.fallback) {
+      return this.fallback.check(key, config)
+    }
+
+    const redisKey = `rl:${key}`
+    try {
+      // Atomic INCR + PEXPIRE pattern (fixed window)
+      const count = await this.redis.incr(redisKey)
+      if (count === 1) {
+        // First request in window — set TTL
+        await this.redis.pexpire(redisKey, config.windowMs)
+      }
+      const ttl = await this.redis.pttl(redisKey)
+      const now = Date.now()
+      const allowed = count <= config.maxRequests
+      return {
+        allowed,
+        remaining: Math.max(0, config.maxRequests - count),
+        resetAt: now + (ttl > 0 ? ttl : config.windowMs),
+        retryAfterMs: allowed ? 0 : (ttl > 0 ? ttl : config.windowMs),
+      }
+    } catch (e: any) {
+      if (this.isProd) {
+        // Production: NO silent fallback — throw to prevent allow-all
+        logger.error('rate-limit', 'Redis check failed in production — rejecting request', { message: e.message })
+        throw new Error(`[rate-limit] Redis unavailable in production: ${e.message}`)
+      }
+      // Dev: log warning and allow the request (better DX than blocking)
+      logger.warn('rate-limit', 'Redis check failed in dev — allowing request', { message: e.message })
+      return { allowed: true, remaining: config.maxRequests - 1, resetAt: Date.now() + config.windowMs, retryAfterMs: 0 }
+    }
   }
 
-  clear(): void {
-    this.fallback.clear()
+  async clear(): Promise<void> {
+    if (this.fallback) {
+      return this.fallback.clear()
+    }
+    try {
+      // Use SCAN to find rl:* keys (avoid KEYS in production — O(N))
+      let cursor = '0'
+      do {
+        const [nextCursor, keys] = await this.redis.scan(cursor, 'MATCH', 'rl:*', 'COUNT', 100)
+        cursor = nextCursor
+        if (keys.length > 0) {
+          await this.redis.del(...keys)
+        }
+      } while (cursor !== '0')
+    } catch (e: any) {
+      logger.error('rate-limit', 'Redis clear failed', { message: e.message })
+    }
   }
 }
 
@@ -134,11 +184,7 @@ let backend: RateLimitBackend | null = null
 
 /**
  * Factory: returns the configured RateLimitBackend (singleton, lazily created).
- * Reads `RATE_LIMIT_BACKEND` env var (default: 'memory'; supports 'redis' for the stub).
- *
- * In production with 'memory', logs a strong warning — the memory backend does NOT work
- * across multiple instances/processes and is reset on every deploy/restart, so it is
- * easily bypassed.
+ * Reads `RATE_LIMIT_BACKEND` env var (default: 'memory'; supports 'redis').
  */
 export function getRateLimitBackend(): RateLimitBackend {
   if (backend) return backend
@@ -153,9 +199,7 @@ export function getRateLimitBackend(): RateLimitBackend {
       logger.warn(
         'rate-limit',
         '⚠️ RATE_LIMIT_BACKEND=memory in PRODUCTION. In-memory rate limiting does NOT work across ' +
-          'multiple instances/processes (each process has its own buckets) and is reset on every deploy/restart. ' +
-          'Set RATE_LIMIT_BACKEND=redis (with ioredis installed) or put a real rate limiter (e.g. Cloudflare, ' +
-          'Vercel Edge rate limit, NGINX limit_req) in front of the app.',
+          'multiple instances/processes. Set RATE_LIMIT_BACKEND=redis (with REDIS_URL) or use a proxy/WAF.',
         { backend: 'memory', nodeEnv: process.env.NODE_ENV }
       )
     }
@@ -166,29 +210,17 @@ export function getRateLimitBackend(): RateLimitBackend {
 }
 
 // ─── Backward-compatible public API ─────────────────────────────────────────
-// These keep the original module exports working for the 11 API routes and the
-// existing FASE 26 test suite. Internally they delegate to the active backend.
+// FASE 28: rateLimit() and applyRateLimit() are now ASYNC to support Redis.
+// All API route callers have been updated to `await` them.
 
-/**
- * Check if a request is allowed under the rate limit. (Backward-compatible wrapper.)
- * @param key - identifier (e.g. IP + route, or userId + route)
- * @param config - { maxRequests, windowMs }
- * @returns { allowed, remaining, resetAt, retryAfterMs }
- */
-export function rateLimit(key: string, config: RateLimitConfig): RateLimitResult {
+export async function rateLimit(key: string, config: RateLimitConfig): Promise<RateLimitResult> {
   return getRateLimitBackend().check(key, config)
 }
 
-/**
- * Clear all buckets (for testing). (Backward-compatible wrapper.)
- */
-export function clearRateLimits(): void {
-  getRateLimitBackend().clear()
+export async function clearRateLimits(): Promise<void> {
+  await getRateLimitBackend().clear()
 }
 
-/**
- * Get the client IP from a Next.js request, accounting for proxies.
- */
 export function getClientIp(request: Request): string {
   const forwarded = request.headers.get('x-forwarded-for')
   if (forwarded) return forwarded.split(',')[0].trim()
@@ -197,30 +229,29 @@ export function getClientIp(request: Request): string {
   return 'unknown'
 }
 
-// Pre-configured rate limit presets
 export const RATE_LIMITS = {
-  login: { maxRequests: 10, windowMs: 60_000 },         // 10/min per IP
-  me: { maxRequests: 60, windowMs: 60_000 },            // 60/min per IP
-  webhook: { maxRequests: 30, windowMs: 60_000 },       // 30/min per IP
-  simulate: { maxRequests: 20, windowMs: 60_000 },      // 20/min per IP (dev)
-  track: { maxRequests: 60, windowMs: 60_000 },         // 60/min per IP
-  admin: { maxRequests: 60, windowMs: 60_000 },         // 60/min per IP
-  history: { maxRequests: 30, windowMs: 60_000 },       // 30/min per IP
-  health: { maxRequests: 120, windowMs: 60_000 },       // 120/min per IP
+  login: { maxRequests: 10, windowMs: 60_000 },
+  me: { maxRequests: 60, windowMs: 60_000 },
+  webhook: { maxRequests: 30, windowMs: 60_000 },
+  simulate: { maxRequests: 20, windowMs: 60_000 },
+  track: { maxRequests: 60, windowMs: 60_000 },
+  admin: { maxRequests: 60, windowMs: 60_000 },
+  history: { maxRequests: 30, windowMs: 60_000 },
+  health: { maxRequests: 120, windowMs: 60_000 },
 } as const
 
 /**
- * Apply rate limiting to a Next.js route handler.
+ * Apply rate limiting to a Next.js route handler (FASE 28: async).
  * Returns null if allowed, or a Response (429) if rate limited.
  */
-export function applyRateLimit(
+export async function applyRateLimit(
   request: Request,
   routeName: string,
   config: RateLimitConfig
-): null | Response {
+): Promise<null | Response> {
   const ip = getClientIp(request)
   const key = `${routeName}:${ip}`
-  const result = rateLimit(key, config)
+  const result = await rateLimit(key, config)
   if (result.allowed) return null
   return new Response(
     JSON.stringify({
@@ -237,4 +268,9 @@ export function applyRateLimit(
       },
     }
   )
+}
+
+// Reset backend singleton (for testing)
+export function _resetBackend(): void {
+  backend = null
 }

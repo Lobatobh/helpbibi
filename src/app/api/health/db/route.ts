@@ -6,7 +6,7 @@ import { logger } from '@/server/logger'
 const startedAt = Date.now()
 
 export async function GET(req: Request) {
-  const rateLimited = applyRateLimit(req, 'health/db', RATE_LIMITS.health)
+  const rateLimited = await applyRateLimit(req, 'health/db', RATE_LIMITS.health)
   if (rateLimited) return rateLimited
   try {
     // Simple DB connectivity check — count users (lightweight)

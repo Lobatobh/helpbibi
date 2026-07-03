@@ -9,7 +9,7 @@ const VALID_STATUSES: PaymentStatus[] = ['PENDING', 'AUTHORIZED', 'PAID', 'FAILE
 
 export async function GET(req: NextRequest) {
   // FASE 26: rate limiting
-  const rateLimited = applyRateLimit(req, 'admin/payments', RATE_LIMITS.admin)
+  const rateLimited = await applyRateLimit(req, 'admin/payments', RATE_LIMITS.admin)
   if (rateLimited) {
     audit('rate_limit_exceeded', { ip: getClientIp(req), route: 'admin/payments' })
     return rateLimited
