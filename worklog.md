@@ -1685,3 +1685,38 @@ Stage Summary:
 - Total de testes: 401 (0 fail, 1138 expect calls, 30 arquivos).
 - Riscos restantes: MP não homologado (precisa credenciais sandbox + webhook URL pública), PostgreSQL não testado em runtime (sem Docker), Redis não testado contra servidor real.
 - MP só será marcado como homologado quando credenciais sandbox reais + webhook real acessível por URL pública forem usadas.
+
+---
+Task ID: 29.1
+Agent: main (orchestrator)
+Task: FASE 29.1 — Correção Crítica do Webhook Mercado Pago e Operações Reais. Corrigir adapter MP para não aprovar pagamentos indevidamente, não autorizar eventos desconhecidos, deixar claro o que está implementado vs pendente.
+
+Work Log:
+- AUDITORIA MercadoPagoGateway:
+  - createPaymentIntent: CASH funciona, PIX/CARD throw (sem credenciais)
+  - authorizePayment: STUB (throw "Requires MP API")
+  - capturePayment: STUB (throw "Requires MP API")
+  - cancelPayment: STUB (throw "Requires MP API")
+  - refundPayment: STUB (throw "Requires MP API")
+  - parseWebhookEvent: INSEGURO — payment_created→PAID, approved→PAID, unknown→AUTHORIZED
+  - verifyWebhookSignature: implementado (HMAC manifest)
+  - getPaymentStatus: não existia
+- CORREÇÃO parseWebhookEvent: TODOS os webhooks agora retornam WEBHOOK_RECEIVED (no state change). MP webhooks não contêm status do pagamento — apenas action. Aprovar baseado em action era inseguro. Agora registra PaymentEvent sem alterar status, marca como needs reconciliation.
+- Adicionei tipo WEBHOOK_RECEIVED ao GatewayWebhookEvent (interface).
+- Adicionei método getPaymentStatus(providerPaymentId) ao MercadoPagoGateway: retorna null sem credenciais reais (needs reconciliation). Documentado que produção deve implementar fetch GET /v1/payments/{id}.
+- Atualizei processWebhook no payment.repository para tratar WEBHOOK_RECEIVED: cria PaymentEvent (fromStatus=toStatus=current), atualiza lastWebhookSignature, NÃO altera status, retorna "needs reconciliation".
+- Atualizei reconcilePayments para detectar webhooks recebidos sem mudança de status (needs API lookup).
+- Reescrevi mercado-pago-webhook-mapping.test.ts: 26 testes que verificam que TODOS os actions (payment.created, approved, rejected, cancelled, refunded, unknown) retornam WEBHOOK_RECEIVED (não PAID/AUTHORIZED/FAILED/CANCELED/REFUNDED). Testa getPaymentStatus retorna null. Testa cancel/refund stubs throw "Requires MP API".
+- check:full PASSOU: lint ✓, prisma ✓, 408 testes ✓ (0 fail, 1147 expect calls), build ✓.
+- REGRESSÃO BROWSER: app abre sem erros, health ok, admin reconcile funciona (totalChecked:0, totalIssues:0).
+- Atualizei docs/mercado-pago-sandbox.md com seção FASE 29.1 explicando o fix, nova regra, como status real é obtido, status de cancel/refund (stubs), checklist atualizado.
+
+Stage Summary:
+- WEBHOOK SEGURO: parseWebhookEvent NUNCA aprova pagamento por action. Todos webhooks retornam WEBHOOK_RECEIVED (no state change). Status real só via API (getPaymentStatus).
+- SEM FALLBACK INSEGURO: unknown não vira AUTHORIZED, payment_created não vira PAID. Tudo vira WEBHOOK_RECEIVED.
+- CANCEL/REFUND MP: claramente STUBS com erro controlado "Requires MP API". SimulatedGateway tem cancel/refund implementados.
+- getPaymentStatus: adicionado, retorna null sem credenciais (needs reconciliation). Produção deve implementar fetch real.
+- RECONCILIAÇÃO: detecta webhooks sem status (needs API lookup) + PENDING>1h + PAID sem evento + FAILED>24h + REFUNDED sem evento.
+- check:full: PASSOU (lint ✓, prisma ✓, 408 testes ✓, build ✓).
+- Total de testes: 408 (0 fail, 1147 expect calls, 30 arquivos).
+- Mercado Pago NÃO homologado — precisa credenciais sandbox reais + webhook URL pública + implementar getPaymentStatus/cancelPayment/refundPayment com API real.

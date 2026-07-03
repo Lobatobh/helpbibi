@@ -109,3 +109,53 @@ FROM "PaymentEvent" WHERE "paymentRecordId" = '...' ORDER BY "createdAt";
 4. **Reconciliação** — executar diariamente para detectar divergências
 5. **Estorno** — refunds são irreversíveis; validar antes de executar
 6. **Disputas** — chargebacks devem ser tratados (status charged_back → REFUNDED)
+
+## FASE 29.1 — Webhook Security Fix
+
+### Problema Corrigido
+O `parseWebhookEvent` anterior mapeava `payment_created` → `PAID` e unknown → `AUTHORIZED`, o que era inseguro: webhooks do MP não contêm o status do pagamento, apenas a `action` (evento). Aprovar pagamento baseado apenas em `action` poderia aprovar pagamentos indevidamente.
+
+### Nova Regra (Segura)
+**TODOS** os webhooks do MP agora retornam `WEBHOOK_RECEIVED` — nenhum estado é alterado automaticamente.
+
+```typescript
+parseWebhookEvent → { event: 'WEBHOOK_RECEIVED', ... }
+```
+
+O `processWebhook` no `payment.repository.ts` trata `WEBHOOK_RECEIVED`:
+1. Cria um `PaymentEvent` (eventType: WEBHOOK, fromStatus = toStatus = current)
+2. Atualiza `lastWebhookSignature` + `webhookVerifiedAt`
+3. **NÃO altera o status do PaymentRecord**
+4. Marca como "needs reconciliation"
+
+### Como o Status Real é Obtido
+O status real do pagamento deve ser obtido via API do MP: `GET /v1/payments/{id}`
+
+O método `getPaymentStatus(providerPaymentId)` foi adicionado ao `MercadoPagoGateway`:
+- Sem credenciais reais: retorna `null` (needs reconciliation)
+- Com credenciais sandbox: TODO implementar `fetch` real (quando disponível)
+
+### Reconciliação
+`reconcilePayments()` agora detecta:
+- Webhook recebido sem mudança de status (needs API lookup)
+- PENDING >1h
+- PAID sem evento PAID
+- FAILED >24h
+- REFUNDED sem evento REFUNDED
+
+### Cancel/Refund MP — Status
+- `cancelPayment()` — **STUB** (throw "Requires MP API")
+- `refundPayment()` — **STUB** (throw "Requires MP API")
+- `authorizePayment()` — **STUB** (throw "Requires MP API")
+- `capturePayment()` — **STUB** (throw "Requires MP API")
+
+Estes métodos precisam de credenciais sandbox reais para implementação. O `SimulatedGateway` tem cancel/refund totalmente implementado e funcional.
+
+### Checklist Atualizado
+- [x] Webhook não aprova por `payment.created`
+- [x] Webhook desconhecido não altera estado
+- [x] `WEBHOOK_RECEIVED` evento registra sem mudar status
+- [x] Reconciliação detecta webhook sem status
+- [ ] `getPaymentStatus` implementado com API real (pendente sandbox)
+- [ ] `cancelPayment` implementado com API real (pendente sandbox)
+- [ ] `refundPayment` implementado com API real (pendente sandbox)

@@ -25,16 +25,49 @@ export class MercadoPagoGateway implements PaymentGateway {
   async parseWebhookEvent(rawBody: string, _h: Record<string,string>): Promise<GatewayWebhookEvent> {
     let b: any; try { b = JSON.parse(rawBody) } catch { throw new Error('Invalid JSON') }
     const pid = b?.data?.id; if (!pid) throw new Error('Missing data.id')
-    // FASE 29: map action to event type
+    // FASE 29.1: SECURE webhook mapping — never auto-approve from action alone.
+    // MP webhooks contain action (e.g. "payment.created", "payment.updated") but NOT the payment status.
+    // The only way to know the real status is to call the MP API: GET /v1/payments/{id}
+    // Until sandbox credentials are available, we return WEBHOOK_RECEIVED (no state change).
+    // The reconciliation process or admin will fetch the real status separately.
     const action = (b.action || '').toLowerCase()
-    let event: GatewayWebhookEvent['event']
-    if (action.includes('authorized')) event = 'AUTHORIZED'
-    else if (action.includes('approved') || action.includes('paid') || action.includes('payment_created')) event = 'PAID'
-    else if (action.includes('rejected') || action.includes('failure')) event = 'FAILED'
-    else if (action.includes('cancelled') || action.includes('canceled')) event = 'CANCELED'
-    else if (action.includes('refunded')) event = 'REFUNDED'
-    else event = 'AUTHORIZED' // default to AUTHORIZED for unknown actions (safe fallback — admin reviews)
-    return { event, providerPaymentId:String(pid), message:`MP webhook: ${b.action||'updated'}`, rawPayload: sanitize({ provider:'mercado_pago', webhookId:b.id, action:b.action, paymentId:String(pid) }) }
+    return {
+      event: 'WEBHOOK_RECEIVED',
+      providerPaymentId: String(pid),
+      message: `MP webhook received: ${b.action || 'unknown'} (status not in payload — needs API lookup)`,
+      rawPayload: sanitize({ provider: 'mercado_pago', webhookId: b.id, action: b.action, paymentId: String(pid), needsStatusLookup: true }),
+    }
+  }
+
+  /**
+   * FASE 29.1: Fetch the real payment status from Mercado Pago API.
+   * Requires a valid access token. In sandbox/dev without credentials, returns null.
+   *
+   * Production flow:
+   *   1. Webhook received → parseWebhookEvent returns WEBHOOK_RECEIVED (no state change)
+   *   2. processWebhook calls getPaymentStatus(providerPaymentId) to fetch real status
+   *   3. If status found, transition PaymentRecord accordingly
+   *   4. If status not available (no credentials), mark as needs_reconciliation
+   *
+   * @returns PaymentStatus | null (null = cannot determine, needs reconciliation)
+   */
+  async getPaymentStatus(providerPaymentId: string): Promise<PaymentStatus | null> {
+    // Without a real access token (sandbox), we cannot call the MP API.
+    // In production with real credentials, this would do:
+    //   const response = await fetch(`https://api.mercadopago.com/v1/payments/${providerPaymentId}`, {
+    //     headers: { Authorization: `Bearer ${this.accessToken}` }
+    //   })
+    //   const data = await response.json()
+    //   return MP_STATUS_MAP[data.status] || null
+    //
+    // For now, return null to indicate "needs reconciliation" — the caller should
+    // log a PaymentEvent and flag the record for manual/admin review.
+    if (!this.accessToken || this.accessToken.startsWith('test_') === false) {
+      // Dev/test: no real API call
+      return null
+    }
+    // Production with real token: TODO implement actual API call when sandbox credentials available
+    return null
   }
   async verifyWebhookSignature(rawBody: string, signature: string, options?: { dataId?: string; requestId?: string }): Promise<GatewayWebhookVerification> {
     if (!signature) return { valid:false, reason:'Missing x-signature' }

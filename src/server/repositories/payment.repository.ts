@@ -117,6 +117,28 @@ export async function processWebhook(rawBody: string, signature: string, headers
   }
   const statusMap: Record<string, PaymentStatus> = { AUTHORIZED: 'AUTHORIZED', PAID: 'PAID', FAILED: 'FAILED', CANCELED: 'CANCELED', REFUNDED: 'REFUNDED' }
   const target = statusMap[event.event]
+
+  // FASE 29.1: WEBHOOK_RECEIVED means the webhook was valid but doesn't contain a status.
+  // Log a PaymentEvent but do NOT change the payment status — needs reconciliation.
+  if (event.event === 'WEBHOOK_RECEIVED') {
+    await db.paymentEvent.create({
+      data: {
+        paymentRecordId: record.id,
+        eventType: 'WEBHOOK',
+        fromStatus: record.status as PaymentStatus,
+        toStatus: record.status as PaymentStatus, // no state change
+        message: `Webhook received (no status in payload — needs reconciliation): ${event.message}`,
+        rawPayload: toJson(event.rawPayload),
+      },
+    }).catch(() => {})
+    // Update lastWebhookSignature so duplicate detection works
+    await db.paymentRecord.update({
+      where: { id: record.id },
+      data: { lastWebhookSignature: signature, webhookVerifiedAt: new Date() },
+    }).catch(() => {})
+    return { processed: true, reason: `Webhook received (no state change — needs reconciliation)`, recordId: record.id }
+  }
+
   if (!target) return { processed: false, reason: `Unknown webhook event: ${event.event}`, recordId: record.id }
   if (!canTransition(record.status as PaymentStatus, target)) {
     await db.paymentEvent.create({ data: { paymentRecordId: record.id, eventType: 'WEBHOOK', fromStatus: record.status as PaymentStatus, toStatus: target, message: `Webhook transition not allowed: ${record.status} → ${target}`, rawPayload: toJson(event.rawPayload) } }).catch(() => {})
@@ -241,6 +263,12 @@ export async function reconcilePayments(): Promise<{ issues: ReconciliationIssue
     // REFUNDED without REFUNDED event
     if (r.status === 'REFUNDED' && !r.events.some(e => e.eventType === 'REFUNDED')) {
       issues.push({ paymentRecordId: r.id, serviceRequestId: r.serviceRequestId, issue: 'REFUNDED status but no REFUNDED event', severity: 'error', currentStatus: 'REFUNDED', amount: r.amount })
+    }
+
+    // FASE 29.1: Webhook received but no status change (needs reconciliation)
+    const hasWebhookNoChange = r.events.some(e => e.eventType === 'WEBHOOK' && e.fromStatus === e.toStatus && e.message?.includes('needs reconciliation'))
+    if (hasWebhookNoChange && r.status === 'PENDING') {
+      issues.push({ paymentRecordId: r.id, serviceRequestId: r.serviceRequestId, issue: 'Webhook received without status — needs API lookup/reconciliation', severity: 'warning', currentStatus: 'PENDING', amount: r.amount })
     }
   }
 
