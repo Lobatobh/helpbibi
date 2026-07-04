@@ -341,3 +341,57 @@ curl -X POST http://localhost:3000/api/admin/payments/$PAYMENT_ID/refund \
 1. Rodar teste isolado: `bun test path/to/test.ts`
 2. Verificar se DB está acessível: `bunx prisma db push`
 3. Limpar cache: `rm -rf .next node_modules/.cache`
+# Deploy VPS/Dokploy - FASE 31.1
+
+## Arquivos de deploy
+- `Dockerfile`: app Next.js builda e roda com Node.js 22.
+- `mini-services/rescue-service/Dockerfile`: rescue-service continua com Bun.
+- `docker-compose.yml`: compose principal para Dokploy/VPS.
+- `.env.example`: template de variaveis para Dokploy.
+
+## Variaveis obrigatorias no Dokploy
+```env
+POSTGRES_PASSWORD=
+DATABASE_URL=
+POSTGRES_DATABASE_URL=
+REDIS_URL=redis://redis:6379
+RATE_LIMIT_BACKEND=redis
+AUDIT_LOG_BACKEND=database
+SESSION_SECRET=
+PAYMENT_WEBHOOK_SECRET=
+PAYMENT_GATEWAY_PROVIDER=simulated
+NEXT_PUBLIC_APP_URL=
+NEXT_PUBLIC_SOCKET_URL=/
+SOCKET_CORS_ORIGIN=
+RESCUE_SERVICE_URL=http://rescue:3003
+```
+
+## Comandos seguros na VPS
+```bash
+cd /etc/dokploy/compose/helpbibi-helpbibi-k7sn7j/code
+git pull
+docker compose config
+docker compose build app --no-cache
+docker compose build rescue --no-cache
+```
+
+Se os builds passarem, subir pelo fluxo do Dokploy UI ou por:
+
+```bash
+docker compose up -d
+docker compose ps
+docker compose logs app --tail=200
+docker compose logs rescue --tail=200
+curl -i http://localhost:3000/api/health
+curl -i http://localhost:3000/api/health/db
+```
+
+## Regras de seguranca
+- Nao usar `select-a-container`; listar containers reais com `docker ps -a`.
+- Nao publicar `3000:3000` nem `3003:3003` direto no host.
+- Nao usar SQLite com `NODE_ENV=production`.
+- Nao rodar prune.
+- Nao apagar volumes sem backup.
+- Nao mexer em containers de outros servicos.
+
+---

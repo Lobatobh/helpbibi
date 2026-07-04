@@ -3,18 +3,19 @@
 # ============================================================
 # Separate container for the real-time rescue orchestration service.
 
-FROM oven/bun:1.1 AS base
+FROM oven/bun:1.3.13 AS base
 WORKDIR /app
 
 # Copy root package.json for shared deps (prisma, etc.)
-COPY package.json bun.lockb* ./
+COPY package.json bun.lock ./
 COPY prisma ./prisma
 
 # Install all dependencies (rescue-service imports from src/)
 RUN bun install --frozen-lockfile
 
 # Generate Prisma client
-RUN bunx prisma generate
+ENV POSTGRES_DATABASE_URL=postgresql://helpbibi:helpbibi@postgres:5432/helpbibi?schema=public
+RUN bunx prisma generate --schema=prisma/schema.postgres.prisma
 
 # Copy rescue-service source
 COPY mini-services/rescue-service ./mini-services/rescue-service

@@ -219,3 +219,40 @@ A Help Bibi está pronta como Release Candidate local. Produção real está blo
 1. FASE 31: Docker disponível → validar PostgreSQL + Redis em container
 2. FASE 32: Credenciais MP sandbox → homologação MP
 3. FASE 33: VPS provisionado → deploy VPS/Dokploy
+# FASE 31.1 - Docker/Dokploy Build Stabilization
+
+## Status
+- App Dockerfile corrigido para build/runtime com Node.js 22.
+- Bun permanece apenas para instalar dependencias a partir de `bun.lock`.
+- Build Docker usa `npm run build:docker`, que chama `next build --webpack`.
+- Runtime do app usa `node server.js`.
+- Prisma client do app e do rescue-service e gerado com `schema.postgres.prisma` no Docker.
+- Rescue-service continua com Bun, mas tambem usa Prisma/PostgreSQL em producao.
+
+## Causa Raiz
+O deploy no Dokploy falhou em `RUN bun run build` dentro do Dockerfile do app:
+
+```txt
+Error [ChunkLoadError]: Failed to load chunk server/chunks/ssr/[root-of-the-server]__*.js
+[cause]: SyntaxError: Unexpected token ','
+```
+
+O build do Next.js 16/Turbopack com Bun dentro do Docker estava instavel. A correcao estabiliza o build do app com Node e forca Webpack apenas no build Docker.
+
+## Compose VPS/Dokploy
+- `docker-compose.yml` agora usa PostgreSQL e Redis proprios da Help Bibi.
+- `DATABASE_URL` e `POSTGRES_DATABASE_URL` em producao usam `postgresql://...`; SQLite nao e usado no compose VPS.
+- `RATE_LIMIT_BACKEND=redis` e `AUDIT_LOG_BACKEND=database`.
+- Portas 3000/3003 nao sao publicadas no host; Dokploy/Traefik deve rotear para a porta interna 3000 do `app`.
+- Rede externa: `dokploy-network`.
+- `PAYMENT_GATEWAY_PROVIDER=simulated` permanece ate homologacao real.
+
+## Riscos Restantes
+- Validacao Docker local em 2026-07-04 ficou bloqueada porque o Docker Desktop daemon nao estava disponivel:
+  - `docker compose build app --no-cache`: `open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.`
+  - `docker compose build rescue --no-cache`: `open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.`
+- Docker build completo precisa ser validado na VPS/Dokploy.
+- Secrets reais devem ser preenchidos somente no Dokploy/.env da VPS.
+- Mercado Pago segue nao homologado.
+
+---

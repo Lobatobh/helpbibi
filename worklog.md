@@ -1812,3 +1812,29 @@ Stage Summary:
 - STATUS: RC Local aprovado e marcado oficialmente no Git
 - PRODUÇÃO REAL: ainda bloqueada por 7 itens (PostgreSQL runtime, Redis runtime, Mercado Pago sandbox, VPS/Dokploy, domínio/HTTPS, backup, monitoramento)
 - PRÓXIMA FASE: FASE 31 (quando Docker disponível — validar PostgreSQL + Redis em container)
+---
+Task ID: 31.1
+Agent: main
+Task: Corrigir deploy VPS/Dokploy - estabilizar build Docker do app e compose staging/producao.
+
+Work Log:
+- Diagnostico: deploy Dokploy falhou em `RUN bun run build` com `ChunkLoadError`/`Unexpected token ','` no build Next.js 16 dentro do Docker.
+- Causa raiz: build do app Next.js via Bun no Docker e instavel; app precisa buildar/rodar com Node. Rescue-service pode continuar com Bun.
+- Adicionado teste estatico `src/server/__tests__/docker-deploy-config.test.ts` cobrindo Dockerfile Node, `build:docker`, compose PostgreSQL/Redis/dokploy-network sem portas host, `.dockerignore` e `.env.example`.
+- Dockerfile do app alterado para Node.js 22 no build/runtime, Bun apenas no stage de instalacao via `bun.lock`; build Docker usa `npm run build:docker`; runtime usa `node server.js`.
+- Dockerfile do app e Dockerfile do rescue agora geram Prisma client com `prisma/schema.postgres.prisma` para runtime PostgreSQL.
+- Compose principal alterado para PostgreSQL + Redis proprios, `DATABASE_URL=postgresql://...`, `POSTGRES_DATABASE_URL=postgresql://...`, `RATE_LIMIT_BACKEND=redis`, `AUDIT_LOG_BACKEND=database`, rede externa `dokploy-network`, sem `3000:3000`/`3003:3003`.
+- `.env.example` ajustado para variaveis Dokploy sem secrets reais.
+- `.dockerignore` criado para excluir `.env`, bancos locais, `.git`, logs, screenshots e tarballs do contexto Docker.
+- Validacao local: `bun run check:full` passou completo (414 testes, 0 falhas, build ok).
+- Validacao local: `docker compose config` passou; avisos foram apenas variaveis vazias no `.env` local.
+- Validacao Docker local bloqueada por ambiente:
+  - `docker compose build app --no-cache` falhou com `open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.`
+  - `docker compose build rescue --no-cache` falhou com `open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.`
+
+Stage Summary:
+- Nenhuma regra de negocio alterada.
+- Mercado Pago real nao foi habilitado.
+- Nenhum volume/container externo foi tocado.
+- Build Docker real ficou pendente para VPS/Dokploy por indisponibilidade do Docker Desktop local.
+- Proximo passo na VPS: `git pull`, `docker compose config`, `docker compose build app --no-cache`, `docker compose build rescue --no-cache`.

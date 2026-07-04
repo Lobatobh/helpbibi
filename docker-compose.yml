@@ -1,100 +1,110 @@
 # ============================================================
 # Help Bibi — Docker Compose for staging/local
 # ============================================================
-# Usage:
-#   docker compose up --build
+# Dokploy/Traefik routes traffic to the app container on port 3000.
+# Do not publish 3000 or 3003 directly on the host.
 #
 # Services:
 #   app      — Next.js web app (port 3000)
 #   rescue   — Socket.IO rescue service (port 3003)
 #
-# Both services share the same SQLite DB file via volume.
-# For production with PostgreSQL, see docker-compose.postgres.yml
+# Uses PostgreSQL and Redis services owned by this compose.
+# Dokploy should route to the internal app port 3000.
 #
 # In Dokploy: use this compose file, expose port 3000 via Traefik.
 # The rescue-service runs on internal port 3003 (not exposed externally).
 
 services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=production
-      - DATABASE_URL=file:/app/db/custom.db
-      - PAYMENT_GATEWAY_PROVIDER=${PAYMENT_GATEWAY_PROVIDER:-simulated}
-      - PAYMENT_WEBHOOK_SECRET=${PAYMENT_WEBHOOK_SECRET:-dev_webhook_secret_change_me}
-      - SESSION_SECRET=${SESSION_SECRET:-change_me_to_a_random_64_char_string}
-      - SOCKET_CORS_ORIGIN=${SOCKET_CORS_ORIGIN:-http://localhost:3000}
-      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
-      - NEXT_PUBLIC_SOCKET_URL=/
-      - RESCUE_SERVICE_URL=http://rescue:3003
-    volumes:
-      - helpbibi-db:/app/db
-    depends_on:
-      rescue:
-        condition: service_healthy
+  postgres:
+    image: postgres:16-alpine
     restart: unless-stopped
+    environment:
+      POSTGRES_DB: helpbibi
+      POSTGRES_USER: helpbibi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - helpbibi-postgres:/var/lib/postgresql/data
+    networks:
+      - dokploy-network
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
-      interval: 30s
+      test: ["CMD-SHELL", "pg_isready -U helpbibi -d helpbibi"]
+      interval: 10s
       timeout: 5s
-      start_period: 15s
-      retries: 3
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks:
+      - dokploy-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   rescue:
     build:
       context: .
       dockerfile: mini-services/rescue-service/Dockerfile
-    ports:
-      - "3003:3003"
-    environment:
-      - NODE_ENV=production
-      - DATABASE_URL=file:/app/db/custom.db
-      - PAYMENT_GATEWAY_PROVIDER=${PAYMENT_GATEWAY_PROVIDER:-simulated}
-      - PAYMENT_WEBHOOK_SECRET=${PAYMENT_WEBHOOK_SECRET:-dev_webhook_secret_change_me}
-      - SOCKET_CORS_ORIGIN=${SOCKET_CORS_ORIGIN:-http://localhost:3000}
-      - RESCUE_SERVICE_PORT=3003
-    volumes:
-      - helpbibi-db:/app/db
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "bun", "-e", "const s = require('net').connect(3003, 'localhost'); s.on('connect', () => { s.end(); process.exit(0) }); s.on('error', () => process.exit(1)); setTimeout(() => process.exit(1), 3000)"]
-      interval: 30s
-      timeout: 5s
-      start_period: 10s
-      retries: 3
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://helpbibi:${POSTGRES_PASSWORD}@postgres:5432/helpbibi?schema=public
+      POSTGRES_DATABASE_URL: postgresql://helpbibi:${POSTGRES_PASSWORD}@postgres:5432/helpbibi?schema=public
+      REDIS_URL: redis://redis:6379
+      RATE_LIMIT_BACKEND: redis
+      PAYMENT_GATEWAY_PROVIDER: simulated
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET}
+      SOCKET_CORS_ORIGIN: ${SOCKET_CORS_ORIGIN}
+      RESCUE_SERVICE_PORT: 3003
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    expose:
+      - "3003"
+    networks:
+      - dokploy-network
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+        NEXT_PUBLIC_SOCKET_URL: ${NEXT_PUBLIC_SOCKET_URL}
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://helpbibi:${POSTGRES_PASSWORD}@postgres:5432/helpbibi?schema=public
+      POSTGRES_DATABASE_URL: postgresql://helpbibi:${POSTGRES_PASSWORD}@postgres:5432/helpbibi?schema=public
+      REDIS_URL: redis://redis:6379
+      RATE_LIMIT_BACKEND: redis
+      AUDIT_LOG_BACKEND: database
+      PAYMENT_GATEWAY_PROVIDER: simulated
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET}
+      SESSION_SECRET: ${SESSION_SECRET}
+      SOCKET_CORS_ORIGIN: ${SOCKET_CORS_ORIGIN}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+      NEXT_PUBLIC_SOCKET_URL: ${NEXT_PUBLIC_SOCKET_URL}
+      RESCUE_SERVICE_URL: http://rescue:3003
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rescue:
+        condition: service_started
+    expose:
+      - "3000"
+    networks:
+      - dokploy-network
 
 volumes:
-  helpbibi-db:
-    driver: local
+  helpbibi-postgres:
 
-# ============================================================
-# PostgreSQL (production) — uncomment to use
-# ============================================================
-# services:
-#   postgres:
-#     image: postgres:16-alpine
-#     environment:
-#       - POSTGRES_DB=helpbibi
-#       - POSTGRES_USER=helpbibi
-#       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-change_me}
-#     volumes:
-#       - helpbibi-pg:/var/lib/postgresql/data
-#     restart: unless-stopped
-#     healthcheck:
-#       test: ["CMD-SHELL", "pg_isready -U helpbibi"]
-#       interval: 10s
-#       timeout: 5s
-#       retries: 5
-#
-# volumes:
-#   helpbibi-pg:
-#     driver: local
-#
-# Then set in app/rescue envs:
-#   DATABASE_URL=postgresql://helpbibi:${POSTGRES_PASSWORD}@postgres:5432/helpbibi
-# And change prisma/schema.prisma:
-#   provider = "postgresql"
+networks:
+  dokploy-network:
+    external: true

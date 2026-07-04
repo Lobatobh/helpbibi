@@ -7,7 +7,40 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: helpbibi-app
+      args:
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+        NEXT_PUBLIC_SOCKET_URL: ${NEXT_PUBLIC_SOCKET_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rescue:
+        condition: service_started
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://helpbibi:${POSTGRES_PASSWORD}@postgres:5432/helpbibi?schema=public
+      POSTGRES_DATABASE_URL: postgresql://helpbibi:${POSTGRES_PASSWORD}@postgres:5432/helpbibi?schema=public
+      REDIS_URL: redis://redis:6379
+      RATE_LIMIT_BACKEND: redis
+      AUDIT_LOG_BACKEND: database
+      SESSION_SECRET: ${SESSION_SECRET}
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET}
+      SOCKET_CORS_ORIGIN: ${SOCKET_CORS_ORIGIN}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL}
+      NEXT_PUBLIC_SOCKET_URL: ${NEXT_PUBLIC_SOCKET_URL}
+      RESCUE_SERVICE_URL: http://rescue:3003
+      PAYMENT_GATEWAY_PROVIDER: simulated
+    expose:
+      - "3000"
+    networks:
+      - dokploy-network
+    restart: unless-stopped
+
+  rescue:
+    build:
+      context: .
+      dockerfile: mini-services/rescue-service/Dockerfile
     depends_on:
       postgres:
         condition: service_healthy
@@ -15,83 +48,51 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://helpbibi:${POSTGRES_PASSWORD:?must set}@postgres:5432/helpbibi?schema=public
+      DATABASE_URL: postgresql://helpbibi:${POSTGRES_PASSWORD}@postgres:5432/helpbibi?schema=public
+      POSTGRES_DATABASE_URL: postgresql://helpbibi:${POSTGRES_PASSWORD}@postgres:5432/helpbibi?schema=public
       REDIS_URL: redis://redis:6379
       RATE_LIMIT_BACKEND: redis
-      AUDIT_LOG_BACKEND: database
-      SESSION_SECRET: ${SESSION_SECRET:?must set}
-      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:?must set}
-      SOCKET_CORS_ORIGIN: ${SOCKET_CORS_ORIGIN:?must set}
-      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-https://app.helpbibi.com}
-      NEXT_PUBLIC_SOCKET_URL: ${NEXT_PUBLIC_SOCKET_URL:-/?XTransformPort=3003}
-      RESCUE_SERVICE_PORT: "3003"
-      PAYMENT_GATEWAY_PROVIDER: ${PAYMENT_GATEWAY_PROVIDER:-simulated}
-      MERCADO_PAGO_ACCESS_TOKEN: ${MERCADO_PAGO_ACCESS_TOKEN:-}
-      MERCADO_PAGO_WEBHOOK_SECRET: ${MERCADO_PAGO_WEBHOOK_SECRET:-}
-    ports:
-      - "3000:3000"
+      PAYMENT_GATEWAY_PROVIDER: simulated
+      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET}
+      SOCKET_CORS_ORIGIN: ${SOCKET_CORS_ORIGIN}
+      RESCUE_SERVICE_PORT: 3003
+    expose:
+      - "3003"
     networks:
-      - helpbibi-prod
-    restart: unless-stopped
-
-  rescue-service:
-    build:
-      context: .
-      dockerfile: mini-services/rescue-service/Dockerfile
-    container_name: helpbibi-rescue
-    depends_on:
-      postgres:
-        condition: service_healthy
-    environment:
-      NODE_ENV: production
-      DATABASE_URL: postgresql://helpbibi:${POSTGRES_PASSWORD:?must set}@postgres:5432/helpbibi?schema=public
-      RESCUE_SERVICE_PORT: "3003"
-      SOCKET_CORS_ORIGIN: ${SOCKET_CORS_ORIGIN:?must set}
-      SESSION_SECRET: ${SESSION_SECRET:?must set}
-      PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET:?must set}
-    ports:
-      - "3003:3003"
-    networks:
-      - helpbibi-prod
+      - dokploy-network
     restart: unless-stopped
 
   postgres:
     image: postgres:16-alpine
-    container_name: helpbibi-postgres
     environment:
       POSTGRES_USER: helpbibi
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?must set}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: helpbibi
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - helpbibi-postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U helpbibi -d helpbibi"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - helpbibi-prod
+      - dokploy-network
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
-    container_name: helpbibi-redis
-    command: redis-server --requirepass ${REDIS_PASSWORD:?must set}
-    volumes:
-      - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - helpbibi-prod
+      - dokploy-network
     restart: unless-stopped
 
 volumes:
-  postgres_data:
-  redis_data:
+  helpbibi-postgres:
 
 networks:
-  helpbibi-prod:
-    driver: bridge
+  dokploy-network:
+    external: true
