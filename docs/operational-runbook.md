@@ -366,6 +366,12 @@ SOCKET_CORS_ORIGIN=
 RESCUE_SERVICE_URL=http://rescue:3003
 ```
 
+Observacoes:
+- `SESSION_SECRET` deve existir para `app` e `rescue`; sem isso o `rescue` falha na validacao de env em producao.
+- `AUDIT_LOG_BACKEND=database` deve existir para `app` e `rescue`.
+- `NEXT_PUBLIC_APP_URL` e `SOCKET_CORS_ORIGIN` devem apontar para o dominio real quando sair de placeholder.
+- Mercado Pago real continua nao homologado; manter `PAYMENT_GATEWAY_PROVIDER=simulated`.
+
 ## Comandos seguros na VPS
 ```bash
 cd /etc/dokploy/compose/helpbibi-helpbibi-k7sn7j/code
@@ -373,6 +379,12 @@ git pull
 docker compose config
 docker compose build app --no-cache
 docker compose build rescue --no-cache
+```
+
+Para staging inicial com PostgreSQL novo, aplicar schema explicitamente:
+
+```bash
+docker compose exec app npx prisma db push --schema=prisma/schema.postgres.prisma
 ```
 
 Se os builds passarem, subir pelo fluxo do Dokploy UI ou por:
@@ -385,6 +397,14 @@ docker compose logs rescue --tail=200
 curl -i http://localhost:3000/api/health
 curl -i http://localhost:3000/api/health/db
 ```
+
+## Validacao FASE 31 na VPS
+- `docker compose build app --no-cache`: passou na VPS.
+- `docker compose build rescue --no-cache`: passou na VPS.
+- `app`, `postgres`, `redis` e `rescue`: `Up healthy`.
+- `/api/health`: 200 ok.
+- `/api/health/db`: 200 connected.
+- Logs recentes: sem erros apos `SESSION_SECRET` e `AUDIT_LOG_BACKEND=database` no `rescue`.
 
 ## Regras de seguranca
 - Nao usar `select-a-container`; listar containers reais com `docker ps -a`.

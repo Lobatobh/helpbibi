@@ -54,8 +54,10 @@ services:
       POSTGRES_DATABASE_URL: postgresql://helpbibi:${POSTGRES_PASSWORD}@postgres:5432/helpbibi?schema=public
       REDIS_URL: redis://redis:6379
       RATE_LIMIT_BACKEND: redis
+      AUDIT_LOG_BACKEND: database
       PAYMENT_GATEWAY_PROVIDER: simulated
       PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET}
+      SESSION_SECRET: ${SESSION_SECRET}
       SOCKET_CORS_ORIGIN: ${SOCKET_CORS_ORIGIN}
       RESCUE_SERVICE_PORT: 3003
     depends_on:

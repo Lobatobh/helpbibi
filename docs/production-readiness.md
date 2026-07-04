@@ -243,16 +243,27 @@ O build do Next.js 16/Turbopack com Bun dentro do Docker estava instavel. A corr
 - `docker-compose.yml` agora usa PostgreSQL e Redis proprios da Help Bibi.
 - `DATABASE_URL` e `POSTGRES_DATABASE_URL` em producao usam `postgresql://...`; SQLite nao e usado no compose VPS.
 - `RATE_LIMIT_BACKEND=redis` e `AUDIT_LOG_BACKEND=database`.
+- `SESSION_SECRET` e `AUDIT_LOG_BACKEND=database` tambem sao definidos no `rescue`, porque a validacao de env em producao roda nesse servico.
 - Portas 3000/3003 nao sao publicadas no host; Dokploy/Traefik deve rotear para a porta interna 3000 do `app`.
 - Rede externa: `dokploy-network`.
 - `PAYMENT_GATEWAY_PROVIDER=simulated` permanece ate homologacao real.
 
+## Validacao VPS/Dokploy - FASE 31
+- Docker build do `app` passou na VPS.
+- Docker build do `rescue` passou na VPS.
+- Containers `app`, `postgres`, `redis` e `rescue` subiram `Up healthy`.
+- PostgreSQL staging inicial aplicado com `prisma db push --schema=prisma/schema.postgres.prisma`.
+- `/api/health` respondeu 200 ok.
+- `/api/health/db` respondeu 200 connected.
+- Logs recentes sem erros apos incluir `SESSION_SECRET` e `AUDIT_LOG_BACKEND=database` no `rescue`.
+- Runtime Node.js instala `openssl` para remover o warning do Prisma em `node:22-bookworm-slim`.
+
 ## Riscos Restantes
-- Validacao Docker local em 2026-07-04 ficou bloqueada porque o Docker Desktop daemon nao estava disponivel:
+- Validacao Docker local em 2026-07-04 ficou bloqueada porque o Docker Desktop daemon nao estava disponivel, mas a validacao Docker real passou na VPS/Dokploy:
   - `docker compose build app --no-cache`: `open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.`
   - `docker compose build rescue --no-cache`: `open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.`
-- Docker build completo precisa ser validado na VPS/Dokploy.
 - Secrets reais devem ser preenchidos somente no Dokploy/.env da VPS.
 - Mercado Pago segue nao homologado.
+- Dominio real ainda precisa estar configurado no `.env` da VPS/Dokploy se `NEXT_PUBLIC_APP_URL` ou `SOCKET_CORS_ORIGIN` ainda estiverem como placeholder.
 
 ---

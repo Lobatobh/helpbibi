@@ -1838,3 +1838,26 @@ Stage Summary:
 - Nenhum volume/container externo foi tocado.
 - Build Docker real ficou pendente para VPS/Dokploy por indisponibilidade do Docker Desktop local.
 - Proximo passo na VPS: `git pull`, `docker compose config`, `docker compose build app --no-cache`, `docker compose build rescue --no-cache`.
+
+---
+Task ID: 31.2
+Agent: main
+Task: Finalizar ajustes permanentes pos-validacao VPS/Dokploy da FASE 31.
+
+Work Log:
+- Validacao real na VPS/Dokploy concluida com sucesso: `app`, `postgres`, `redis` e `rescue` ficaram `Up healthy`.
+- Docker build do `app` passou na VPS.
+- Docker build do `rescue` passou na VPS.
+- PostgreSQL staging inicial aplicado com `prisma db push --schema=prisma/schema.postgres.prisma`.
+- `/api/health` respondeu 200 ok.
+- `/api/health/db` respondeu 200 connected.
+- Logs recentes sem erros apos correcao manual no `rescue`.
+- Correcao manual da VPS incorporada ao repositorio: `SESSION_SECRET: ${SESSION_SECRET}` e `AUDIT_LOG_BACKEND: database` no servico `rescue`.
+- Dockerfile do app atualizado para instalar `openssl` no runtime Node.js, removendo warning do Prisma em `node:22-bookworm-slim`.
+- Teste estatico de deploy atualizado para cobrir `SESSION_SECRET`, `AUDIT_LOG_BACKEND`, PostgreSQL em producao, ausencia de SQLite em services production, ausencia de portas host 3000/3003 e `dokploy-network`.
+
+Stage Summary:
+- FASE 31 validada na VPS/Dokploy.
+- Nenhuma regra de negocio alterada.
+- Mercado Pago real continua nao homologado e permanece simulado.
+- Dominio real ainda precisa estar configurado no `.env` da VPS/Dokploy se `NEXT_PUBLIC_APP_URL` ou `SOCKET_CORS_ORIGIN` estiverem como placeholder.
