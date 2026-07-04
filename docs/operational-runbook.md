@@ -377,6 +377,14 @@ Observacoes:
 - `NEXT_PUBLIC_APP_URL` e `SOCKET_CORS_ORIGIN` devem apontar para o dominio real quando sair de placeholder.
 - Mercado Pago real continua nao homologado; manter `PAYMENT_GATEWAY_PROVIDER=simulated`.
 
+## Roteamento publico Traefik
+- O dominio oficial e `helpbibi.com`; tambem rotear `www.helpbibi.com`.
+- Se `curl -k -I --resolve helpbibi.com:443:187.77.32.53 https://helpbibi.com` retornar 404 pelo Traefik, verificar as labels do container `app`.
+- O `app` deve ter `traefik.enable=true`, `traefik.docker.network=dokploy-network`, routers `helpbibi-web`/`helpbibi-websecure` e load balancer na porta interna `3000`.
+- O router HTTP usa `entrypoints=web` com `redirect-to-https@file`; o router HTTPS usa `entrypoints=websecure` e `tls.certresolver=letsencrypt`.
+- O `rescue-service` fica interno em `rescue:3003`; nao publicar `3003:3003` e nao criar dominio publico para ele.
+- Esta correcao de rota nao exige mudanca em PostgreSQL, Redis, Supabase ou Mercado Pago.
+
 ## Comandos seguros na VPS
 ```bash
 cd /etc/dokploy/compose/helpbibi-helpbibi-k7sn7j/code

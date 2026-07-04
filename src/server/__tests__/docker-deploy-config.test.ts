@@ -11,6 +11,27 @@ function serviceBlock(compose: string, service: 'app' | 'rescue') {
   return match?.[1] ?? ''
 }
 
+function expectHelpBibiTraefikLabels(app: string) {
+  const expectedLabels = [
+    'traefik.enable=true',
+    'traefik.docker.network=dokploy-network',
+    'traefik.http.routers.helpbibi-web.entrypoints=web',
+    'traefik.http.routers.helpbibi-web.rule=Host(`helpbibi.com`) || Host(`www.helpbibi.com`)',
+    'traefik.http.routers.helpbibi-web.middlewares=redirect-to-https@file',
+    'traefik.http.routers.helpbibi-web.service=helpbibi-web',
+    'traefik.http.services.helpbibi-web.loadbalancer.server.port=3000',
+    'traefik.http.routers.helpbibi-websecure.entrypoints=websecure',
+    'traefik.http.routers.helpbibi-websecure.rule=Host(`helpbibi.com`) || Host(`www.helpbibi.com`)',
+    'traefik.http.routers.helpbibi-websecure.service=helpbibi-websecure',
+    'traefik.http.routers.helpbibi-websecure.tls.certresolver=letsencrypt',
+    'traefik.http.services.helpbibi-websecure.loadbalancer.server.port=3000',
+  ]
+
+  for (const label of expectedLabels) {
+    expect(app).toContain(label)
+  }
+}
+
 describe('docker deploy config', () => {
   test('app Dockerfile builds and runs Next.js with Node, not Bun', () => {
     const dockerfile = read('Dockerfile')
@@ -52,6 +73,7 @@ describe('docker deploy config', () => {
     expect(compose).toContain('redis:')
     expect(compose).toContain('dokploy-network')
     expect(compose).toContain('external: true')
+    expectHelpBibiTraefikLabels(app)
 
     for (const service of [app, rescue]) {
       expect(service).toContain('NODE_ENV: production')
@@ -66,6 +88,10 @@ describe('docker deploy config', () => {
 
     expect(compose).not.toContain('"3000:3000"')
     expect(compose).not.toContain('"3003:3003"')
+    expect(rescue).not.toContain('traefik.http.routers')
+    expect(rescue).not.toContain('Host(`helpbibi.com`)')
+    expect(rescue).not.toContain('Host(`www.helpbibi.com`)')
+    expect(rescue).not.toContain('loadbalancer.server.port=3003')
   })
 
   test('production compose example keeps the same Dokploy runtime guarantees', () => {
@@ -75,6 +101,7 @@ describe('docker deploy config', () => {
 
     expect(compose).toContain('dokploy-network')
     expect(compose).toContain('external: true')
+    expectHelpBibiTraefikLabels(app)
 
     for (const service of [app, rescue]) {
       expect(service).toContain('NODE_ENV: production')
@@ -87,6 +114,10 @@ describe('docker deploy config', () => {
 
     expect(compose).not.toContain('"3000:3000"')
     expect(compose).not.toContain('"3003:3003"')
+    expect(rescue).not.toContain('traefik.http.routers')
+    expect(rescue).not.toContain('Host(`helpbibi.com`)')
+    expect(rescue).not.toContain('Host(`www.helpbibi.com`)')
+    expect(rescue).not.toContain('loadbalancer.server.port=3003')
   })
 
   test('Docker context excludes local env database git metadata and transfer archives', () => {

@@ -101,6 +101,19 @@ services:
         condition: service_started
     expose:
       - "3000"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=dokploy-network"
+      - "traefik.http.routers.helpbibi-web.entrypoints=web"
+      - "traefik.http.routers.helpbibi-web.rule=Host(`helpbibi.com`) || Host(`www.helpbibi.com`)"
+      - "traefik.http.routers.helpbibi-web.middlewares=redirect-to-https@file"
+      - "traefik.http.routers.helpbibi-web.service=helpbibi-web"
+      - "traefik.http.services.helpbibi-web.loadbalancer.server.port=3000"
+      - "traefik.http.routers.helpbibi-websecure.entrypoints=websecure"
+      - "traefik.http.routers.helpbibi-websecure.rule=Host(`helpbibi.com`) || Host(`www.helpbibi.com`)"
+      - "traefik.http.routers.helpbibi-websecure.service=helpbibi-websecure"
+      - "traefik.http.routers.helpbibi-websecure.tls.certresolver=letsencrypt"
+      - "traefik.http.services.helpbibi-websecure.loadbalancer.server.port=3000"
     networks:
       - dokploy-network
 

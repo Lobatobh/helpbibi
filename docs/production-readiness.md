@@ -258,6 +258,14 @@ O build do Next.js 16/Turbopack com Bun dentro do Docker estava instavel. A corr
 - Logs recentes sem erros apos incluir `SESSION_SECRET` e `AUDIT_LOG_BACKEND=database` no `rescue`.
 - Runtime Node.js instala `openssl` para remover o warning do Prisma em `node:22-bookworm-slim`.
 
+## Roteamento Publico Traefik/Dokploy
+- Diagnostico VPS: o Traefik retornava 404 para `helpbibi.com` porque o container do `app` nao tinha labels Traefik de roteamento.
+- Correcao permanente: `docker-compose.yml` adiciona labels Traefik no servico `app` para `helpbibi.com` e `www.helpbibi.com`.
+- O trafego publico HTTP/HTTPS entra pelo Traefik/Dokploy e aponta para a porta interna `3000` do servico `app`.
+- O `rescue-service` permanece interno na porta `3003`; nao existe dominio publico nem publicacao direta `3003:3003`.
+- Nao mexer em banco, Redis, Supabase ou Mercado Pago para essa correcao de roteamento.
+- Mercado Pago real continua nao homologado e deve permanecer com `PAYMENT_GATEWAY_PROVIDER=simulated`.
+
 ## Seguranca de Secrets e Versionamento
 - `.env` real nao deve ser rastreado pelo Git.
 - `.env.example` e o unico modelo seguro versionado e contem apenas placeholders.

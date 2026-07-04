@@ -1879,3 +1879,25 @@ Stage Summary:
 - Nenhuma regra de negocio alterada.
 - Mercado Pago real nao foi habilitado.
 - Secrets reais permanecem fora do repositorio.
+
+---
+Task ID: 31.4
+Agent: main
+Task: Corrigir roteamento publico Traefik/Dokploy para `helpbibi.com`.
+
+Work Log:
+- Diagnostico informado da VPS: app, rescue, postgres e redis estavam saudaveis, mas Traefik retornava 404 para `helpbibi.com`.
+- Causa operacional: o container do `app` nao tinha labels Traefik; o Traefik nao conhecia router publico para o dominio.
+- Adicionadas labels permanentes no servico `app` em `docker-compose.yml` e `docker-compose.prod.example.yml`.
+- Routers configurados para `helpbibi.com` e `www.helpbibi.com`:
+  - HTTP `helpbibi-web` em `entrypoints=web` com `redirect-to-https@file`.
+  - HTTPS `helpbibi-websecure` em `entrypoints=websecure` com `tls.certresolver=letsencrypt`.
+  - Load balancer apontando para a porta interna `3000`.
+- `rescue-service` permanece interno na porta `3003`, sem dominio publico e sem `3003:3003`.
+- Teste estatico de deploy atualizado para validar labels Traefik, dominio raiz, `www`, HTTPS, porta interna 3000, `dokploy-network`, PostgreSQL em producao e ausencia de SQLite em `NODE_ENV=production`.
+
+Stage Summary:
+- Nenhuma regra de negocio alterada.
+- Banco, Redis, Supabase e Mercado Pago nao foram alterados.
+- Mercado Pago real continua nao homologado e permanece simulado.
+- `.env` real continua fora do Git; secrets devem ficar apenas na VPS/Dokploy.
