@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { io } from 'socket.io-client'
 import { Trophy, Star, Truck, TrendingUp, Medal, Crown, Award } from 'lucide-react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { RESCUE_SOCKET_PATH, resolveRescueSocketUrl } from '@/lib/rescue-socket-url'
 
 type LeaderboardEntry = {
   id: string
@@ -16,14 +17,13 @@ type LeaderboardEntry = {
 
 type Period = 'today' | 'total'
 
-const SOCKET_URL = '/?XTransformPort=3003'
-
 export function Leaderboard() {
   const [entries, setEntries] = useState<LeaderboardEntry[]>([])
   const [period, setPeriod] = useState<Period>('today')
 
   useEffect(() => {
-    const s = io(SOCKET_URL, {
+    const s = io(resolveRescueSocketUrl(), {
+      path: RESCUE_SOCKET_PATH,
       transports: ['websocket', 'polling'],
       forceNew: true,
       reconnection: true,

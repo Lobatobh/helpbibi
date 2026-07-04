@@ -639,7 +639,7 @@ function DemoLive() {
       <div className="mb-6 flex flex-col items-center gap-3 sm:flex-row sm:justify-center">
         <div className="flex items-center gap-2 text-sm text-slate-400">
           <span className="flex h-2 w-2 animate-pulse rounded-full bg-orange-400" />
-          Conexão em tempo real ativa · WebSocket na porta 3003
+          Demo em tempo real via WebSocket
         </div>
         <button
           onClick={() => setShowSecondProvider((v) => !v)}

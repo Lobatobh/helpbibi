@@ -170,3 +170,13 @@
 - [ ] Tracking não expõe `couponCode`, `simulatedTransactionId`
 - [ ] `sanitizeTrackingObject` strips ALL financial fields
 
+## 18. FASE 32.1 - Demo publica no navegador
+
+- [ ] `https://helpbibi.com` carrega a home publica
+- [ ] Botao `Iniciar demo ao vivo` abre os paineis cliente e prestador
+- [ ] Cliente com nome valido e WebSocket conectado consegue clicar em `Entrar como cliente`
+- [ ] Prestador com nome, veiculo e placa validos e WebSocket conectado consegue clicar em `Entrar como prestador`
+- [ ] A mensagem `Conectando...` nao permanece apos conexao do socket
+- [ ] Em falha de socket, a UI mostra erro claro em vez de parecer travada
+- [ ] O frontend usa `NEXT_PUBLIC_SOCKET_URL` em producao ou a origem publica atual quando a env esta ausente/placeholder
+- [ ] Nenhum teste da demo exige publicacao direta de `3003:3003`

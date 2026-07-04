@@ -32,6 +32,7 @@ import { TripProgressBar } from './trip-progress-bar'
 import { LoyaltyCard } from './loyalty-card'
 import { SettingsView } from './settings-view'
 import { LiveCountdown } from './live-countdown'
+import { ClientEntryForm } from './demo-entry-form'
 
 const ICONS: Record<string, any> = {
   'tow-truck': Truck, tire: CircleDot, battery: Battery, fuel: Fuel, key: Key, wrench: Wrench,
@@ -60,7 +61,8 @@ const haversineKm = (a: LatLng, b: LatLng) => {
 
 export function ClientPanel() {
   const {
-    connected, registered, nearby, currentService, messages, newMessage, promoResult, loyalty, rewards, redeemResult,
+    connected, connectionError, registered, registering, registrationError,
+    nearby, currentService, messages, newMessage, promoResult, loyalty, rewards, redeemResult,
     register, requestService, cancelService, rateService,
     validatePromo, clearPromo, sendChat, clearNewMessage,
     redeemReward, clearRedeemResult, clearCurrent,
@@ -180,39 +182,15 @@ export function ClientPanel() {
   // -------- Render states --------
   if (!registered) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
-        <div className="relative">
-          <div className="absolute -inset-3 animate-pulse rounded-3xl bg-sky-500/20 blur-xl" />
-          <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-sky-400 to-sky-600 text-slate-950 shadow-lg shadow-sky-500/30">
-            <Shield className="h-8 w-8" />
-          </div>
-        </div>
-        <div>
-          <h3 className="text-lg font-bold text-white">Sou Cliente</h3>
-          <p className="mt-1 text-sm text-slate-400">
-            Informe seu nome para entrar no app e solicitar socorro.
-          </p>
-        </div>
-        <div className="w-full space-y-2">
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Seu nome"
-            className="border-slate-700 bg-slate-900 text-white placeholder:text-slate-500"
-            onKeyDown={(e) => e.key === 'Enter' && handleRegister()}
-          />
-          <Button
-            onClick={handleRegister}
-            disabled={!name.trim() || !connected}
-            className="w-full bg-sky-500 text-slate-950 hover:bg-sky-400"
-          >
-            Entrar como cliente
-          </Button>
-        </div>
-        <p className="text-xs text-slate-500">
-          {connected ? '✓ Conectado ao serviço' : 'Conectando...'}
-        </p>
-      </div>
+      <ClientEntryForm
+        name={name}
+        connected={connected}
+        connectionError={connectionError}
+        registering={registering}
+        registrationError={registrationError}
+        onNameChange={setName}
+        onRegister={handleRegister}
+      />
     )
   }
 

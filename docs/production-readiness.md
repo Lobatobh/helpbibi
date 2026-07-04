@@ -275,6 +275,13 @@ O build do Next.js 16/Turbopack com Bun dentro do Docker estava instavel. A corr
 - Containers `app`, `rescue`, `postgres` e `redis` permaneceram saudaveis.
 - Pendencias futuras: propagacao/cache DNS normal, homologacao navegador, Supabase ainda nao integrado, Mercado Pago real ainda nao habilitado, backups e monitoramento ainda pendentes.
 
+## FASE 32.1 - Homologacao publica no navegador
+- Bug F32-001: os botoes da demo publica nao avancavam porque os paineis cliente/prestador dependiam do estado `connected` do hook de socket, enquanto o hook usava o fallback local `/?XTransformPort=3003` e ignorava `NEXT_PUBLIC_SOCKET_URL`.
+- Correcao: sockets publicos da demo agora resolvem URL por `NEXT_PUBLIC_SOCKET_URL`; em producao, env ausente ou placeholder cai para a origem publica atual; o fallback `/?XTransformPort=3003` fica restrito ao uso fora de producao.
+- UX: erro de socket fica visivel em `connect_error`, e a tela nao afirma conexao ativa sem estado real do hook.
+- Sem mudancas de infraestrutura: nao publicar `3003:3003`, nao alterar Traefik, nao alterar `.env`, nao habilitar Supabase e nao habilitar Mercado Pago real.
+- Validacao manual esperada na Fase 32: abrir `https://helpbibi.com`, iniciar demo, preencher cliente/prestador e confirmar que ambos avancam quando o WebSocket conecta.
+
 ## Seguranca de Secrets e Versionamento
 - `.env` real nao deve ser rastreado pelo Git.
 - `.env.example` e o unico modelo seguro versionado e contem apenas placeholders.

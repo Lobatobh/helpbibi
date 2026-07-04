@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { io, Socket } from 'socket.io-client'
+import { RESCUE_SOCKET_PATH, resolveRescueSocketUrl, rescueSocketStatusMessage } from '@/lib/rescue-socket-url'
 import type {
   ProviderState, ProviderPublic, ServiceData, PaymentMethod,
   ChatMessage, PromoResult, LoyaltyInfo, LoyaltyReward, RedeemResult,
@@ -9,7 +10,10 @@ import type {
 
 type ClientState = {
   connected: boolean
+  connectionError: string | null
   registered: boolean
+  registering: boolean
+  registrationError: string | null
   clientId: string | null
   nearby: ProviderPublic[]
   currentService: ServiceData | null
@@ -24,7 +28,10 @@ type ClientState = {
 
 type ProviderSession = {
   connected: boolean
+  connectionError: string | null
   registered: boolean
+  registering: boolean
+  registrationError: string | null
   providerId: string | null
   state: ProviderState | null
   offer: ServiceData | null
@@ -34,13 +41,19 @@ type ProviderSession = {
   offerTaken: { serviceId: string; acceptedBy: string | null; cancelled: boolean } | null
 }
 
-const SOCKET_URL = '/?XTransformPort=3003'
+const REGISTER_TIMEOUT_MS = 8000
+const REGISTRATION_TIMEOUT_MESSAGE =
+  'Não recebemos confirmação do serviço em tempo real. Tente novamente em alguns segundos.'
 
 export function useClientSocket() {
   const socketRef = useRef<Socket | null>(null)
+  const registerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [state, setState] = useState<ClientState>({
     connected: false,
+    connectionError: null,
     registered: false,
+    registering: false,
+    registrationError: null,
     clientId: null,
     nearby: [],
     currentService: null,
@@ -54,7 +67,8 @@ export function useClientSocket() {
   })
 
   useEffect(() => {
-    const s = io(SOCKET_URL, {
+    const s = io(resolveRescueSocketUrl(), {
+      path: RESCUE_SOCKET_PATH,
       transports: ['websocket', 'polling'],
       forceNew: true,
       reconnection: true,
@@ -64,11 +78,27 @@ export function useClientSocket() {
     })
     socketRef.current = s
 
-    s.on('connect', () => setState((p) => ({ ...p, connected: true })))
+    s.on('connect', () => setState((p) => ({ ...p, connected: true, connectionError: null })))
     s.on('disconnect', () => setState((p) => ({ ...p, connected: false })))
+    s.on('connect_error', () => {
+      setState((p) => ({
+        ...p,
+        connected: false,
+        registering: false,
+        connectionError: rescueSocketStatusMessage({ connected: false, error: 'connect_error' }),
+      }))
+    })
 
     s.on('client:registered', (data: { id: string }) => {
-      setState((p) => ({ ...p, registered: true, clientId: data.id }))
+      if (registerTimerRef.current) clearTimeout(registerTimerRef.current)
+      setState((p) => ({
+        ...p,
+        registered: true,
+        registering: false,
+        registrationError: null,
+        connectionError: null,
+        clientId: data.id,
+      }))
     })
 
     s.on('providers:nearby', (providers: ProviderPublic[]) => {
@@ -108,12 +138,32 @@ export function useClientSocket() {
     })
 
     return () => {
+      if (registerTimerRef.current) clearTimeout(registerTimerRef.current)
       s.disconnect()
     }
   }, [])
 
   const register = useCallback((name: string) => {
-    socketRef.current?.emit('client:register', { name })
+    const socket = socketRef.current
+    if (!socket?.connected) {
+      setState((p) => ({
+        ...p,
+        registering: false,
+        connectionError: rescueSocketStatusMessage({ connected: false, error: 'disconnected' }),
+      }))
+      return
+    }
+
+    if (registerTimerRef.current) clearTimeout(registerTimerRef.current)
+    setState((p) => ({ ...p, registering: true, registrationError: null }))
+    socket.emit('client:register', { name })
+    registerTimerRef.current = setTimeout(() => {
+      setState((p) => (
+        p.registered
+          ? p
+          : { ...p, registering: false, registrationError: REGISTRATION_TIMEOUT_MESSAGE }
+      ))
+    }, REGISTER_TIMEOUT_MS)
   }, [])
 
   const requestService = useCallback(
@@ -191,9 +241,13 @@ export function useClientSocket() {
 
 export function useProviderSocket() {
   const socketRef = useRef<Socket | null>(null)
+  const registerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [state, setState] = useState<ProviderSession>({
     connected: false,
+    connectionError: null,
     registered: false,
+    registering: false,
+    registrationError: null,
     providerId: null,
     state: null,
     offer: null,
@@ -204,7 +258,8 @@ export function useProviderSocket() {
   })
 
   useEffect(() => {
-    const s = io(SOCKET_URL, {
+    const s = io(resolveRescueSocketUrl(), {
+      path: RESCUE_SOCKET_PATH,
       transports: ['websocket', 'polling'],
       forceNew: true,
       reconnection: true,
@@ -214,11 +269,27 @@ export function useProviderSocket() {
     })
     socketRef.current = s
 
-    s.on('connect', () => setState((p) => ({ ...p, connected: true })))
+    s.on('connect', () => setState((p) => ({ ...p, connected: true, connectionError: null })))
     s.on('disconnect', () => setState((p) => ({ ...p, connected: false })))
+    s.on('connect_error', () => {
+      setState((p) => ({
+        ...p,
+        connected: false,
+        registering: false,
+        connectionError: rescueSocketStatusMessage({ connected: false, error: 'connect_error' }),
+      }))
+    })
 
     s.on('provider:registered', (data: { id: string }) => {
-      setState((p) => ({ ...p, registered: true, providerId: data.id }))
+      if (registerTimerRef.current) clearTimeout(registerTimerRef.current)
+      setState((p) => ({
+        ...p,
+        registered: true,
+        registering: false,
+        registrationError: null,
+        connectionError: null,
+        providerId: data.id,
+      }))
     })
 
     s.on('provider:state', (st: ProviderState) => {
@@ -246,13 +317,33 @@ export function useProviderSocket() {
     })
 
     return () => {
+      if (registerTimerRef.current) clearTimeout(registerTimerRef.current)
       s.disconnect()
     }
   }, [])
 
   const register = useCallback(
     (data: { name: string; vehicle: string; plate: string }) => {
-      socketRef.current?.emit('provider:register', data)
+      const socket = socketRef.current
+      if (!socket?.connected) {
+        setState((p) => ({
+          ...p,
+          registering: false,
+          connectionError: rescueSocketStatusMessage({ connected: false, error: 'disconnected' }),
+        }))
+        return
+      }
+
+      if (registerTimerRef.current) clearTimeout(registerTimerRef.current)
+      setState((p) => ({ ...p, registering: true, registrationError: null }))
+      socket.emit('provider:register', data)
+      registerTimerRef.current = setTimeout(() => {
+        setState((p) => (
+          p.registered
+            ? p
+            : { ...p, registering: false, registrationError: REGISTRATION_TIMEOUT_MESSAGE }
+        ))
+      }, REGISTER_TIMEOUT_MS)
     },
     []
   )

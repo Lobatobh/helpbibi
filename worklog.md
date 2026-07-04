@@ -1928,3 +1928,26 @@ Stage Summary:
 - Supabase ainda nao integrado.
 - Mercado Pago real ainda nao habilitado.
 - Pendencias futuras: propagacao/cache DNS normal, homologacao navegador, backups e monitoramento.
+
+---
+Task ID: 32.1
+Agent: main
+Task: Corrigir F32-001 - botoes da demo publica presos em "Conectando..." na homologacao em navegador.
+
+Work Log:
+- Bug F32-001 identificado na home/demo publica: botoes "Entrar como cliente" e "Entrar como prestador" dependiam do `connected` local do hook de socket.
+- Causa raiz: o frontend ainda usava fallback legado `/?XTransformPort=3003` diretamente nos sockets da demo, sem respeitar `NEXT_PUBLIC_SOCKET_URL`; a mensagem global da demo tambem afirmava conexao ativa sem ler o estado real do socket.
+- Adicionado resolver central de URL do rescue socket:
+  - usa `NEXT_PUBLIC_SOCKET_URL` quando configurado com valor real;
+  - em producao, se a env estiver ausente ou placeholder, cai para a origem publica atual;
+  - fora de producao, preserva o fallback local `/?XTransformPort=3003`.
+- Hook `use-rescue-socket` agora limpa erro ao conectar, mostra erro visivel em `connect_error` e registra timeout se o evento `client:registered`/`provider:registered` nao chegar.
+- Formulario de entrada da demo foi extraido para componente testavel, mantendo os eventos existentes `client:register` e `provider:register`.
+- Leaderboard e fallback de tracking publico passaram a usar o mesmo resolver de URL.
+- Texto global da demo deixou de afirmar "conexao ativa" sem medir estado real.
+- Nenhum Docker, `.env`, Traefik, banco, Supabase ou Mercado Pago foi alterado.
+
+Stage Summary:
+- Nenhuma regra de negocio fora da demo publica foi alterada.
+- Mercado Pago real continua desabilitado.
+- Supabase continua nao integrado.

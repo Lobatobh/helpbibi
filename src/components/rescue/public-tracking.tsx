@@ -7,6 +7,7 @@ import {
   Truck, MapPin, Flag, Clock, Star, Navigation, CheckCircle2, Loader2,
   AlertTriangle, Battery, Fuel, Key, Wrench, CircleDot, Shield, ArrowLeft,
 } from 'lucide-react'
+import { RESCUE_SOCKET_PATH, resolveRescueSocketUrl } from '@/lib/rescue-socket-url'
 import { LiveCountdown } from './live-countdown'
 
 const STATUS_INFO: Record<string, { label: string; color: string }> = {
@@ -49,8 +50,6 @@ type PublicService = {
   } | null
 }
 
-const SOCKET_URL = '/?XTransformPort=3003'
-
 export function PublicTracking({ serviceId }: { serviceId: string }) {
   const [data, setData] = useState<PublicService | null>(null)
   const [loading, setLoading] = useState(true)
@@ -89,7 +88,8 @@ export function PublicTracking({ serviceId }: { serviceId: string }) {
       // Only try socket once per fetch — don't create multiple connections
       await new Promise<void>((resolve) => {
         try {
-          const s = io(SOCKET_URL, {
+          const s = io(resolveRescueSocketUrl(), {
+            path: RESCUE_SOCKET_PATH,
             transports: ['websocket', 'polling'],
             forceNew: true,
             reconnection: false,

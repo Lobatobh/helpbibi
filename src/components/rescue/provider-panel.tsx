@@ -8,8 +8,6 @@ import {
   Shield, Zap, Trophy, Volume2, VolumeX, Settings,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
@@ -29,6 +27,7 @@ import { ChatPanel } from './chat-panel'
 import { TripProgressBar } from './trip-progress-bar'
 import { SettingsView } from './settings-view'
 import { LiveCountdown } from './live-countdown'
+import { ProviderEntryForm } from './demo-entry-form'
 
 const ICONS: Record<string, any> = {
   'tow-truck': Truck, tire: CircleDot, battery: Battery, fuel: Fuel, key: Key, wrench: Wrench,
@@ -37,7 +36,8 @@ const PAY_ICONS: Record<string, any> = { zap: Power, 'credit-card': Wallet, wall
 
 export function ProviderPanel() {
   const {
-    connected, registered, state, offer, currentService, messages, newMessage, offerTaken,
+    connected, connectionError, registered, registering, registrationError,
+    state, offer, currentService, messages, newMessage, offerTaken,
     register, toggleOnline, accept, reject, arrived, start, complete, rateClient,
     sendChat, clearNewMessage, clearOfferTaken, clearCurrent,
   } = useProviderSocket()
@@ -101,29 +101,19 @@ export function ProviderPanel() {
 
   if (!registered) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
-        <div className="relative">
-          <div className="absolute -inset-3 animate-pulse rounded-3xl bg-orange-500/20 blur-xl" />
-          <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-400 to-orange-600 text-slate-950 shadow-lg shadow-orange-500/30">
-            <Truck className="h-8 w-8" />
-          </div>
-        </div>
-        <div>
-          <h3 className="text-lg font-bold text-white">Sou Prestador</h3>
-          <p className="mt-1 text-sm text-slate-400">
-            Cadastre-se para receber chamadas próximas e começar a ganhar.
-          </p>
-        </div>
-        <div className="w-full space-y-2">
-          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome ou empresa" className="border-slate-700 bg-slate-900 text-white placeholder:text-slate-500" />
-          <Input value={vehicle} onChange={(e) => setVehicle(e.target.value)} placeholder="Veículo / equipamento" className="border-slate-700 bg-slate-900 text-white placeholder:text-slate-500" />
-          <Input value={plate} onChange={(e) => setPlate(e.target.value)} placeholder="Placa (EX: ABC1D23)" className="border-slate-700 bg-slate-900 text-white placeholder:text-slate-500 uppercase" />
-          <Button onClick={handleRegister} disabled={!name.trim() || !plate.trim() || !connected} className="w-full bg-orange-500 text-slate-950 hover:bg-orange-400">
-            Entrar como prestador
-          </Button>
-        </div>
-        <p className="text-xs text-slate-500">{connected ? '✓ Conectado ao serviço' : 'Conectando...'}</p>
-      </div>
+      <ProviderEntryForm
+        name={name}
+        vehicle={vehicle}
+        plate={plate}
+        connected={connected}
+        connectionError={connectionError}
+        registering={registering}
+        registrationError={registrationError}
+        onNameChange={setName}
+        onVehicleChange={setVehicle}
+        onPlateChange={setPlate}
+        onRegister={handleRegister}
+      />
     )
   }
 
