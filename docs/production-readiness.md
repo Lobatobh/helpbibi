@@ -260,11 +260,20 @@ O build do Next.js 16/Turbopack com Bun dentro do Docker estava instavel. A corr
 
 ## Roteamento Publico Traefik/Dokploy
 - Diagnostico VPS: o Traefik retornava 404 para `helpbibi.com` porque o container do `app` nao tinha labels Traefik de roteamento.
-- Correcao permanente: `docker-compose.yml` adiciona labels Traefik no servico `app` para `helpbibi.com` e `www.helpbibi.com`.
+- Correcao permanente: `docker-compose.yml` usa apenas o padrao de labels numeradas geradas pelo Dokploy no servico `app`, sem routers manuais duplicados para o mesmo dominio.
+- Labels mantidas no compose principal: `helpbibi-helpbibi-k7sn7j-20-*` para `helpbibi.com` e `helpbibi-helpbibi-k7sn7j-21-*` para `www.helpbibi.com`.
 - O trafego publico HTTP/HTTPS entra pelo Traefik/Dokploy e aponta para a porta interna `3000` do servico `app`.
 - O `rescue-service` permanece interno na porta `3003`; nao existe dominio publico nem publicacao direta `3003:3003`.
 - Nao mexer em banco, Redis, Supabase ou Mercado Pago para essa correcao de roteamento.
 - Mercado Pago real continua nao homologado e deve permanecer com `PAYMENT_GATEWAY_PROVIDER=simulated`.
+
+## Validacao Publica FASE 31
+- `https://helpbibi.com`: HTTP/2 200.
+- `https://www.helpbibi.com`: HTTP/2 200.
+- `https://helpbibi.com/api/health`: 200.
+- `https://helpbibi.com/api/health/db`: 200.
+- Containers `app`, `rescue`, `postgres` e `redis` permaneceram saudaveis.
+- Pendencias futuras: propagacao/cache DNS normal, homologacao navegador, Supabase ainda nao integrado, Mercado Pago real ainda nao habilitado, backups e monitoramento ainda pendentes.
 
 ## Seguranca de Secrets e Versionamento
 - `.env` real nao deve ser rastreado pelo Git.

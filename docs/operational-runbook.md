@@ -380,7 +380,9 @@ Observacoes:
 ## Roteamento publico Traefik
 - O dominio oficial e `helpbibi.com`; tambem rotear `www.helpbibi.com`.
 - Se `curl -k -I --resolve helpbibi.com:443:187.77.32.53 https://helpbibi.com` retornar 404 pelo Traefik, verificar as labels do container `app`.
-- O `app` deve ter `traefik.enable=true`, `traefik.docker.network=dokploy-network`, routers `helpbibi-web`/`helpbibi-websecure` e load balancer na porta interna `3000`.
+- O `app` deve ter `traefik.enable=true`, `traefik.docker.network=dokploy-network` e load balancer na porta interna `3000`.
+- O `docker-compose.yml` normalizado deve manter apenas o padrao numerado gerado pelo Dokploy: `helpbibi-helpbibi-k7sn7j-20-*` para `helpbibi.com` e `helpbibi-helpbibi-k7sn7j-21-*` para `www.helpbibi.com`.
+- Nao manter routers manuais `helpbibi-web`/`helpbibi-websecure` junto com os routers numerados, para evitar duplicidade de dominio.
 - O router HTTP usa `entrypoints=web` com `redirect-to-https@file`; o router HTTPS usa `entrypoints=websecure` e `tls.certresolver=letsencrypt`.
 - O `rescue-service` fica interno em `rescue:3003`; nao publicar `3003:3003` e nao criar dominio publico para ele.
 - Esta correcao de rota nao exige mudanca em PostgreSQL, Redis, Supabase ou Mercado Pago.
@@ -417,6 +419,10 @@ curl -i http://localhost:3000/api/health/db
 - `app`, `postgres`, `redis` e `rescue`: `Up healthy`.
 - `/api/health`: 200 ok.
 - `/api/health/db`: 200 connected.
+- `https://helpbibi.com`: HTTP/2 200.
+- `https://www.helpbibi.com`: HTTP/2 200.
+- `https://helpbibi.com/api/health`: 200.
+- `https://helpbibi.com/api/health/db`: 200.
 - Logs recentes: sem erros apos `SESSION_SECRET` e `AUDIT_LOG_BACKEND=database` no `rescue`.
 
 ## Regras de seguranca

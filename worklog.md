@@ -1901,3 +1901,30 @@ Stage Summary:
 - Banco, Redis, Supabase e Mercado Pago nao foram alterados.
 - Mercado Pago real continua nao homologado e permanece simulado.
 - `.env` real continua fora do Git; secrets devem ficar apenas na VPS/Dokploy.
+
+---
+Task ID: 31.5
+Agent: main
+Task: Normalizar labels Traefik do Dokploy apos validacao publica da Fase 31.
+
+Work Log:
+- Fase 31 aprovada publicamente na VPS/Dokploy.
+- Validado publicamente: `https://helpbibi.com` retornou HTTP/2 200.
+- Validado publicamente: `https://www.helpbibi.com` retornou HTTP/2 200.
+- Validado publicamente: `https://helpbibi.com/api/health` retornou 200.
+- Validado publicamente: `https://helpbibi.com/api/health/db` retornou 200.
+- Containers `app`, `rescue`, `postgres` e `redis` permaneceram saudaveis.
+- Normalizado `docker-compose.yml` para manter apenas o padrao numerado de labels gerado pelo Dokploy:
+  - `helpbibi-helpbibi-k7sn7j-20-*` para `helpbibi.com`.
+  - `helpbibi-helpbibi-k7sn7j-21-*` para `www.helpbibi.com`.
+- Removida a duplicidade dos routers manuais `helpbibi-web` e `helpbibi-websecure` no compose principal.
+- `app` continua roteado publicamente para a porta interna `3000`.
+- `rescue-service` continua interno na porta `3003`.
+
+Stage Summary:
+- Nenhuma regra de negocio alterada.
+- `.env` continua fora do Git.
+- `db/.gitkeep` continua sendo o unico arquivo rastreado em `db`.
+- Supabase ainda nao integrado.
+- Mercado Pago real ainda nao habilitado.
+- Pendencias futuras: propagacao/cache DNS normal, homologacao navegador, backups e monitoramento.

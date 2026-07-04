@@ -11,7 +11,25 @@ function serviceBlock(compose: string, service: 'app' | 'rescue') {
   return match?.[1] ?? ''
 }
 
-function expectHelpBibiTraefikLabels(app: string) {
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function labelValue(labelsBlock: string, key: string) {
+  const listLabel = labelsBlock.match(new RegExp(`-\\s+"?${escapeRegExp(key)}=([^"\\r\\n]+)"?`))
+  if (listLabel) {
+    return listLabel[1].trim()
+  }
+
+  const mapLabel = labelsBlock.match(new RegExp(`${escapeRegExp(key)}:\\s*"?([^"\\r\\n]+)"?`))
+  return mapLabel?.[1]?.trim()
+}
+
+function expectLabel(labelsBlock: string, key: string, value: string) {
+  expect(labelValue(labelsBlock, key)).toBe(value)
+}
+
+function expectManualTraefikLabels(app: string) {
   const expectedLabels = [
     'traefik.enable=true',
     'traefik.docker.network=dokploy-network',
@@ -30,6 +48,35 @@ function expectHelpBibiTraefikLabels(app: string) {
   for (const label of expectedLabels) {
     expect(app).toContain(label)
   }
+}
+
+function expectDokployGeneratedTraefikLabels(app: string) {
+  expectLabel(app, 'traefik.enable', 'true')
+  expectLabel(app, 'traefik.docker.network', 'dokploy-network')
+
+  const routers = [
+    ['helpbibi-helpbibi-k7sn7j-20', 'helpbibi.com'],
+    ['helpbibi-helpbibi-k7sn7j-21', 'www.helpbibi.com'],
+  ] as const
+
+  for (const [router, domain] of routers) {
+    expectLabel(app, `traefik.http.routers.${router}-web.entrypoints`, 'web')
+    expectLabel(app, `traefik.http.routers.${router}-web.rule`, `Host(\`${domain}\`)`)
+    expectLabel(app, `traefik.http.routers.${router}-web.middlewares`, 'redirect-to-https@file')
+    expectLabel(app, `traefik.http.routers.${router}-web.service`, `${router}-web`)
+    expectLabel(app, `traefik.http.services.${router}-web.loadbalancer.server.port`, '3000')
+
+    expectLabel(app, `traefik.http.routers.${router}-websecure.entrypoints`, 'websecure')
+    expectLabel(app, `traefik.http.routers.${router}-websecure.rule`, `Host(\`${domain}\`)`)
+    expectLabel(app, `traefik.http.routers.${router}-websecure.service`, `${router}-websecure`)
+    expectLabel(app, `traefik.http.routers.${router}-websecure.tls.certresolver`, 'letsencrypt')
+    expectLabel(app, `traefik.http.services.${router}-websecure.loadbalancer.server.port`, '3000')
+  }
+
+  const routerRuleLabels = app.match(/traefik\.http\.routers\.[^.]+\.(?:rule):/g) ?? []
+  expect(routerRuleLabels).toHaveLength(4)
+  expect(app).not.toContain('traefik.http.routers.helpbibi-web.')
+  expect(app).not.toContain('traefik.http.routers.helpbibi-websecure.')
 }
 
 describe('docker deploy config', () => {
@@ -73,7 +120,7 @@ describe('docker deploy config', () => {
     expect(compose).toContain('redis:')
     expect(compose).toContain('dokploy-network')
     expect(compose).toContain('external: true')
-    expectHelpBibiTraefikLabels(app)
+    expectDokployGeneratedTraefikLabels(app)
 
     for (const service of [app, rescue]) {
       expect(service).toContain('NODE_ENV: production')
@@ -86,6 +133,7 @@ describe('docker deploy config', () => {
       expect(service).not.toMatch(/DATABASE_URL:\s*file:/)
     }
 
+    expect(rescue).toContain('PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET}')
     expect(compose).not.toContain('"3000:3000"')
     expect(compose).not.toContain('"3003:3003"')
     expect(rescue).not.toContain('traefik.http.routers')
@@ -101,7 +149,7 @@ describe('docker deploy config', () => {
 
     expect(compose).toContain('dokploy-network')
     expect(compose).toContain('external: true')
-    expectHelpBibiTraefikLabels(app)
+    expectManualTraefikLabels(app)
 
     for (const service of [app, rescue]) {
       expect(service).toContain('NODE_ENV: production')
@@ -138,6 +186,20 @@ describe('docker deploy config', () => {
     expect(gitignore).toMatch(/^\.env\.\*$/m)
     expect(gitignore).toMatch(/^!\.env\.example$/m)
     expect(trackedEnv).toBe('')
+  })
+
+  test('git tracks only db/.gitkeep and excludes local database artifacts', () => {
+    const trackedDb = execFileSync('git', ['ls-files', 'db'], { cwd: root, encoding: 'utf8' })
+      .trim()
+      .split(/\r?\n/)
+      .filter(Boolean)
+    const trackedDbArtifacts = execFileSync('git', ['ls-files', 'db/*.db', 'db/*.sqlite', 'db/*.bak*'], {
+      cwd: root,
+      encoding: 'utf8',
+    }).trim()
+
+    expect(trackedDb).toEqual(['db/.gitkeep'])
+    expect(trackedDbArtifacts).toBe('')
   })
 
   test('env example documents required Dokploy variables with safe placeholders only', () => {
