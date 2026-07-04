@@ -1861,3 +1861,21 @@ Stage Summary:
 - Nenhuma regra de negocio alterada.
 - Mercado Pago real continua nao homologado e permanece simulado.
 - Dominio real ainda precisa estar configurado no `.env` da VPS/Dokploy se `NEXT_PUBLIC_APP_URL` ou `SOCKET_CORS_ORIGIN` estiverem como placeholder.
+
+---
+Task ID: 31.3
+Agent: main
+Task: Corrigir seguranca de versionamento do `.env`.
+
+Work Log:
+- Confirmado que `.env` estava rastreado por `git ls-files .env`.
+- `.env` removido apenas do indice Git com `git rm --cached .env`; arquivo local preservado.
+- `.gitignore` ajustado para bloquear `.env` e `.env.*`, mantendo `!.env.example`.
+- `.env.example` atualizado como modelo seguro com placeholders, sem secrets reais.
+- Teste estatico de deploy atualizado para garantir que `.env` nao seja rastreado, que `.gitignore` proteja arquivos de ambiente e que `.env.example` tenha apenas placeholders seguros.
+- Documentacao atualizada: `.env` real deve ficar apenas na VPS/Dokploy, com `chmod 600 .env`; nunca usar `git add .` em servidor.
+
+Stage Summary:
+- Nenhuma regra de negocio alterada.
+- Mercado Pago real nao foi habilitado.
+- Secrets reais permanecem fora do repositorio.

@@ -300,6 +300,8 @@ curl -X POST http://localhost:3000/api/admin/payments/$PAYMENT_ID/refund \
 
 ### Nunca fazer
 - Commitar `.env` com secrets reais
+- Rastrear `.env` no Git
+- Rodar `git add .` em ambiente de servidor
 - Commitar `db/custom.db` (banco runtime)
 - Usar `Admin123!` em produção
 - Usar SQLite em produção
@@ -310,6 +312,9 @@ curl -X POST http://localhost:3000/api/admin/payments/$PAYMENT_ID/refund \
 ### Sempre fazer
 - Rodar `bun run check:full` antes de commitar
 - Verificar `git status` antes de push
+- Usar `.env.example` apenas como modelo seguro
+- Manter secrets reais apenas no `.env` local da VPS/Dokploy
+- Aplicar `chmod 600 .env` na VPS
 - Backup do banco antes de migrations
 - Usar secrets fortes (32+ chars) em produção
 - Revisar audit logs periodicamente
@@ -351,22 +356,22 @@ curl -X POST http://localhost:3000/api/admin/payments/$PAYMENT_ID/refund \
 
 ## Variaveis obrigatorias no Dokploy
 ```env
-POSTGRES_PASSWORD=
-DATABASE_URL=
-POSTGRES_DATABASE_URL=
-REDIS_URL=redis://redis:6379
+APP_NAME=helpbibi
+COMPOSE_PROJECT_NAME=helpbibi
+DOCKER_CONFIG=/root/.docker
+POSTGRES_PASSWORD=change_me_strong_password
+PAYMENT_GATEWAY_PROVIDER=simulated
+PAYMENT_WEBHOOK_SECRET=change_me_webhook_secret
+SESSION_SECRET=change_me_session_secret_64_chars_min
+NEXT_PUBLIC_APP_URL=https://your-domain.example.com
+NEXT_PUBLIC_SOCKET_URL=https://your-domain.example.com
+SOCKET_CORS_ORIGIN=https://your-domain.example.com
 RATE_LIMIT_BACKEND=redis
 AUDIT_LOG_BACKEND=database
-SESSION_SECRET=
-PAYMENT_WEBHOOK_SECRET=
-PAYMENT_GATEWAY_PROVIDER=simulated
-NEXT_PUBLIC_APP_URL=
-NEXT_PUBLIC_SOCKET_URL=/
-SOCKET_CORS_ORIGIN=
-RESCUE_SERVICE_URL=http://rescue:3003
 ```
 
 Observacoes:
+- `.env.example` e o modelo seguro; o `.env` real da VPS nao deve ser rastreado.
 - `SESSION_SECRET` deve existir para `app` e `rescue`; sem isso o `rescue` falha na validacao de env em producao.
 - `AUDIT_LOG_BACKEND=database` deve existir para `app` e `rescue`.
 - `NEXT_PUBLIC_APP_URL` e `SOCKET_CORS_ORIGIN` devem apontar para o dominio real quando sair de placeholder.

@@ -120,10 +120,11 @@ describe('PostgreSQL Compatibility (FASE 27)', () => {
     expect(compose).toContain('redis')
   })
 
-  test('13. .env.example documents RATE_LIMIT_BACKEND and REDIS_URL', () => {
+  test('13. .env.example documents safe backends and compose provides REDIS_URL', () => {
     const env = readFileSync('.env.example', 'utf8')
-    expect(env).toContain('RATE_LIMIT_BACKEND')
-    expect(env).toContain('REDIS_URL')
-    expect(env).toContain('AUDIT_LOG_BACKEND')
+    const compose = readFileSync('docker-compose.yml', 'utf8')
+    expect(env).toContain('RATE_LIMIT_BACKEND=redis')
+    expect(env).toContain('AUDIT_LOG_BACKEND=database')
+    expect(compose).toContain('REDIS_URL: redis://redis:6379')
   })
 })

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test'
+import { execFileSync } from 'child_process'
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
 
@@ -98,26 +99,38 @@ describe('docker deploy config', () => {
     expect(dockerignore).toContain('*.tar')
   })
 
-  test('env example documents required Dokploy variables without real secrets', () => {
+  test('git ignores local env files and never tracks real .env', () => {
+    const gitignore = read('.gitignore')
+    const trackedEnv = execFileSync('git', ['ls-files', '.env'], { cwd: root, encoding: 'utf8' }).trim()
+
+    expect(gitignore).toMatch(/^\.env$/m)
+    expect(gitignore).toMatch(/^\.env\.\*$/m)
+    expect(gitignore).toMatch(/^!\.env\.example$/m)
+    expect(trackedEnv).toBe('')
+  })
+
+  test('env example documents required Dokploy variables with safe placeholders only', () => {
     const envExample = read('.env.example')
     const requiredKeys = [
-      'POSTGRES_PASSWORD=',
-      'DATABASE_URL=',
-      'POSTGRES_DATABASE_URL=',
-      'REDIS_URL=',
+      'APP_NAME=helpbibi',
+      'COMPOSE_PROJECT_NAME=helpbibi',
+      'DOCKER_CONFIG=/root/.docker',
+      'POSTGRES_PASSWORD=change_me_strong_password',
+      'PAYMENT_GATEWAY_PROVIDER=simulated',
+      'PAYMENT_WEBHOOK_SECRET=change_me_webhook_secret',
+      'SESSION_SECRET=change_me_session_secret_64_chars_min',
+      'NEXT_PUBLIC_APP_URL=https://your-domain.example.com',
+      'NEXT_PUBLIC_SOCKET_URL=https://your-domain.example.com',
+      'SOCKET_CORS_ORIGIN=https://your-domain.example.com',
       'RATE_LIMIT_BACKEND=redis',
       'AUDIT_LOG_BACKEND=database',
-      'SESSION_SECRET=',
-      'PAYMENT_WEBHOOK_SECRET=',
-      'PAYMENT_GATEWAY_PROVIDER=simulated',
-      'NEXT_PUBLIC_APP_URL=',
-      'NEXT_PUBLIC_SOCKET_URL=',
-      'SOCKET_CORS_ORIGIN=',
-      'RESCUE_SERVICE_URL=http://rescue:3003',
     ]
 
     for (const key of requiredKeys) {
       expect(envExample).toContain(key)
     }
+
+    expect(envExample).not.toContain('MERCADO_PAGO_ACCESS_TOKEN=')
+    expect(envExample).not.toContain('MERCADO_PAGO_WEBHOOK_SECRET=')
   })
 })

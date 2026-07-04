@@ -258,6 +258,13 @@ O build do Next.js 16/Turbopack com Bun dentro do Docker estava instavel. A corr
 - Logs recentes sem erros apos incluir `SESSION_SECRET` e `AUDIT_LOG_BACKEND=database` no `rescue`.
 - Runtime Node.js instala `openssl` para remover o warning do Prisma em `node:22-bookworm-slim`.
 
+## Seguranca de Secrets e Versionamento
+- `.env` real nao deve ser rastreado pelo Git.
+- `.env.example` e o unico modelo seguro versionado e contem apenas placeholders.
+- Na VPS/Dokploy, manter `.env` local com permissao restrita: `chmod 600 .env`.
+- Nunca usar `git add .` em ambiente de servidor.
+- Secrets reais devem existir apenas no `.env` local da VPS/Dokploy.
+
 ## Riscos Restantes
 - Validacao Docker local em 2026-07-04 ficou bloqueada porque o Docker Desktop daemon nao estava disponivel, mas a validacao Docker real passou na VPS/Dokploy:
   - `docker compose build app --no-cache`: `open //./pipe/dockerDesktopLinuxEngine: The system cannot find the file specified.`
