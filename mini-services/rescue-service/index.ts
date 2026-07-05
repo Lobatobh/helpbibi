@@ -34,7 +34,7 @@ const httpServer = createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' }); res.end('Help Bibi rescue-service running')
 })
 
-const io = new Server(httpServer, { path: '/', cors: { origin: CORS_ORIGIN, methods: ['GET', 'POST'] }, pingTimeout: 60000, pingInterval: 25000 })
+const io = new Server(httpServer, { path: '/socket.io', cors: { origin: CORS_ORIGIN, methods: ['GET', 'POST'] }, pingTimeout: 60000, pingInterval: 25000 })
 
 // ----------------------- Types -----------------------
 type Role = 'client' | 'provider'

@@ -282,6 +282,15 @@ O build do Next.js 16/Turbopack com Bun dentro do Docker estava instavel. A corr
 - Sem mudancas de infraestrutura: nao publicar `3003:3003`, nao alterar Traefik, nao alterar `.env`, nao habilitar Supabase e nao habilitar Mercado Pago real.
 - Validacao manual esperada na Fase 32: abrir `https://helpbibi.com`, iniciar demo, preencher cliente/prestador e confirmar que ambos avancam quando o WebSocket conecta.
 
+## FASE 32.2 - Socket publico da demo
+- Bug F32-002: o frontend passou a usar `https://helpbibi.com`, mas o Traefik ainda roteava todo o host apenas para o `app:3000`; o `rescue-service` seguia interno sem router publico para Socket.IO.
+- Correcao: `docker-compose.yml` adiciona routers Traefik no servico `rescue` apenas para `PathPrefix(/socket.io)`, com prioridade `100`, HTTPS via `letsencrypt` e load balancer para a porta interna `3003`.
+- Dominios cobertos no compose principal: `helpbibi.com` pelo padrao `helpbibi-helpbibi-k7sn7j-socket-20-*` e `www.helpbibi.com` pelo padrao `helpbibi-helpbibi-k7sn7j-socket-21-*`.
+- O app continua recebendo o restante do trafego de `helpbibi.com` e `www.helpbibi.com` na porta interna `3000`.
+- O Socket.IO agora usa o path publico `/socket.io` no frontend e no `rescue-service`, permitindo `https://helpbibi.com/socket.io` e `wss://helpbibi.com/socket.io`.
+- A porta `3003` continua apenas em `expose`, sem publicacao host `3003:3003`.
+- Nao alterar `.env` real, volumes, banco, Supabase ou Mercado Pago para esta correcao.
+
 ## Seguranca de Secrets e Versionamento
 - `.env` real nao deve ser rastreado pelo Git.
 - `.env.example` e o unico modelo seguro versionado e contem apenas placeholders.

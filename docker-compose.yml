@@ -67,6 +67,33 @@ services:
         condition: service_healthy
     expose:
       - "3003"
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: dokploy-network
+      traefik.http.routers.helpbibi-helpbibi-k7sn7j-socket-20-web.entrypoints: web
+      traefik.http.routers.helpbibi-helpbibi-k7sn7j-socket-20-web.rule: "Host(`helpbibi.com`) && PathPrefix(`/socket.io`)"
+      traefik.http.routers.helpbibi-helpbibi-k7sn7j-socket-20-web.middlewares: redirect-to-https@file
+      traefik.http.routers.helpbibi-helpbibi-k7sn7j-socket-20-web.priority: "100"
+      traefik.http.routers.helpbibi-helpbibi-k7sn7j-socket-20-web.service: helpbibi-helpbibi-k7sn7j-socket-20-web
+      traefik.http.services.helpbibi-helpbibi-k7sn7j-socket-20-web.loadbalancer.server.port: "3003"
+      traefik.http.routers.helpbibi-helpbibi-k7sn7j-socket-20-websecure.entrypoints: websecure
+      traefik.http.routers.helpbibi-helpbibi-k7sn7j-socket-20-websecure.rule: "Host(`helpbibi.com`) && PathPrefix(`/socket.io`)"
+      traefik.http.routers.helpbibi-helpbibi-k7sn7j-socket-20-websecure.priority: "100"
+      traefik.http.routers.helpbibi-helpbibi-k7sn7j-socket-20-websecure.service: helpbibi-helpbibi-k7sn7j-socket-20-websecure
+      traefik.http.routers.helpbibi-helpbibi-k7sn7j-socket-20-websecure.tls.certresolver: letsencrypt
+      traefik.http.services.helpbibi-helpbibi-k7sn7j-socket-20-websecure.loadbalancer.server.port: "3003"
+      traefik.http.routers.helpbibi-helpbibi-k7sn7j-socket-21-web.entrypoints: web
+      traefik.http.routers.helpbibi-helpbibi-k7sn7j-socket-21-web.rule: "Host(`www.helpbibi.com`) && PathPrefix(`/socket.io`)"
+      traefik.http.routers.helpbibi-helpbibi-k7sn7j-socket-21-web.middlewares: redirect-to-https@file
+      traefik.http.routers.helpbibi-helpbibi-k7sn7j-socket-21-web.priority: "100"
+      traefik.http.routers.helpbibi-helpbibi-k7sn7j-socket-21-web.service: helpbibi-helpbibi-k7sn7j-socket-21-web
+      traefik.http.services.helpbibi-helpbibi-k7sn7j-socket-21-web.loadbalancer.server.port: "3003"
+      traefik.http.routers.helpbibi-helpbibi-k7sn7j-socket-21-websecure.entrypoints: websecure
+      traefik.http.routers.helpbibi-helpbibi-k7sn7j-socket-21-websecure.rule: "Host(`www.helpbibi.com`) && PathPrefix(`/socket.io`)"
+      traefik.http.routers.helpbibi-helpbibi-k7sn7j-socket-21-websecure.priority: "100"
+      traefik.http.routers.helpbibi-helpbibi-k7sn7j-socket-21-websecure.service: helpbibi-helpbibi-k7sn7j-socket-21-websecure
+      traefik.http.routers.helpbibi-helpbibi-k7sn7j-socket-21-websecure.tls.certresolver: letsencrypt
+      traefik.http.services.helpbibi-helpbibi-k7sn7j-socket-21-websecure.loadbalancer.server.port: "3003"
     networks:
       - dokploy-network
 

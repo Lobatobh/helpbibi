@@ -79,6 +79,61 @@ function expectDokployGeneratedTraefikLabels(app: string) {
   expect(app).not.toContain('traefik.http.routers.helpbibi-websecure.')
 }
 
+function expectDokployGeneratedSocketLabels(rescue: string) {
+  expectLabel(rescue, 'traefik.enable', 'true')
+  expectLabel(rescue, 'traefik.docker.network', 'dokploy-network')
+
+  const routers = [
+    ['helpbibi-helpbibi-k7sn7j-socket-20', 'helpbibi.com'],
+    ['helpbibi-helpbibi-k7sn7j-socket-21', 'www.helpbibi.com'],
+  ] as const
+
+  for (const [router, domain] of routers) {
+    const rule = `Host(\`${domain}\`) && PathPrefix(\`/socket.io\`)`
+
+    expectLabel(rescue, `traefik.http.routers.${router}-web.entrypoints`, 'web')
+    expectLabel(rescue, `traefik.http.routers.${router}-web.rule`, rule)
+    expectLabel(rescue, `traefik.http.routers.${router}-web.middlewares`, 'redirect-to-https@file')
+    expectLabel(rescue, `traefik.http.routers.${router}-web.priority`, '100')
+    expectLabel(rescue, `traefik.http.routers.${router}-web.service`, `${router}-web`)
+    expectLabel(rescue, `traefik.http.services.${router}-web.loadbalancer.server.port`, '3003')
+
+    expectLabel(rescue, `traefik.http.routers.${router}-websecure.entrypoints`, 'websecure')
+    expectLabel(rescue, `traefik.http.routers.${router}-websecure.rule`, rule)
+    expectLabel(rescue, `traefik.http.routers.${router}-websecure.priority`, '100')
+    expectLabel(rescue, `traefik.http.routers.${router}-websecure.service`, `${router}-websecure`)
+    expectLabel(rescue, `traefik.http.routers.${router}-websecure.tls.certresolver`, 'letsencrypt')
+    expectLabel(rescue, `traefik.http.services.${router}-websecure.loadbalancer.server.port`, '3003')
+  }
+
+  expect(rescue).not.toContain('traefik.http.routers.helpbibi-web.')
+  expect(rescue).not.toContain('traefik.http.routers.helpbibi-websecure.')
+  expect(rescue).not.toContain('Host(`helpbibi.com`) && !PathPrefix')
+}
+
+function expectManualSocketTraefikLabels(rescue: string) {
+  const expectedLabels = [
+    'traefik.enable=true',
+    'traefik.docker.network=dokploy-network',
+    'traefik.http.routers.helpbibi-socket-web.entrypoints=web',
+    'traefik.http.routers.helpbibi-socket-web.rule=(Host(`helpbibi.com`) || Host(`www.helpbibi.com`)) && PathPrefix(`/socket.io`)',
+    'traefik.http.routers.helpbibi-socket-web.middlewares=redirect-to-https@file',
+    'traefik.http.routers.helpbibi-socket-web.priority=100',
+    'traefik.http.routers.helpbibi-socket-web.service=helpbibi-socket-web',
+    'traefik.http.services.helpbibi-socket-web.loadbalancer.server.port=3003',
+    'traefik.http.routers.helpbibi-socket-websecure.entrypoints=websecure',
+    'traefik.http.routers.helpbibi-socket-websecure.rule=(Host(`helpbibi.com`) || Host(`www.helpbibi.com`)) && PathPrefix(`/socket.io`)',
+    'traefik.http.routers.helpbibi-socket-websecure.priority=100',
+    'traefik.http.routers.helpbibi-socket-websecure.service=helpbibi-socket-websecure',
+    'traefik.http.routers.helpbibi-socket-websecure.tls.certresolver=letsencrypt',
+    'traefik.http.services.helpbibi-socket-websecure.loadbalancer.server.port=3003',
+  ]
+
+  for (const label of expectedLabels) {
+    expect(rescue).toContain(label)
+  }
+}
+
 describe('docker deploy config', () => {
   test('app Dockerfile builds and runs Next.js with Node, not Bun', () => {
     const dockerfile = read('Dockerfile')
@@ -121,6 +176,7 @@ describe('docker deploy config', () => {
     expect(compose).toContain('dokploy-network')
     expect(compose).toContain('external: true')
     expectDokployGeneratedTraefikLabels(app)
+    expectDokployGeneratedSocketLabels(rescue)
 
     for (const service of [app, rescue]) {
       expect(service).toContain('NODE_ENV: production')
@@ -136,10 +192,7 @@ describe('docker deploy config', () => {
     expect(rescue).toContain('PAYMENT_WEBHOOK_SECRET: ${PAYMENT_WEBHOOK_SECRET}')
     expect(compose).not.toContain('"3000:3000"')
     expect(compose).not.toContain('"3003:3003"')
-    expect(rescue).not.toContain('traefik.http.routers')
-    expect(rescue).not.toContain('Host(`helpbibi.com`)')
-    expect(rescue).not.toContain('Host(`www.helpbibi.com`)')
-    expect(rescue).not.toContain('loadbalancer.server.port=3003')
+    expect(rescue).not.toContain('ports:')
   })
 
   test('production compose example keeps the same Dokploy runtime guarantees', () => {
@@ -150,6 +203,7 @@ describe('docker deploy config', () => {
     expect(compose).toContain('dokploy-network')
     expect(compose).toContain('external: true')
     expectManualTraefikLabels(app)
+    expectManualSocketTraefikLabels(rescue)
 
     for (const service of [app, rescue]) {
       expect(service).toContain('NODE_ENV: production')
@@ -162,10 +216,15 @@ describe('docker deploy config', () => {
 
     expect(compose).not.toContain('"3000:3000"')
     expect(compose).not.toContain('"3003:3003"')
-    expect(rescue).not.toContain('traefik.http.routers')
-    expect(rescue).not.toContain('Host(`helpbibi.com`)')
-    expect(rescue).not.toContain('Host(`www.helpbibi.com`)')
-    expect(rescue).not.toContain('loadbalancer.server.port=3003')
+    expect(rescue).not.toContain('ports:')
+  })
+
+  test('rescue service uses the public Socket.IO path expected by Traefik', () => {
+    const rescueIndex = read('mini-services/rescue-service/index.ts')
+    const socketHelper = read('src/lib/rescue-socket-url.ts')
+
+    expect(rescueIndex).toContain("path: '/socket.io'")
+    expect(socketHelper).toContain("RESCUE_SOCKET_PATH = '/socket.io'")
   })
 
   test('Docker context excludes local env database git metadata and transfer archives', () => {

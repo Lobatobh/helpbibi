@@ -1951,3 +1951,25 @@ Stage Summary:
 - Nenhuma regra de negocio fora da demo publica foi alterada.
 - Mercado Pago real continua desabilitado.
 - Supabase continua nao integrado.
+
+---
+Task ID: 32.2
+Agent: main
+Task: Corrigir F32-002 - WebSocket publico da demo nao conectava em producao.
+
+Work Log:
+- Bug F32-002 confirmado apos aplicar `e55cd10`: `app`, `rescue`, `postgres` e `redis` saudaveis, mas os cards Cliente/Prestador exibiam falha de conexao em tempo real.
+- Causa raiz: `NEXT_PUBLIC_SOCKET_URL=https://helpbibi.com` fazia o navegador conectar no mesmo host publico, mas o Traefik/Dokploy roteava esse host apenas para `app:3000`; nao havia router publico `PathPrefix(/socket.io)` para `rescue:3003`.
+- Ajustado o path do Socket.IO para `/socket.io` no frontend e no `rescue-service`.
+- `docker-compose.yml` atualizado com labels Traefik numeradas no servico `rescue`:
+  - `helpbibi-helpbibi-k7sn7j-socket-20-*` para `helpbibi.com`.
+  - `helpbibi-helpbibi-k7sn7j-socket-21-*` para `www.helpbibi.com`.
+- Routers do `rescue` usam `Host(...) && PathPrefix(/socket.io)`, prioridade `100`, HTTP com `redirect-to-https@file`, HTTPS com `tls.certresolver=letsencrypt` e load balancer para `3003`.
+- `docker-compose.prod.example.yml` recebeu labels equivalentes para o socket publico.
+- `app` continua roteado para a porta interna `3000`; `rescue` continua interno com `expose: 3003`, sem `3003:3003`.
+- Testes estaticos atualizados para cobrir labels do rescue, path `/socket.io`, ausencia de porta host e manutencao dos routers do app.
+
+Stage Summary:
+- Nenhuma regra de negocio alterada.
+- `.env` real nao foi alterado e segue fora do Git.
+- Banco, volumes, Supabase e Mercado Pago nao foram alterados.

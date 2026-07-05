@@ -180,3 +180,18 @@
 - [ ] Em falha de socket, a UI mostra erro claro em vez de parecer travada
 - [ ] O frontend usa `NEXT_PUBLIC_SOCKET_URL` em producao ou a origem publica atual quando a env esta ausente/placeholder
 - [ ] Nenhum teste da demo exige publicacao direta de `3003:3003`
+
+## 19. FASE 32.2 - Socket publico via Traefik/Dokploy
+
+- [ ] `https://helpbibi.com/api/health` retorna 200
+- [ ] `https://helpbibi.com/api/health/db` retorna 200
+- [ ] DevTools mostra conexao Socket.IO em `https://helpbibi.com/socket.io`
+- [ ] Upgrade WebSocket usa `wss://helpbibi.com/socket.io`
+- [ ] Cliente nao mostra `Falha na conexao em tempo real`
+- [ ] Prestador nao mostra `Falha na conexao em tempo real`
+- [ ] Botao `Entrar como cliente` avanca para o painel cliente
+- [ ] Botao `Entrar como prestador` avanca para o painel prestador
+- [ ] Cliente e prestador entram no mesmo fluxo de demo em producao
+- [ ] Traefik roteia somente `PathPrefix(/socket.io)` para o `rescue`
+- [ ] `app` continua recebendo o restante do site em `3000`
+- [ ] `rescue` continua sem publicacao host `3003:3003`

@@ -73,6 +73,21 @@ services:
       RESCUE_SERVICE_PORT: 3003
     expose:
       - "3003"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=dokploy-network"
+      - "traefik.http.routers.helpbibi-socket-web.entrypoints=web"
+      - "traefik.http.routers.helpbibi-socket-web.rule=(Host(`helpbibi.com`) || Host(`www.helpbibi.com`)) && PathPrefix(`/socket.io`)"
+      - "traefik.http.routers.helpbibi-socket-web.middlewares=redirect-to-https@file"
+      - "traefik.http.routers.helpbibi-socket-web.priority=100"
+      - "traefik.http.routers.helpbibi-socket-web.service=helpbibi-socket-web"
+      - "traefik.http.services.helpbibi-socket-web.loadbalancer.server.port=3003"
+      - "traefik.http.routers.helpbibi-socket-websecure.entrypoints=websecure"
+      - "traefik.http.routers.helpbibi-socket-websecure.rule=(Host(`helpbibi.com`) || Host(`www.helpbibi.com`)) && PathPrefix(`/socket.io`)"
+      - "traefik.http.routers.helpbibi-socket-websecure.priority=100"
+      - "traefik.http.routers.helpbibi-socket-websecure.service=helpbibi-socket-websecure"
+      - "traefik.http.routers.helpbibi-socket-websecure.tls.certresolver=letsencrypt"
+      - "traefik.http.services.helpbibi-socket-websecure.loadbalancer.server.port=3003"
     networks:
       - dokploy-network
     restart: unless-stopped

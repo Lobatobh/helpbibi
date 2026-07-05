@@ -1,5 +1,5 @@
 const LEGACY_DEV_SOCKET_URL = '/?XTransformPort=3003'
-export const RESCUE_SOCKET_PATH = '/'
+export const RESCUE_SOCKET_PATH = '/socket.io'
 const PLACEHOLDER_HOSTS = new Set([
   'your-domain.example.com',
   'helpbibi.dominio.com',
