@@ -1,7 +1,11 @@
 import { createServer } from 'http'
 import { Server } from 'socket.io'
 import { PrismaClient } from '@prisma/client'
-import { createPublicDemoMatchingOptions, getMatchingRejectionReason, rankProvidersByDistance } from './matching'
+import {
+  createPublicDemoMatchingOptions,
+  getMatchingRejectionReason,
+  rankProvidersByDistanceExcluding,
+} from './matching'
 import { calculatePrice } from '../../src/server/pricing/pricing-engine'
 import { validateEnv } from '../../src/server/env'
 // FASE 26 — Socket.IO hardening helpers (per-socket rate limit + payload validation)
@@ -65,7 +69,7 @@ type ServiceRequest = {
   pickup: LatLng; pickupLabel: string; destination: LatLng; destinationLabel: string;
   price: number; originalPrice: number; discount: number; promoCode: string | null;
   distanceKm: number; etaMin: number; status: ServiceStatus; paymentMethod: PaymentMethod;
-  providerId?: string | null; notifiedProviderIds: string[];
+  providerId?: string | null; notifiedProviderIds: string[]; rejectedProviderIds: string[];
   createdAt: number; acceptedAt?: number | null; completedAt?: number | null;
   timeline: TimelineEvent[]; rating?: Rating | null; clientRating?: Rating | null; loyaltyPoints: number;
   // DB linkage
@@ -327,6 +331,95 @@ const logMatchingDiagnostics = (svc: ServiceRequest, providerPool: Provider[], c
   })
 }
 
+const excludedProviderIdsFor = (svc: ServiceRequest) => new Set([
+  ...svc.notifiedProviderIds,
+  ...svc.rejectedProviderIds,
+])
+
+const clearOfferTimer = (svc: ServiceRequest) => {
+  if ((svc as any)._expireTimer) {
+    clearTimeout((svc as any)._expireTimer)
+    ;(svc as any)._expireTimer = null
+  }
+}
+
+function closeServiceWithoutProviders(svc: ServiceRequest, label: string) {
+  clearOfferTimer(svc)
+  pushTimeline(svc, 'expired', label)
+  persistServiceStatus(svc)
+
+  const providerPayload = sanitizeService(svc)
+  svc.notifiedProviderIds.forEach((pid) => {
+    const provider = providers.get(pid)
+    if (!provider) return
+    if (provider.currentServiceId === svc.id) provider.currentServiceId = null
+    provider.destination = null
+    provider.tripStartPos = null
+    provider.tripTarget = null
+    provider.tripStartedAt = null
+    provider.tripTotalKm = 0
+    provider.online = true
+    emitProvider(provider)
+    io.to(provider.socketId).emit('service:update', providerPayload)
+  })
+
+  svc.providerId = null
+  svc.notifiedProviderIds = []
+  emitService(svc)
+  console.log(`[service] request closed service=${svc.id} reason=no_candidates`)
+  console.log(`[service] client notified closed service=${svc.id} status=${svc.status}`)
+}
+
+function offerServiceToProviders(svc: ServiceRequest, toNotify: Provider[], label: string) {
+  svc.notifiedProviderIds = toNotify.map((p) => p.id)
+  const primary = toNotify[0]
+  svc.providerId = primary.id
+  primary.currentServiceId = svc.id
+  pushTimeline(svc, 'offered', label)
+  persistServiceStatus(svc)
+  emitService(svc)
+  emitProvider(primary)
+  toNotify.forEach((p) => io.to(p.socketId).emit('service:offer', sanitizeService(svc)))
+  console.log(`[service] offer emitted service=${svc.id} providers=${svc.notifiedProviderIds.join(',')} status=${svc.status}`)
+  scheduleOfferExpiry(svc)
+}
+
+function scheduleOfferExpiry(svc: ServiceRequest) {
+  clearOfferTimer(svc)
+  ;(svc as any)._expireTimer = setTimeout(() => {
+    const s = services.get(svc.id)
+    if (!s || s.status !== 'offered') return
+
+    pushTimeline(s, 'expired', `Prestador(es) não respondeu(ram) a tempo — reofertando...`)
+    persistServiceStatus(s)
+    s.notifiedProviderIds.forEach((pid) => {
+      const provider = providers.get(pid)
+      if (!provider) return
+      if (provider.currentServiceId === s.id) provider.currentServiceId = null
+      emitProvider(provider)
+    })
+
+    const nextBatch = rankProvidersByDistanceExcluding(
+      Array.from(providers.values()) as any,
+      s.pickup,
+      MATCHING_OPTIONS,
+      excludedProviderIdsFor(s),
+      MULTI_NOTIFY_COUNT
+    ) as unknown as Provider[]
+
+    if (nextBatch.length > 0) {
+      offerServiceToProviders(
+        s,
+        nextBatch,
+        `Chamada enviada para ${nextBatch.length} prestador(es): ${nextBatch.map((p) => p.name).join(', ')}`
+      )
+      return
+    }
+
+    closeServiceWithoutProviders(s, 'Nenhum prestador disponível')
+  }, 12000)
+}
+
 // ----------------------- Connection -----------------------
 io.on('connection', (socket) => {
   console.log(`[socket] connected ${socket.id}`)
@@ -516,7 +609,7 @@ io.on('connection', (socket) => {
       promoCode: promoValid ? promoCodeUpper : null,
       distanceKm: Number(distanceKm.toFixed(2)), etaMin,
       status: 'searching', paymentMethod: data.paymentMethod || 'pix',
-      providerId: null, notifiedProviderIds: [],
+      providerId: null, notifiedProviderIds: [], rejectedProviderIds: [],
       createdAt: Date.now(),
       timeline: [{ status: 'searching', label: 'Solicitação enviada — procurando prestador próximo', at: Date.now() }],
       rating: null, loyaltyPoints: 0,
@@ -568,46 +661,18 @@ io.on('connection', (socket) => {
 
     // Multi-provider notification (FASE 25.4 — uses rankProvidersByDistance)
     const providerPool = Array.from(providers.values())
-    const candidates = rankProvidersByDistance(providerPool as any, data.pickup, MATCHING_OPTIONS, MULTI_NOTIFY_COUNT) as unknown as Provider[]
+    const candidates = rankProvidersByDistanceExcluding(providerPool as any, data.pickup, MATCHING_OPTIONS, new Set(), MULTI_NOTIFY_COUNT) as unknown as Provider[]
     logMatchingDiagnostics(svc, providerPool, candidates)
     if (candidates.length === 0) {
       console.log(`[service] no offer emitted service=${svc.id} reason=no_eligible_providers`)
       setTimeout(() => {
         const s = services.get(svc.id)
-        if (s && s.status === 'searching') { pushTimeline(s, 'expired', 'Nenhum prestador disponível no momento'); persistServiceStatus(s); emitService(s) }
+        if (s && s.status === 'searching') closeServiceWithoutProviders(s, 'Nenhum prestador disponível no momento')
       }, 8000)
       return
     }
-    const toNotify = candidates
-    svc.notifiedProviderIds = toNotify.map((p) => p.id)
-    const primary = toNotify[0]
-    svc.providerId = primary.id
-    primary.currentServiceId = svc.id
-    const names = toNotify.map((p) => p.name).join(', ')
-    pushTimeline(svc, 'offered', `Chamada enviada para ${toNotify.length} prestador(es) próximo(s): ${names}`)
-    persistServiceStatus(svc)
-    emitService(svc)
-    emitProvider(primary)
-    toNotify.forEach((p) => io.to(p.socketId).emit('service:offer', sanitizeService(svc)))
-    console.log(`[service] offer emitted service=${svc.id} providers=${svc.notifiedProviderIds.join(',')} status=${svc.status}`)
-
-    const expireTimer = setTimeout(() => {
-      const s = services.get(svc.id)
-      if (s && s.status === 'offered') {
-        pushTimeline(s, 'expired', `Prestador(es) não respondeu(ram) a tempo — reofertando...`)
-        persistServiceStatus(s)
-        s.notifiedProviderIds.forEach((pid) => { const np = providers.get(pid); if (np && np.currentServiceId === s.id) { np.currentServiceId = null; emitProvider(np) } })
-        const nextBatch = rankProvidersByDistance(Array.from(providers.values()).filter((p) => !s.notifiedProviderIds.includes(p.id)) as any, s.pickup, MATCHING_OPTIONS, MULTI_NOTIFY_COUNT) as unknown as Provider[]
-        if (nextBatch.length > 0) {
-          s.notifiedProviderIds = nextBatch.map((p) => p.id); const np = nextBatch[0]; s.providerId = np.id; np.currentServiceId = s.id
-          pushTimeline(s, 'offered', `Chamada enviada para ${nextBatch.length} prestador(es): ${nextBatch.map((p) => p.name).join(', ')}`)
-          persistServiceStatus(s); emitService(s); emitProvider(np)
-          nextBatch.forEach((p) => io.to(p.socketId).emit('service:offer', sanitizeService(s)))
-          console.log(`[service] offer emitted service=${s.id} providers=${s.notifiedProviderIds.join(',')} status=${s.status}`)
-        } else { pushTimeline(s, 'expired', 'Nenhum prestador disponível'); persistServiceStatus(s); emitService(s) }
-      }
-    }, 12000)
-    ;(svc as any)._expireTimer = expireTimer
+    const names = candidates.map((p) => p.name).join(', ')
+    offerServiceToProviders(svc, candidates, `Chamada enviada para ${candidates.length} prestador(es) próximo(s): ${names}`)
   })
 
   socket.on('service:offer-received', (data: { serviceId: string }) => {
@@ -624,7 +689,7 @@ io.on('connection', (socket) => {
     const svc = services.get(data.serviceId)
     if (!svc || svc.status !== 'offered') return
     if (!svc.notifiedProviderIds.includes(role.id)) return
-    if ((svc as any)._expireTimer) clearTimeout((svc as any)._expireTimer)
+    clearOfferTimer(svc)
     const winner = providers.get(role.id)!
     svc.notifiedProviderIds.forEach((pid) => {
       if (pid !== role.id) {
@@ -651,22 +716,52 @@ io.on('connection', (socket) => {
     const svc = services.get(data.serviceId)
     if (!svc || svc.status !== 'offered') return
     if (!svc.notifiedProviderIds.includes(role.id)) return
+    clearOfferTimer(svc)
     const p = providers.get(role.id)!
     if (p.currentServiceId === svc.id) p.currentServiceId = null
+    p.destination = null
+    p.tripStartPos = null
+    p.tripTarget = null
+    p.tripStartedAt = null
+    p.tripTotalKm = 0
+    p.online = true
+    if (!svc.rejectedProviderIds.includes(role.id)) svc.rejectedProviderIds.push(role.id)
     svc.notifiedProviderIds = svc.notifiedProviderIds.filter((id) => id !== role.id)
-    emitProvider(p)
-    if (svc.providerId === role.id && svc.notifiedProviderIds.length > 0) {
-      svc.providerId = svc.notifiedProviderIds[0]; const np = providers.get(svc.providerId); if (np) { np.currentServiceId = svc.id; emitProvider(np) }
+    if (svc.providerId === role.id || !svc.notifiedProviderIds.includes(svc.providerId || '')) {
+      svc.providerId = svc.notifiedProviderIds[0] || null
     }
-    pushTimeline(svc, 'searching', `${p.name} recusou — ${svc.notifiedProviderIds.length} prestador(es) ainda notificado(s)`)
-    persistServiceStatus(svc); emitService(svc)
-    if (svc.notifiedProviderIds.length === 0) {
-      const nextBatch = rankProvidersByDistance(Array.from(providers.values()) as any, svc.pickup, MATCHING_OPTIONS, MULTI_NOTIFY_COUNT) as unknown as Provider[]
-      if (nextBatch.length > 0) {
-        svc.notifiedProviderIds = nextBatch.map((x) => x.id); svc.providerId = nextBatch[0].id; nextBatch[0].currentServiceId = svc.id
-        pushTimeline(svc, 'offered', `Chamada enviada para ${nextBatch.length} prestador(es): ${nextBatch.map((x) => x.name).join(', ')}`)
-        persistServiceStatus(svc); emitService(svc); nextBatch.forEach((x) => { emitProvider(x); io.to(x.socketId).emit('service:offer', sanitizeService(svc)) })
-      } else { pushTimeline(svc, 'expired', 'Nenhum prestador disponível'); persistServiceStatus(svc); emitService(svc) }
+    emitProvider(p)
+    console.log(`[service] offer rejected service=${svc.id} provider=${role.id}`)
+    console.log(`[provider] released after rejection id=${p.id} online=${p.online}`)
+
+    if (svc.notifiedProviderIds.length > 0) {
+      const nextPrimary = svc.providerId ? providers.get(svc.providerId) : null
+      if (nextPrimary) {
+        nextPrimary.currentServiceId = svc.id
+        emitProvider(nextPrimary)
+      }
+      pushTimeline(svc, 'offered', `${p.name} recusou — aguardando ${svc.notifiedProviderIds.length} prestador(es) ainda notificado(s)`)
+      persistServiceStatus(svc)
+      emitService(svc)
+      scheduleOfferExpiry(svc)
+      return
+    }
+
+    pushTimeline(svc, 'searching', `${p.name} recusou — procurando outro prestador`)
+    persistServiceStatus(svc)
+    emitService(svc)
+
+    const nextBatch = rankProvidersByDistanceExcluding(
+      Array.from(providers.values()) as any,
+      svc.pickup,
+      MATCHING_OPTIONS,
+      excludedProviderIdsFor(svc),
+      MULTI_NOTIFY_COUNT
+    ) as unknown as Provider[]
+    if (nextBatch.length > 0) {
+      offerServiceToProviders(svc, nextBatch, `Chamada enviada para ${nextBatch.length} prestador(es): ${nextBatch.map((x) => x.name).join(', ')}`)
+    } else {
+      closeServiceWithoutProviders(svc, 'Nenhum prestador disponível')
     }
   })
 

@@ -4,6 +4,7 @@ import { createElement, type ReactElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { ProviderOfferCard } from '@/components/rescue/provider-panel'
 import type { ServiceData } from '@/lib/rescue-types'
+import * as rescueSocket from '@/hooks/use-rescue-socket'
 
 const offer: ServiceData = {
   id: 'svc_demo_offer',
@@ -65,5 +66,41 @@ describe('provider offer flow', () => {
     expect(markup).toContain('Reboque / Guincho')
     expect(markup).toContain('lucas')
     expect(markup).toContain('Aceitar')
+  })
+
+  test('provider service update keeps pending offers out of current active service', () => {
+    const reduceProviderServiceUpdate = (
+      rescueSocket as unknown as {
+        reduceProviderServiceUpdate?: (state: any, service: ServiceData) => any
+      }
+    ).reduceProviderServiceUpdate
+    expect(typeof reduceProviderServiceUpdate).toBe('function')
+
+    const next = reduceProviderServiceUpdate!({
+      offer: null,
+      currentService: null,
+      offerTaken: null,
+    }, offer)
+
+    expect(next.offer?.id).toBe(offer.id)
+    expect(next.currentService).toBeNull()
+  })
+
+  test('provider reject clears the pending offer and old current service', () => {
+    const reduceProviderReject = (
+      rescueSocket as unknown as {
+        reduceProviderReject?: (state: any, serviceId: string) => any
+      }
+    ).reduceProviderReject
+    expect(typeof reduceProviderReject).toBe('function')
+
+    const next = reduceProviderReject!({
+      offer,
+      currentService: offer,
+      offerTaken: null,
+    }, offer.id)
+
+    expect(next.offer).toBeNull()
+    expect(next.currentService).toBeNull()
   })
 })

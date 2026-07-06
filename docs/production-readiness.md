@@ -299,6 +299,15 @@ O build do Next.js 16/Turbopack com Bun dentro do Docker estava instavel. A corr
 - Logs seguros adicionados ao `rescue-service`: provider registrado, online/offline, service request criada, contagem de candidatos, motivo de descarte, oferta emitida, oferta recebida e oferta aceita. Os logs usam ids/status e nao registram secrets.
 - Sem mudancas de Docker/Traefik, `.env`, banco/volumes, Supabase ou Mercado Pago real.
 
+## FASE 32.4 - Recusa libera nova solicitacao
+- Bug F32-004: apos o prestador recusar a chamada, o cliente podia ficar preso em um ciclo antigo com timeline de recusa/timeout e o painel do prestador podia manter card antigo.
+- Causa raiz: a recusa removia o prestador apenas de `notifiedProviderIds`, mas a reoferta podia selecionar novamente o mesmo provider porque nao havia lista de `rejectedProviderIds`; o timer antigo tambem podia continuar produzindo timeout depois da recusa.
+- Correcao no `rescue-service`: cada request guarda `rejectedProviderIds`, limpa o timer de oferta ao recusar, libera o provider para `online/currentServiceId=null`, reoferta somente para candidatos que ainda nao recusaram e encerra em `expired` quando nao houver candidato.
+- Correcao no hook do prestador: `service:offer`, `service:update`, `service:offer-taken` e `service:reject` passam pelos reducers `reduceProviderServiceUpdate`/`reduceProviderReject`, removendo ofertas pendentes de `offer/currentService/offerTaken` quando a chamada nao esta mais ativa.
+- Eventos Socket.IO preservados: `service:request`, `service:offer`, `service:offer-received`, `service:reject`, `provider:state` e `service:update`.
+- Logs seguros adicionados: oferta recusada, provider liberado, request encerrado por ausencia de candidatos e cliente notificado de encerramento.
+- Sem mudancas de Docker/Traefik, `.env`, banco/volumes, Supabase ou Mercado Pago real.
+
 ## Seguranca de Secrets e Versionamento
 - `.env` real nao deve ser rastreado pelo Git.
 - `.env.example` e o unico modelo seguro versionado e contem apenas placeholders.

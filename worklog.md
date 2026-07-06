@@ -1997,3 +1997,24 @@ Stage Summary:
 - Nenhum Docker/Traefik alterado.
 - `.env`, banco, volumes, Supabase e Mercado Pago real nao foram alterados.
 - Mercado Pago real continua desabilitado.
+
+---
+Task ID: 32.4
+Agent: main
+Task: Corrigir F32-004 - recusa do prestador bloqueava novo ciclo de solicitacao.
+
+Work Log:
+- Causa raiz confirmada: apos `service:reject`, o `rescue-service` nao mantinha uma lista de prestadores que ja recusaram a request e podia reofertar a mesma chamada para o mesmo provider.
+- O timer de expiracao da oferta antiga tambem podia continuar ativo apos a recusa, gerando timeline de timeout/reoferta e encerramento tardio.
+- `ServiceRequest` passou a manter `rejectedProviderIds` em memoria.
+- Matching ganhou `rankProvidersByDistanceExcluding`, usado para reofertar apenas para prestadores elegiveis que ainda nao recusaram a mesma request.
+- `service:reject` agora limpa timer, libera provider (`online=true`, `currentServiceId=null` e dados de rota zerados), registra recusa, tenta reofertar para outro candidato e encerra como `expired` quando nao ha candidatos.
+- Com prestadores ainda notificados, a request permanece em `offered`, o provider primario e reajustado e o timeout e rearmado.
+- Hook do prestador ganhou reducers testaveis para limpar `offer`, `currentService` e `offerTaken` em recusa, timeout, oferta tomada ou update pendente.
+- Eventos preservados/corrigidos: `service:request`, `service:offer`, `service:offer-received`, `service:reject`, `provider:state` e `service:update`.
+- Logs seguros adicionados: `offer rejected`, `released after rejection`, `request closed` e `client notified closed`.
+
+Stage Summary:
+- Nenhum Docker/Traefik alterado.
+- `.env`, banco, volumes, Supabase e Mercado Pago real nao foram alterados.
+- Mercado Pago real continua desabilitado.

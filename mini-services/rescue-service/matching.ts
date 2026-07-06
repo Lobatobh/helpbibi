@@ -43,6 +43,21 @@ export function rankProvidersByDistance(providers: MatchingProvider[], pickup: L
     .slice(0, limit)
 }
 
+export function rankProvidersByDistanceExcluding(
+  providers: MatchingProvider[],
+  pickup: LatLng,
+  options: MatchingOptions,
+  excludedProviderIds: Set<string>,
+  limit: number = 3
+): MatchingProvider[] {
+  return rankProvidersByDistance(
+    providers.filter((p) => !excludedProviderIds.has(p.id)),
+    pickup,
+    options,
+    limit
+  )
+}
+
 export function getMatchingMode(pickupSource: string, provider: MatchingProvider | null): { matching: string; pickup: string; pos: string } {
   const pickup = pickupSource.toUpperCase() === 'GPS' ? 'GPS' : 'DEMO'
   const pos = provider?.isGpsPosition ? 'gps' : 'demo'

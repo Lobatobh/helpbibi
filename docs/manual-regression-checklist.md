@@ -210,3 +210,20 @@
 - [ ] Logs do `rescue-service` mostram `request created`, `candidates=1`, `offer emitted`, `offer received` e `offer accepted`
 - [ ] Nenhuma porta host `3003:3003` foi publicada
 - [ ] Mercado Pago real continua desabilitado
+
+## 21. FASE 32.4 - Recusa libera novo ciclo de solicitacao
+
+- [ ] Cliente entra na demo publica como `lucas`
+- [ ] Prestador entra como `Pedro`, veiculo `Guincho Plataforma`, placa valida, e fica `Online`
+- [ ] Cliente cria solicitacao `Reboque / Guincho`
+- [ ] Prestador recebe card `Nova chamada`
+- [ ] Prestador clica em `Recusar`
+- [ ] Cliente ve timeline com recusa e encerramento terminal quando nao ha outro candidato
+- [ ] Botao `Nova solicitacao` aparece e abre o formulario novamente
+- [ ] Nova solicitacao gera novo requestId/ciclo de oferta
+- [ ] Prestador que recusou volta para `Disponivel para chamadas`
+- [ ] Prestador pode receber uma nova solicitacao posterior do mesmo cliente
+- [ ] O mesmo prestador nao recebe novamente a mesma solicitacao que acabou de recusar
+- [ ] Com segundo prestador online, recusa do primeiro reoferta para o segundo
+- [ ] Logs do `rescue-service` mostram `offer rejected`, `released after rejection`, `request closed` e `client notified closed`
+- [ ] `.env` continua fora do Git e nenhum banco local foi rastreado

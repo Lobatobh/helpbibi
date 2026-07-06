@@ -26,7 +26,7 @@ type ClientState = {
   paymentResult: { ok: boolean; outcome?: string; status?: string; paymentId?: string; amount?: number; method?: string; message?: string } | null
 }
 
-type ProviderSession = {
+export type ProviderSession = {
   connected: boolean
   connectionError: string | null
   registered: boolean
@@ -44,6 +44,50 @@ type ProviderSession = {
 const REGISTER_TIMEOUT_MS = 8000
 const REGISTRATION_TIMEOUT_MESSAGE =
   'Não recebemos confirmação do serviço em tempo real. Tente novamente em alguns segundos.'
+const PROVIDER_ACTIVE_SERVICE_STATUSES = new Set(['accepted', 'arriving', 'arrived', 'in_progress', 'completed', 'cancelled'])
+
+function isPendingProviderService(service: ServiceData | null): boolean {
+  return !!service && !PROVIDER_ACTIVE_SERVICE_STATUSES.has(service.status)
+}
+
+export function reduceProviderServiceUpdate(previous: ProviderSession, svc: ServiceData): ProviderSession {
+  if (svc.status === 'offered') {
+    return {
+      ...previous,
+      offer: svc,
+      currentService: previous.currentService?.id === svc.id && !isPendingProviderService(previous.currentService)
+        ? previous.currentService
+        : null,
+    }
+  }
+
+  if (isPendingProviderService(svc)) {
+    return {
+      ...previous,
+      offer: previous.offer?.id === svc.id ? null : previous.offer,
+      currentService: previous.currentService?.id === svc.id && isPendingProviderService(previous.currentService)
+        ? null
+        : previous.currentService,
+    }
+  }
+
+  return {
+    ...previous,
+    currentService: svc,
+    offer: previous.offer?.id === svc.id ? null : previous.offer,
+  }
+}
+
+export function reduceProviderReject(previous: ProviderSession, serviceId: string): ProviderSession {
+  return {
+    ...previous,
+    offer: previous.offer?.id === serviceId ? null : previous.offer,
+    currentService: previous.currentService?.id === serviceId && isPendingProviderService(previous.currentService)
+      ? null
+      : previous.currentService,
+    offerTaken: previous.offerTaken?.serviceId === serviceId ? null : previous.offerTaken,
+  }
+}
 
 export function useClientSocket() {
   const socketRef = useRef<Socket | null>(null)
@@ -297,12 +341,12 @@ export function useProviderSocket() {
     })
 
     s.on('service:offer', (svc: ServiceData) => {
-      setState((p) => ({ ...p, offer: svc }))
+      setState((p) => reduceProviderServiceUpdate(p, svc))
       s.emit('service:offer-received', { serviceId: svc.id })
     })
 
     s.on('service:update', (svc: ServiceData) => {
-      setState((p) => ({ ...p, currentService: svc, offer: svc.status === 'offered' ? svc : null }))
+      setState((p) => reduceProviderServiceUpdate(p, svc))
     })
 
     s.on('chat:messages', (data: { serviceId: string; messages: ChatMessage[] }) => {
@@ -314,7 +358,7 @@ export function useProviderSocket() {
     })
 
     s.on('service:offer-taken', (data: { serviceId: string; acceptedBy: string | null; cancelled: boolean }) => {
-      setState((p) => ({ ...p, offerTaken: data, offer: null }))
+      setState((p) => ({ ...reduceProviderReject(p, data.serviceId), offerTaken: data }))
     })
 
     return () => {
@@ -358,6 +402,7 @@ export function useProviderSocket() {
   }, [])
 
   const reject = useCallback((serviceId: string) => {
+    setState((p) => reduceProviderReject(p, serviceId))
     socketRef.current?.emit('service:reject', { serviceId })
   }, [])
 
