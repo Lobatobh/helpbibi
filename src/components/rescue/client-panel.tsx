@@ -252,7 +252,7 @@ export function ClientPanel() {
       </div>
 
       {/* Body */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="min-h-0 flex-1 overflow-y-auto p-4 pb-6">
         {!connected && (
           <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -357,7 +357,7 @@ export function ClientPanel() {
         )}
 
         {view === 'home' && svc && (
-          <ServiceTracker
+          <ClientServiceTracker
             svc={svc}
             onCancel={() => cancelService(svc.id)}
             onRate={(stars, comment) => handleRate(svc, stars, comment)}
@@ -733,7 +733,7 @@ function RequestForm(props: any) {
   )
 }
 
-function ServiceTracker({
+export function ClientServiceTracker({
   svc, onCancel, onRate, rated, onNewRequest,
   messages, onSendChat, chatOpen, setChatOpen, unreadChat,
 }: {
@@ -756,8 +756,9 @@ function ServiceTracker({
   const canChat = isLive && !!svc.provider && ['accepted', 'arriving', 'arrived', 'in_progress'].includes(status)
 
   return (
-    <div className="space-y-3">
-      {/* Status banner */}
+    <div data-layout="client-service-tracker" className="flex min-h-0 flex-col gap-3">
+      <div data-layout="client-service-content" className="flex min-h-0 flex-col gap-3">
+        {/* Status banner */}
       <div
         className={`rounded-xl border p-3 ${
           status === 'completed' ? 'border-orange-500/40 bg-orange-500/10'
@@ -785,11 +786,11 @@ function ServiceTracker({
                 {svc.provider.name.slice(0, 2).toUpperCase()}
               </AvatarFallback>
             </Avatar>
-            <div className="flex-1">
-              <p className="text-sm font-bold text-white">{svc.provider.name}</p>
-              <p className="text-xs text-slate-400">{svc.provider.vehicle} · {svc.provider.plate}</p>
+            <div className="min-w-0 flex-1">
+              <p className="break-words text-sm font-bold text-white">{svc.provider.name}</p>
+              <p className="break-words text-xs text-slate-400">{svc.provider.vehicle} · {svc.provider.plate}</p>
             </div>
-            <div className="flex flex-col items-end gap-1">
+            <div className="flex shrink-0 flex-col items-end gap-1">
               <div className="flex items-center gap-1 text-sky-400">
                 <Star className="h-3.5 w-3.5" fill="currentColor" />
                 <span className="text-xs font-bold">{svc.provider.rating.toFixed(1)}</span>
@@ -880,23 +881,23 @@ function ServiceTracker({
             <div className="my-1 w-0.5 flex-1 bg-slate-700" />
             <div className="h-2.5 w-2.5 rounded-full bg-sky-500" />
           </div>
-          <div className="flex-1 space-y-3">
+          <div className="min-w-0 flex-1 space-y-3">
             <div>
               <p className="text-[10px] uppercase text-slate-500">Local do atendimento</p>
-              <p className="text-xs font-medium text-white">{svc.pickupLabel}</p>
+              <p className="break-words text-xs font-medium text-white">{svc.pickupLabel}</p>
             </div>
             <div>
               <p className="text-[10px] uppercase text-slate-500">Destino final</p>
-              <p className="text-xs font-medium text-white">{svc.destinationLabel}</p>
+              <p className="break-words text-xs font-medium text-white">{svc.destinationLabel}</p>
             </div>
           </div>
         </div>
-        <div className="mt-2 flex items-center justify-between border-t border-slate-800 pt-2 text-xs">
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-2 text-xs">
           <span className="flex items-center gap-1.5 text-slate-400">
             <PayIcon className="h-3.5 w-3.5 text-sky-400" />
             {PAYMENT_METHODS.find((m) => m.id === svc.paymentMethod)?.label}
           </span>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {svc.discount > 0 && (
               <span className="text-[10px] text-orange-400">
                 <Tag className="mr-0.5 inline h-3 w-3" />{svc.promoCode} -R${svc.discount}
@@ -908,15 +909,15 @@ function ServiceTracker({
       </div>
 
       {/* Timeline */}
-      <div>
+      <div className="min-w-0">
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Acompanhamento</p>
-        <ScrollArea className="max-h-32">
+        <ScrollArea data-layout="client-timeline-scroll" className="h-32">
           <div className="space-y-2 pr-2">
             {svc.timeline.slice().reverse().map((ev, i) => (
               <div key={i} className="flex gap-2 text-xs">
                 <div className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-slate-600" />
-                <div className="flex-1">
-                  <p className="text-slate-300">{ev.label}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="break-words text-slate-300">{ev.label}</p>
                   <p className="text-[10px] text-slate-600">{new Date(ev.at).toLocaleTimeString('pt-BR')}</p>
                 </div>
               </div>
@@ -940,11 +941,14 @@ function ServiceTracker({
             ))}
             <span className="ml-1 text-xs font-bold text-sky-400">{svc.clientRating.stars}.0</span>
           </div>
-          {svc.clientRating.comment && <p className="mt-1 text-xs italic text-slate-300">"{svc.clientRating.comment}"</p>}
+          {svc.clientRating.comment && <p className="mt-1 break-words text-xs italic text-slate-300">"{svc.clientRating.comment}"</p>}
         </div>
       )}
 
-      {/* Actions */}
+      </div>
+
+      <div data-layout="client-service-actions" className="shrink-0 space-y-2 pt-1">
+        {/* Actions */}
       {isLive && (
         <>
           <ShareTrackingButton svcId={svc.id} />
@@ -958,6 +962,7 @@ function ServiceTracker({
           <Shield className="mr-2 h-4 w-4" /> Nova solicitação
         </Button>
       )}
+      </div>
     </div>
   )
 }
