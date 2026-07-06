@@ -199,7 +199,7 @@ export function ProviderPanel() {
         {view === 'home' && (
           <>
             {offer && offer.status === 'offered' && (
-              <OfferCard offer={offer} onAccept={() => accept(offer.id)} onReject={() => reject(offer.id)} notifiedCount={offer.notifiedCount} />
+              <ProviderOfferCard offer={offer} onAccept={() => accept(offer.id)} onReject={() => reject(offer.id)} notifiedCount={offer.notifiedCount} />
             )}
             {offerTaken && !svc && (
               <div className="rounded-xl border border-slate-700 bg-slate-900/60 p-4 text-center">
@@ -302,7 +302,7 @@ function TabBtn({ active, onClick, icon: Icon, label, badge }: { active: boolean
   )
 }
 
-function OfferCard({ offer, onAccept, onReject, notifiedCount }: { offer: ServiceData; onAccept: () => void; onReject: () => void; notifiedCount?: number }) {
+export function ProviderOfferCard({ offer, onAccept, onReject, notifiedCount }: { offer: ServiceData; onAccept: () => void; onReject: () => void; notifiedCount?: number }) {
   const [seconds, setSeconds] = useState(12)
   useEffect(() => {
     const t = setInterval(() => setSeconds((s) => (s > 0 ? s - 1 : 0)), 1000)

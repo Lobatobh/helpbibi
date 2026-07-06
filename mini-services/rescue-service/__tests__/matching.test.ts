@@ -1,6 +1,7 @@
 // Help Bibi — Matching logic tests (FASE 25.4)
 import { describe, test, expect } from 'bun:test'
 import {
+  createPublicDemoMatchingOptions, getMatchingRejectionReason,
   haversineDistance, isEligibleForMatching, rankProvidersByDistance, getMatchingMode,
   type MatchingProvider, type MatchingOptions,
 } from '../matching'
@@ -88,10 +89,15 @@ describe('matching — isEligibleForMatching', () => {
     const p = baseProvider({ isDemoProvider: true })
     expect(isEligibleForMatching(p, { isDevMode: false, demoMode: true })).toBe(true)
   })
+
+  test('13. explains why an online demo provider is rejected when demoMode is disabled', () => {
+    const p = baseProvider({ isDemoProvider: true })
+    expect(getMatchingRejectionReason(p, prodOptions)).toBe('demo_mode_disabled')
+  })
 })
 
 describe('matching — rankProvidersByDistance', () => {
-  test('13. returns only eligible providers (filters out ineligible)', () => {
+  test('14. returns only eligible providers (filters out ineligible)', () => {
     const pickup = { lat: -23.5505, lng: -46.6333 }
     const providers = [
       baseProvider({ id: 'p1', position: { lat: -23.55, lng: -46.63 } }),
@@ -103,7 +109,7 @@ describe('matching — rankProvidersByDistance', () => {
     expect(ranked[0].id).toBe('p1')
   })
 
-  test('14. sorted by distance ascending', () => {
+  test('15. sorted by distance ascending', () => {
     const pickup = { lat: -23.5505, lng: -46.6333 }
     const providers = [
       baseProvider({ id: 'far', position: { lat: -23.60, lng: -46.70 } }),
@@ -116,7 +122,7 @@ describe('matching — rankProvidersByDistance', () => {
     expect(ranked[2].id).toBe('far')
   })
 
-  test('15. limited to limit parameter', () => {
+  test('16. limited to limit parameter', () => {
     const pickup = { lat: -23.5505, lng: -46.6333 }
     const providers = [
       baseProvider({ id: 'p1', position: { lat: -23.55, lng: -46.63 } }),
@@ -128,7 +134,7 @@ describe('matching — rankProvidersByDistance', () => {
     expect(ranked.length).toBe(2)
   })
 
-  test('16. default limit is 3', () => {
+  test('17. default limit is 3', () => {
     const pickup = { lat: -23.5505, lng: -46.6333 }
     const providers = [
       baseProvider({ id: 'p1', position: { lat: -23.55, lng: -46.63 } }),
@@ -140,34 +146,56 @@ describe('matching — rankProvidersByDistance', () => {
     const ranked = rankProvidersByDistance(providers, pickup, devOptions) // default limit=3
     expect(ranked.length).toBe(3)
   })
+
+  test('18. production public demo runtime matches an online Guincho Plataforma provider for Reboque / Guincho', () => {
+    const pickup = { lat: -23.5614, lng: -46.6559 }
+    const provider = baseProvider({
+      id: 'demo_guincho',
+      name: 'Pedro',
+      isDemoProvider: true,
+      isVerified: false,
+      documentStatus: 'PENDING',
+      vehicleStatus: 'PENDING',
+      position: { lat: -23.56, lng: -46.654 },
+    })
+
+    const ranked = rankProvidersByDistance(
+      [provider],
+      pickup,
+      createPublicDemoMatchingOptions(true),
+      1
+    )
+
+    expect(ranked.map((p) => p.id)).toEqual(['demo_guincho'])
+  })
 })
 
 describe('matching — getMatchingMode', () => {
-  test('17. GPS pickup → gps matching', () => {
+  test('19. GPS pickup → gps matching', () => {
     const result = getMatchingMode('GPS', null)
     expect(result.matching).toBe('gps')
     expect(result.pickup).toBe('GPS')
   })
 
-  test('18. DEMO pickup → demo matching', () => {
+  test('20. DEMO pickup → demo matching', () => {
     const result = getMatchingMode('DEMO', null)
     expect(result.matching).toBe('demo')
     expect(result.pickup).toBe('DEMO')
   })
 
-  test('19. lowercase gps normalised to GPS', () => {
+  test('21. lowercase gps normalised to GPS', () => {
     const result = getMatchingMode('gps', null)
     expect(result.pickup).toBe('GPS')
     expect(result.matching).toBe('gps')
   })
 
-  test('20. unknown pickup source defaults to DEMO', () => {
+  test('22. unknown pickup source defaults to DEMO', () => {
     const result = getMatchingMode('xyz', null)
     expect(result.pickup).toBe('DEMO')
     expect(result.matching).toBe('demo')
   })
 
-  test('21. provider isGpsPosition affects pos field', () => {
+  test('23. provider isGpsPosition affects pos field', () => {
     const p = baseProvider({ isGpsPosition: true })
     const result = getMatchingMode('GPS', p)
     expect(result.pos).toBe('gps')

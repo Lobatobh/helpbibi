@@ -298,6 +298,7 @@ export function useProviderSocket() {
 
     s.on('service:offer', (svc: ServiceData) => {
       setState((p) => ({ ...p, offer: svc }))
+      s.emit('service:offer-received', { serviceId: svc.id })
     })
 
     s.on('service:update', (svc: ServiceData) => {

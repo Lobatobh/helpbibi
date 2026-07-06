@@ -195,3 +195,18 @@
 - [ ] Traefik roteia somente `PathPrefix(/socket.io)` para o `rescue`
 - [ ] `app` continua recebendo o restante do site em `3000`
 - [ ] `rescue` continua sem publicacao host `3003:3003`
+
+## 20. FASE 32.3 - Oferta entregue ao prestador online
+
+- [ ] Cliente entra na demo publica como `lucas`
+- [ ] Prestador entra como `Pedro`, veiculo `Guincho Plataforma`, e fica `Online`
+- [ ] Cliente mostra pelo menos `1 prestador(es) por perto`
+- [ ] Cliente cria solicitacao `Reboque / Guincho`
+- [ ] Cliente muda para status `Chamada enviada` ou equivalente `offered`
+- [ ] Prestador recebe card `Nova chamada`
+- [ ] Card do prestador mostra `Reboque / Guincho`, cliente e origem/destino
+- [ ] Prestador consegue clicar em `Aceitar`
+- [ ] Cliente recebe status `Prestador a caminho` ou equivalente `accepted`
+- [ ] Logs do `rescue-service` mostram `request created`, `candidates=1`, `offer emitted`, `offer received` e `offer accepted`
+- [ ] Nenhuma porta host `3003:3003` foi publicada
+- [ ] Mercado Pago real continua desabilitado

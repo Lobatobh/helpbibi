@@ -1973,3 +1973,27 @@ Stage Summary:
 - Nenhuma regra de negocio alterada.
 - `.env` real nao foi alterado e segue fora do Git.
 - Banco, volumes, Supabase e Mercado Pago nao foram alterados.
+
+---
+Task ID: 32.3
+Agent: main
+Task: Corrigir F32-003 - prestador online nao recebia chamada criada pelo cliente na demo publica.
+
+Work Log:
+- Bug F32-003 reproduzido por leitura de fluxo: `providers:nearby` exibia prestadores apenas com base em `online`, mas o matching usava `isEligibleForMatching`.
+- Causa raiz: prestadores criados pela demo publica sao `isDemoProvider: true`; em producao, `MATCHING_OPTIONS` usava `demoMode=false`, entao o prestador aparecia como online no mapa, mas era descartado como candidato real.
+- Adicionado `createPublicDemoMatchingOptions(IS_PROD)` para habilitar `demoMode` no runtime da demo publica sem mudar a regra geral de elegibilidade quando `demoMode` esta falso.
+- Adicionado `getMatchingRejectionReason` para diagnosticar descartes de candidato com motivos seguros como `demo_mode_disabled`, `provider_offline` e `provider_busy`.
+- `rescue-service` agora registra logs seguros para provider registrado, online/offline, service request criada, candidatos encontrados, descarte, oferta emitida, oferta recebida e aceite.
+- Hook do prestador emite `service:offer-received` ao receber `service:offer`, permitindo confirmar em logs que o card chegou ao navegador.
+- Card de oferta do prestador foi exportado como `ProviderOfferCard` para teste de renderizacao.
+- Testes adicionados para:
+  - producao publica da demo encontrar prestador demo online `Guincho Plataforma` para `Reboque / Guincho`;
+  - motivo de descarte `demo_mode_disabled`;
+  - ack `service:offer-received`;
+  - renderizacao do card `Nova chamada` no painel do prestador.
+
+Stage Summary:
+- Nenhum Docker/Traefik alterado.
+- `.env`, banco, volumes, Supabase e Mercado Pago real nao foram alterados.
+- Mercado Pago real continua desabilitado.

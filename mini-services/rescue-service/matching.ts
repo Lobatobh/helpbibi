@@ -14,12 +14,26 @@ export function haversineDistance(a: LatLng, b: LatLng): number {
   return 2 * R * Math.asin(Math.sqrt(h))
 }
 
+export function createPublicDemoMatchingOptions(isProduction: boolean): MatchingOptions {
+  return { isDevMode: !isProduction, demoMode: true }
+}
+
+export function getMatchingRejectionReason(provider: MatchingProvider, options: MatchingOptions): string | null {
+  if (provider.userStatus !== 'ACTIVE') return 'user_not_active'
+  if (!provider.online) return 'provider_offline'
+  if (provider.currentServiceId) return 'provider_busy'
+  if (provider.isDemoProvider) {
+    if (!options.isDevMode && !options.demoMode) return 'demo_mode_disabled'
+    return null
+  }
+  if (provider.isVerified !== true) return 'provider_not_verified'
+  if (provider.documentStatus !== 'APPROVED') return 'documents_not_approved'
+  if (provider.vehicleStatus !== 'APPROVED') return 'vehicle_not_approved'
+  return null
+}
+
 export function isEligibleForMatching(provider: MatchingProvider, options: MatchingOptions): boolean {
-  if (provider.userStatus !== 'ACTIVE') return false
-  if (!provider.online) return false
-  if (provider.currentServiceId) return false
-  if (provider.isDemoProvider) { if (!options.isDevMode && !options.demoMode) return false; return true }
-  return provider.isVerified === true && provider.documentStatus === 'APPROVED' && provider.vehicleStatus === 'APPROVED'
+  return getMatchingRejectionReason(provider, options) === null
 }
 
 export function rankProvidersByDistance(providers: MatchingProvider[], pickup: LatLng, options: MatchingOptions, limit: number = 3): MatchingProvider[] {

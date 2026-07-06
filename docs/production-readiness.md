@@ -291,6 +291,14 @@ O build do Next.js 16/Turbopack com Bun dentro do Docker estava instavel. A corr
 - A porta `3003` continua apenas em `expose`, sem publicacao host `3003:3003`.
 - Nao alterar `.env` real, volumes, banco, Supabase ou Mercado Pago para esta correcao.
 
+## FASE 32.3 - Oferta para prestador online na demo publica
+- Bug F32-003: cliente e prestador entravam na demo publica, e `providers:nearby` mostrava prestador online, mas o matching descartava prestadores demo em producao porque `demoMode` ficava falso no runtime do `rescue-service`.
+- Correcao: o runtime da demo publica passa a usar `createPublicDemoMatchingOptions(IS_PROD)`, mantendo a regra geral que rejeita demo provider quando `demoMode` esta desabilitado, mas permitindo o fluxo publico da demo em producao.
+- Resultado esperado: uma solicitacao `Reboque / Guincho` encontra prestador demo online como `Guincho Plataforma`, emite `service:offer`, atualiza o cliente para `offered` e mostra o card de chamada no painel do prestador.
+- Eventos Socket.IO envolvidos: `provider:register`, `provider:toggle-online`, `service:request`, `service:offer`, `service:offer-received`, `service:accept` e `service:update`.
+- Logs seguros adicionados ao `rescue-service`: provider registrado, online/offline, service request criada, contagem de candidatos, motivo de descarte, oferta emitida, oferta recebida e oferta aceita. Os logs usam ids/status e nao registram secrets.
+- Sem mudancas de Docker/Traefik, `.env`, banco/volumes, Supabase ou Mercado Pago real.
+
 ## Seguranca de Secrets e Versionamento
 - `.env` real nao deve ser rastreado pelo Git.
 - `.env.example` e o unico modelo seguro versionado e contem apenas placeholders.

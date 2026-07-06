@@ -1,7 +1,7 @@
 import { createServer } from 'http'
 import { Server } from 'socket.io'
 import { PrismaClient } from '@prisma/client'
-import { isEligibleForMatching, rankProvidersByDistance } from './matching'
+import { createPublicDemoMatchingOptions, getMatchingRejectionReason, rankProvidersByDistance } from './matching'
 import { calculatePrice } from '../../src/server/pricing/pricing-engine'
 import { validateEnv } from '../../src/server/env'
 // FASE 26 — Socket.IO hardening helpers (per-socket rate limit + payload validation)
@@ -166,7 +166,7 @@ const haversineKm = (a: LatLng, b: LatLng) => {
 }
 
 // FASE 25.2/25.4 — Matching options + pricing delegation
-const MATCHING_OPTIONS = { isDevMode: IS_DEV_MODE, demoMode: IS_DEV_MODE }
+const MATCHING_OPTIONS = createPublicDemoMatchingOptions(IS_PROD)
 const calcPrice = (type: ServiceType, distanceKm: number): number => {
   const breakdown = calculatePrice({ serviceType: type as any, pickup: { lat: 0, lng: 0 }, destination: null, providerPosition: null, pickupDistanceKm: 0, destinationDistanceKm: distanceKm })
   return Math.round(breakdown.total)
@@ -317,6 +317,16 @@ const emitChatToService = (serviceId: string, msg?: ChatMessage) => {
   }
 }
 
+const logMatchingDiagnostics = (svc: ServiceRequest, providerPool: Provider[], candidates: Provider[]) => {
+  console.log(`[matching] service=${svc.id} type=${svc.type} providers=${providerPool.length} candidates=${candidates.length}`)
+  providerPool.forEach((provider) => {
+    const reason = getMatchingRejectionReason(provider, MATCHING_OPTIONS)
+    if (reason) {
+      console.log(`[matching] discarded service=${svc.id} provider=${provider.id} reason=${reason}`)
+    }
+  })
+}
+
 // ----------------------- Connection -----------------------
 io.on('connection', (socket) => {
   console.log(`[socket] connected ${socket.id}`)
@@ -427,7 +437,7 @@ io.on('connection', (socket) => {
     socketToRole.set(socket.id, { role: 'provider', id })
     emitProvider(provider)
     socket.emit('provider:registered', { id })
-    console.log(`[provider] registered ${id} (${data.name}) dbUser=${dbUserId}`)
+    console.log(`[provider] registered id=${id} demo=${provider.isDemoProvider} online=${provider.online} verified=${provider.isVerified} documentStatus=${provider.documentStatus} vehicleStatus=${provider.vehicleStatus} dbUser=${dbUserId ?? 'none'}`)
   })
 
   socket.on('provider:toggle-online', (data: { online: boolean }) => {
@@ -437,6 +447,7 @@ io.on('connection', (socket) => {
     if (!p) return
     p.online = data.online
     emitProvider(p)
+    console.log(`[provider] ${data.online ? 'online' : 'offline'} id=${p.id}`)
     if (p.dbProviderProfileId) {
       db.providerProfile.update({ where: { id: p.dbProviderProfileId }, data: { isAvailable: data.online } }).catch(() => {})
     }
@@ -553,10 +564,14 @@ io.on('connection', (socket) => {
 
     services.set(svc.id, svc)
     emitService(svc)
+    console.log(`[service] request created service=${svc.id} client=${role.id} type=${svc.type} payment=${svc.paymentMethod}`)
 
     // Multi-provider notification (FASE 25.4 — uses rankProvidersByDistance)
-    const candidates = rankProvidersByDistance(Array.from(providers.values()) as any, data.pickup, MATCHING_OPTIONS, MULTI_NOTIFY_COUNT) as unknown as Provider[]
+    const providerPool = Array.from(providers.values())
+    const candidates = rankProvidersByDistance(providerPool as any, data.pickup, MATCHING_OPTIONS, MULTI_NOTIFY_COUNT) as unknown as Provider[]
+    logMatchingDiagnostics(svc, providerPool, candidates)
     if (candidates.length === 0) {
+      console.log(`[service] no offer emitted service=${svc.id} reason=no_eligible_providers`)
       setTimeout(() => {
         const s = services.get(svc.id)
         if (s && s.status === 'searching') { pushTimeline(s, 'expired', 'Nenhum prestador disponível no momento'); persistServiceStatus(s); emitService(s) }
@@ -574,6 +589,7 @@ io.on('connection', (socket) => {
     emitService(svc)
     emitProvider(primary)
     toNotify.forEach((p) => io.to(p.socketId).emit('service:offer', sanitizeService(svc)))
+    console.log(`[service] offer emitted service=${svc.id} providers=${svc.notifiedProviderIds.join(',')} status=${svc.status}`)
 
     const expireTimer = setTimeout(() => {
       const s = services.get(svc.id)
@@ -587,10 +603,19 @@ io.on('connection', (socket) => {
           pushTimeline(s, 'offered', `Chamada enviada para ${nextBatch.length} prestador(es): ${nextBatch.map((p) => p.name).join(', ')}`)
           persistServiceStatus(s); emitService(s); emitProvider(np)
           nextBatch.forEach((p) => io.to(p.socketId).emit('service:offer', sanitizeService(s)))
+          console.log(`[service] offer emitted service=${s.id} providers=${s.notifiedProviderIds.join(',')} status=${s.status}`)
         } else { pushTimeline(s, 'expired', 'Nenhum prestador disponível'); persistServiceStatus(s); emitService(s) }
       }
     }, 12000)
     ;(svc as any)._expireTimer = expireTimer
+  })
+
+  socket.on('service:offer-received', (data: { serviceId: string }) => {
+    const role = socketToRole.get(socket.id)
+    if (!role || role.role !== 'provider') return
+    const svc = services.get(data.serviceId)
+    if (!svc || !svc.notifiedProviderIds.includes(role.id)) return
+    console.log(`[service] offer received service=${svc.id} provider=${role.id}`)
   })
 
   socket.on('service:accept', (data: { serviceId: string }) => {
@@ -617,7 +642,7 @@ io.on('connection', (socket) => {
     }
     winner.tripStartPos = { ...winner.position }; winner.tripTarget = svc.pickup; winner.tripStartedAt = Date.now(); winner.tripTotalKm = haversineKm(winner.position, svc.pickup); winner.destination = svc.pickup
     emitProvider(winner); emitService(svc); emitChatToService(svc.id)
-    console.log(`[service] accepted ${svc.id} by ${winner.name}`)
+    console.log(`[service] offer accepted service=${svc.id} provider=${winner.id}`)
   })
 
   socket.on('service:reject', (data: { serviceId: string }) => {
