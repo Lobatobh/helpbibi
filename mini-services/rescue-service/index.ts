@@ -251,6 +251,10 @@ const providerPublic = (p: Provider) => ({
   position: p.position, online: p.online, completedCount: p.completedCount,
 })
 
+const availableProviderPublic = () => Array.from(providers.values())
+  .filter((x) => x.online && !x.currentServiceId)
+  .map(providerPublic)
+
 const emitProvider = (p: Provider) => {
   io.to(p.socketId).emit('provider:state', {
     id: p.id, name: p.name, vehicle: p.vehicle, plate: p.plate,
@@ -260,7 +264,7 @@ const emitProvider = (p: Provider) => {
     tripStartPos: p.tripStartPos || null, tripTarget: p.tripTarget || null,
     tripStartedAt: p.tripStartedAt || null, tripTotalKm: p.tripTotalKm || 0,
   } as any)
-  io.emit('providers:nearby', Array.from(providers.values()).filter((x) => x.online).map(providerPublic))
+  io.emit('providers:nearby', availableProviderPublic())
 }
 
 const sanitizeService = (svc: ServiceRequest) => ({
@@ -285,6 +289,15 @@ const emitService = (svc: ServiceRequest) => {
   if (svc.providerId) {
     const p = providers.get(svc.providerId)
     if (p) io.to(p.socketId).emit('service:update', payload)
+  }
+}
+
+function emitLiveTrackingUpdate(svc: ServiceRequest, p: Provider) {
+  emitService(svc)
+  const now = Date.now()
+  if (now - ((p as any)._lastTrackingLogAt || 0) >= 3000) {
+    ;(p as any)._lastTrackingLogAt = now
+    console.log(`[tracking] update emitted service=${svc.id} provider=${p.id} status=${svc.status}`)
   }
 }
 
@@ -457,7 +470,7 @@ io.on('connection', (socket) => {
     socket.emit('client:registered', { id, name: data.name })
     socket.emit('client:loyalty', { points, tier: { name: tier.name, color: tier.color, perk: tier.perk }, nextTierMin: nextTierMin(points) })
     socket.emit('loyalty:rewards', LOYALTY_REWARDS.map(r => ({ ...r, affordable: points >= r.cost })))
-    socket.emit('providers:nearby', Array.from(providers.values()).filter((x) => x.online).map(providerPublic))
+    socket.emit('providers:nearby', availableProviderPublic())
     console.log(`[client] registered ${id} (${data.name}) — loyalty ${points}pts (${tier.name}) dbUser=${dbUserId}`)
   })
 
@@ -558,6 +571,14 @@ io.on('connection', (socket) => {
     p.position = { lat: data.lat, lng: data.lng }
     p.isGpsPosition = true
     emitProvider(p)
+    if (p.currentServiceId) {
+      const svc = services.get(p.currentServiceId)
+      if (svc && svc.providerId === p.id && ['accepted', 'arriving', 'arrived', 'in_progress'].includes(svc.status)) {
+        persistProviderPosition(svc, p)
+        emitLiveTrackingUpdate(svc, p)
+        console.log(`[tracking] location received service=${svc.id} provider=${p.id}`)
+      }
+    }
   })
 
   socket.on('promo:validate', (data: { code: string; type: ServiceType; distanceKm: number }) => {
@@ -697,7 +718,7 @@ io.on('connection', (socket) => {
         if (np) { if (np.currentServiceId === svc.id) np.currentServiceId = null; emitProvider(np); io.to(np.socketId).emit('service:offer-taken', { serviceId: svc.id, acceptedBy: winner.name, cancelled: false }) }
       }
     })
-    svc.providerId = winner.id; winner.currentServiceId = svc.id; winner.online = false
+    svc.providerId = winner.id; winner.currentServiceId = svc.id; winner.online = true
     svc.acceptedAt = Date.now()
     pushTimeline(svc, 'accepted', `${winner.name} aceitou a chamada e está a caminho`)
     persistServiceStatus(svc)
@@ -708,6 +729,7 @@ io.on('connection', (socket) => {
     winner.tripStartPos = { ...winner.position }; winner.tripTarget = svc.pickup; winner.tripStartedAt = Date.now(); winner.tripTotalKm = haversineKm(winner.position, svc.pickup); winner.destination = svc.pickup
     emitProvider(winner); emitService(svc); emitChatToService(svc.id)
     console.log(`[service] offer accepted service=${svc.id} provider=${winner.id}`)
+    console.log(`[tracking] started service=${svc.id} provider=${winner.id}`)
   })
 
   socket.on('service:reject', (data: { serviceId: string }) => {
@@ -776,6 +798,7 @@ io.on('connection', (socket) => {
     persistServiceStatus(svc)
     p.destination = svc.destination; p.tripStartPos = { ...svc.pickup }; p.tripTarget = svc.destination; p.tripStartedAt = Date.now(); p.tripTotalKm = haversineKm(svc.pickup, svc.destination)
     emitProvider(p); emitService(svc)
+    console.log(`[tracking] arrival marked service=${svc.id} provider=${p.id}`)
   })
 
   socket.on('service:start', (data: { serviceId: string }) => {
@@ -788,6 +811,7 @@ io.on('connection', (socket) => {
     pushTimeline(svc, 'in_progress', 'Serviço em andamento — rumo ao destino final')
     persistServiceStatus(svc)
     emitProvider(p); emitService(svc)
+    console.log(`[tracking] route updated service=${svc.id} provider=${p.id} status=in_progress`)
   })
 
   socket.on('service:complete', (data: { serviceId: string }) => {
@@ -819,6 +843,7 @@ io.on('connection', (socket) => {
       db.providerProfile.update({ where: { id: p.dbProviderProfileId }, data: { completedCount: { increment: 1 }, earningsToday: { increment: svc.price }, isAvailable: true } }).catch(() => {})
     }
     emitProvider(p); emitService(svc)
+    console.log(`[tracking] ended service=${svc.id} provider=${p.id}`)
     if (client) {
       io.to(client.socketId).emit('client:loyalty', { points: newPoints, tier: { name: newTier.name, color: newTier.color, perk: newTier.perk }, nextTierMin: nextTierMin(newPoints), earnedThisService: earned, tierUpgraded: newTier.name !== prevTier.name })
     }
@@ -1001,7 +1026,7 @@ io.on('connection', (socket) => {
     if (role.role === 'client') { clients.delete(role.id) }
     else if (role.role === 'provider') {
       const p = providers.get(role.id)
-      if (p) { p.online = false; providers.delete(role.id); io.emit('providers:nearby', Array.from(providers.values()).filter((x) => x.online).map(providerPublic)) }
+      if (p) { p.online = false; providers.delete(role.id); io.emit('providers:nearby', availableProviderPublic()) }
     }
     socketRateBuckets.delete(socket.id)
     socketToRole.delete(socket.id)
@@ -1023,17 +1048,18 @@ setInterval(() => {
         // Persist provider position (throttled)
         persistProviderPosition(svc, p)
         if (arrived) {
-          if (svc.status === 'accepted') { pushTimeline(svc, 'arriving', `${p.name} está próximo do local`); persistServiceStatus(svc); emitService(svc) }
+          if (svc.status === 'accepted') { pushTimeline(svc, 'arriving', `${p.name} está próximo do local`); persistServiceStatus(svc) }
         } else if (svc.status === 'accepted') {
-          pushTimeline(svc, 'arriving', `${p.name} está a caminho do local`); emitService(svc)
+          pushTimeline(svc, 'arriving', `${p.name} está a caminho do local`)
         }
+        emitLiveTrackingUpdate(svc, p)
       }
     }
   }
 }, 1000)
 
 setInterval(() => {
-  io.emit('providers:nearby', Array.from(providers.values()).filter((x) => x.online).map(providerPublic))
+  io.emit('providers:nearby', availableProviderPublic())
   const leaderboard = Array.from(providers.values()).map(p => ({ id: p.id, name: p.name, vehicle: p.vehicle, rating: p.rating, completedCount: p.completedCount, earningsToday: p.earningsToday })).sort((a, b) => { if (b.completedCount !== a.completedCount) return b.completedCount - a.completedCount; return b.rating - a.rating }).slice(0, 10)
   io.emit('leaderboard', leaderboard)
 }, 5000)

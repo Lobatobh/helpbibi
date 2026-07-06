@@ -308,6 +308,17 @@ O build do Next.js 16/Turbopack com Bun dentro do Docker estava instavel. A corr
 - Logs seguros adicionados: oferta recusada, provider liberado, request encerrado por ausencia de candidatos e cliente notificado de encerramento.
 - Sem mudancas de Docker/Traefik, `.env`, banco/volumes, Supabase ou Mercado Pago real.
 
+## FASE 32.5 - Tracking ao vivo do prestador aceito
+- Bug F32-005: apos `service:accept`, o prestador se movia na simulacao interna, mas o cliente nao recebia `service:update` durante cada movimento; a posicao em `svc.provider.position` ficava congelada ate uma troca de status.
+- Causa raiz adicional: o aceite marcava `winner.online=false`, entao o painel do prestador exibia `Offline` mesmo com `currentServiceId` ativo.
+- Correcao no `rescue-service`: o aceite mantem o prestador operacional (`online=true`, `currentServiceId` preenchido), e o loop de movimento chama `emitLiveTrackingUpdate(svc, p)` para reenviar `service:update` ao cliente e ao prestador com a posicao atualizada.
+- `providers:nearby` agora lista apenas prestadores realmente disponiveis (`online && !currentServiceId`), mantendo prestador em atendimento fora da lista de candidatos sem mostrar offline.
+- Correcao na UI do prestador: estado ativo com `currentServiceId` aparece como `Em atendimento`, com switch marcado e desabilitado.
+- Correcao da barra de progresso: o progresso passa a ser calculado pela distancia real entre `provider.position` e `tripTarget`, limitando abaixo de 100% enquanto ainda houver km restantes.
+- Eventos Socket.IO envolvidos: `service:accept`, `provider:state`, `service:update`, `provider:position`, `service:arrived`, `service:start` e `service:complete`.
+- Logs seguros adicionados: tracking iniciado, localizacao recebida, update emitido ao cliente, chegada marcada, rota atualizada e tracking encerrado.
+- Sem mudancas de Docker/Traefik, `.env`, banco/volumes, Supabase ou Mercado Pago real.
+
 ## Seguranca de Secrets e Versionamento
 - `.env` real nao deve ser rastreado pelo Git.
 - `.env.example` e o unico modelo seguro versionado e contem apenas placeholders.

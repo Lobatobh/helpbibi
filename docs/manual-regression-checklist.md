@@ -227,3 +227,23 @@
 - [ ] Com segundo prestador online, recusa do primeiro reoferta para o segundo
 - [ ] Logs do `rescue-service` mostram `offer rejected`, `released after rejection`, `request closed` e `client notified closed`
 - [ ] `.env` continua fora do Git e nenhum banco local foi rastreado
+
+## 22. FASE 32.5 - Tracking ao vivo apos aceite
+
+- [ ] Cliente entra na demo publica como `lucas`
+- [ ] Prestador entra como `Pedro`, veiculo `Guincho Plataforma`, placa valida, e fica `Online`
+- [ ] Cliente cria solicitacao `Reboque / Guincho`
+- [ ] Prestador recebe card `Nova chamada`
+- [ ] Prestador clica em `Aceitar`
+- [ ] Cliente ve status `Prestador a caminho` ou `Chegando no local`
+- [ ] Marcador do prestador muda de posicao no mapa do cliente sem recarregar a pagina
+- [ ] Distancia restante da barra reduz gradualmente
+- [ ] ETA/progresso mudam junto da posicao
+- [ ] Barra nao mostra `100% concluido` enquanto ainda houver km restantes
+- [ ] Prestador aparece como `Em atendimento`, nao `Offline`
+- [ ] Lista de prestadores proximos nao oferece prestador ocupado como disponivel
+- [ ] Prestador clica em `Cheguei ao local`
+- [ ] Cliente ve status de chegada
+- [ ] Prestador inicia e conclui atendimento
+- [ ] Cliente ve conclusao
+- [ ] Logs do `rescue-service` mostram `tracking started`, `update emitted`, `arrival marked`, `route updated` e `tracking ended`

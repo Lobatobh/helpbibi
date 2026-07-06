@@ -18,6 +18,29 @@ const haversineKm = (a: LatLng, b: LatLng) => {
  * Live trip progress bar that shows the provider moving from start to target.
  * Updates every second based on elapsed time vs estimated total.
  */
+export function calculateTripProgress(provider: ProviderState, nowMs: number = Date.now()) {
+  if (!provider.tripStartedAt || !provider.tripStartPos || !provider.tripTarget || !provider.tripTotalKm) {
+    return { progress: 0, etaSec: 0, remainingKm: 0 }
+  }
+
+  const remainingKm = Math.max(0, haversineKm(provider.position, provider.tripTarget))
+  const totalKm = provider.tripTotalKm || haversineKm(provider.tripStartPos, provider.tripTarget)
+  const traveledKm = Math.max(0, totalKm - remainingKm)
+  const rawProgress = totalKm > 0 ? (traveledKm / totalKm) * 100 : 0
+  const progress = remainingKm > 0.01 ? Math.max(0, Math.min(99, rawProgress)) : 100
+  const speedKmPerSec = 0.18
+  const etaByDistance = remainingKm / speedKmPerSec
+  const elapsed = Math.max(0, (nowMs - provider.tripStartedAt) / 1000)
+  const totalSec = totalKm / speedKmPerSec
+  const etaByElapsed = Math.max(0, totalSec - elapsed)
+
+  return {
+    progress,
+    etaSec: Math.max(0, Math.round(Math.min(etaByDistance, etaByElapsed || etaByDistance))),
+    remainingKm,
+  }
+}
+
 export function TripProgressBar({
   provider,
   label,
@@ -39,13 +62,9 @@ export function TripProgressBar({
     }
 
     const tick = () => {
-      const elapsed = (Date.now() - (provider.tripStartedAt || 0)) / 1000
-      // simulate speed: 0.18 km per second (matches backend stepToward)
-      const speedKmPerSec = 0.18
-      const totalSec = (provider.tripTotalKm || 0) / speedKmPerSec
-      const pct = Math.min(100, (elapsed / totalSec) * 100)
-      setProgress(pct)
-      setEtaSec(Math.max(0, Math.round(totalSec - elapsed)))
+      const next = calculateTripProgress(provider)
+      setProgress(next.progress)
+      setEtaSec(next.etaSec)
     }
 
     tick()
@@ -56,10 +75,7 @@ export function TripProgressBar({
   const isActive = provider.tripStartedAt && provider.tripTarget
   if (!isActive) return null
 
-  const remainingKm = (() => {
-    if (!provider.tripTarget) return 0
-    return Math.max(0, haversineKm(provider.position, provider.tripTarget))
-  })()
+  const remainingKm = calculateTripProgress(provider).remainingKm
 
   const etaMin = Math.max(0, Math.ceil(etaSec / 60))
   const etaSecRemain = etaSec % 60

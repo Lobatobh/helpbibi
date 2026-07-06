@@ -1999,6 +1999,26 @@ Stage Summary:
 - Mercado Pago real continua desabilitado.
 
 ---
+Task ID: 32.5
+Agent: main
+Task: Corrigir F32-005 - localizacao em tempo real do prestador nao atualizava no cliente apos aceite.
+
+Work Log:
+- Causa raiz confirmada: o loop de movimento atualizava `p.position` e chamava `emitProvider(p)`, mas isso enviava `provider:state` apenas ao prestador e `providers:nearby` global; o cliente so recebia `service:update` quando o status mudava.
+- Causa secundaria confirmada: `service:accept` marcava `winner.online=false`, fazendo o painel do prestador mostrar `Offline` durante atendimento.
+- `rescue-service` ganhou `emitLiveTrackingUpdate(svc, p)`, usado pelo loop de movimento e por `provider:position` para reenviar `service:update` com `svc.provider.position` atualizado.
+- Prestador aceito permanece `online=true`, mas com `currentServiceId` ativo; `providers:nearby` filtra `online && !currentServiceId`, entao prestador ocupado nao aparece como disponivel para novas chamadas.
+- Painel do prestador ganhou `getProviderAvailability`, exibindo `Em atendimento` quando ha `currentServiceId`, com switch marcado e desabilitado.
+- `TripProgressBar` passou a usar `calculateTripProgress` baseado na distancia real ate `tripTarget`, evitando 100% com km restantes.
+- Eventos corrigidos/preservados: `service:accept`, `provider:state`, `service:update`, `provider:position`, `service:arrived`, `service:start` e `service:complete`.
+- Logs seguros adicionados: `tracking started`, `location received`, `update emitted`, `arrival marked`, `route updated` e `tracking ended`.
+
+Stage Summary:
+- Nenhum Docker/Traefik alterado.
+- `.env`, banco, volumes, Supabase e Mercado Pago real nao foram alterados.
+- Mercado Pago real continua desabilitado.
+
+---
 Task ID: 32.4
 Agent: main
 Task: Corrigir F32-004 - recusa do prestador bloqueava novo ciclo de solicitacao.

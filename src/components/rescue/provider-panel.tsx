@@ -20,7 +20,7 @@ import {
 import { useProviderSocket } from '@/hooks/use-rescue-socket'
 import { useServiceToasts } from '@/hooks/use-service-toasts'
 import { useSoundNotifications, useChatSound } from '@/hooks/use-sound-notifications'
-import { PAYMENT_METHODS, SERVICE_TYPES, STATUS_LABELS, type ServiceData, type ServiceRecord } from '@/lib/rescue-types'
+import { PAYMENT_METHODS, SERVICE_TYPES, STATUS_LABELS, type ProviderState, type ServiceData, type ServiceRecord } from '@/lib/rescue-types'
 import { getHistoryForRole, addRecord, recordFromService } from '@/lib/rescue-history'
 import { RescueMap } from './rescue-map'
 import { ChatPanel } from './chat-panel'
@@ -33,6 +33,39 @@ const ICONS: Record<string, any> = {
   'tow-truck': Truck, tire: CircleDot, battery: Battery, fuel: Fuel, key: Key, wrench: Wrench,
 }
 const PAY_ICONS: Record<string, any> = { zap: Power, 'credit-card': Wallet, wallet: Wallet }
+
+export function getProviderAvailability(provider: ProviderState | null): {
+  label: string
+  switchChecked: boolean
+  busy: boolean
+  textClass: string
+} {
+  const busy = !!provider?.currentServiceId
+  if (busy) {
+    return {
+      label: 'Em atendimento',
+      switchChecked: true,
+      busy: true,
+      textClass: 'text-sky-400',
+    }
+  }
+
+  if (provider?.online ?? true) {
+    return {
+      label: 'Online',
+      switchChecked: true,
+      busy: false,
+      textClass: 'text-orange-400',
+    }
+  }
+
+  return {
+    label: 'Offline',
+    switchChecked: false,
+    busy: false,
+    textClass: 'text-slate-500',
+  }
+}
 
 export function ProviderPanel() {
   const {
@@ -118,8 +151,9 @@ export function ProviderPanel() {
   }
 
   const svc = currentService
-  const online = state?.online ?? true
-  const busy = !!state?.currentServiceId
+  const availability = getProviderAvailability(state)
+  const online = availability.switchChecked
+  const busy = availability.busy
 
   return (
     <div className="flex h-full flex-col bg-slate-950 text-white">
@@ -144,7 +178,7 @@ export function ProviderPanel() {
           >
             {soundEnabled ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
           </Button>
-          <span className={`text-[11px] ${online ? 'text-orange-400' : 'text-slate-500'}`}>{online ? 'Online' : 'Offline'}</span>
+          <span className={`text-[11px] ${availability.textClass}`}>{availability.label}</span>
           <Switch checked={online} onCheckedChange={(v) => toggleOnline(v)} disabled={busy} />
         </div>
       </div>
@@ -241,7 +275,7 @@ export function ProviderPanel() {
                     <Row label="Serviços concluídos" value={`${state?.completedCount ?? 0}`} />
                     <Row label="Ganhos de hoje" value={`R$ ${state?.earningsToday ?? 0}`} highlight />
                     <Row label="Nota média" value={`${state?.rating.toFixed(1) ?? '—'} ★`} />
-                    <Row label="Status" value={online ? 'Online' : 'Offline'} />
+                    <Row label="Status" value={availability.label} />
                   </div>
                 </div>
               </div>
@@ -1011,6 +1045,7 @@ function ProfileView({ state, history }: { state: any; history: ServiceRecord[] 
   const completedCount = state.completedCount ?? 0
   const earningsToday = state.earningsToday ?? 0
   const rating = state.rating ?? 0
+  const availability = getProviderAvailability(state)
   const totalEarnings = history.filter(h => h.status === 'completed').reduce((sum, h) => sum + h.price, 0)
 
   // Achievements based on milestones
@@ -1110,11 +1145,11 @@ function ProfileView({ state, history }: { state: any; history: ServiceRecord[] 
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
         <div className="flex items-center justify-between">
           <span className="flex items-center gap-1.5 text-xs text-slate-400">
-            <Power className={`h-3.5 w-3.5 ${state.online ? 'text-orange-400' : 'text-slate-500'}`} />
+            <Power className={`h-3.5 w-3.5 ${availability.textClass}`} />
             Status atual
           </span>
-          <span className={`text-xs font-bold ${state.online ? 'text-orange-400' : 'text-slate-500'}`}>
-            {state.online ? 'Online' : 'Offline'}
+          <span className={`text-xs font-bold ${availability.textClass}`}>
+            {availability.label}
           </span>
         </div>
       </div>
