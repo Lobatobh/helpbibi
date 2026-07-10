@@ -319,6 +319,61 @@ O build do Next.js 16/Turbopack com Bun dentro do Docker estava instavel. A corr
 - Logs seguros adicionados: tracking iniciado, localizacao recebida, update emitido ao cliente, chegada marcada, rota atualizada e tracking encerrado.
 - Sem mudancas de Docker/Traefik, `.env`, banco/volumes, Supabase ou Mercado Pago real.
 
+## FASE 32 - Fechamento da homologacao publica
+
+### Status: APROVADA
+
+Em 2026-07-10, a Help Bibi foi registrada como demo publica operacional homologada em `https://helpbibi.com`.
+
+Escopo aprovado:
+- VPS/Dokploy/Traefik/Postgres/Redis da Fase 31;
+- home publica em `helpbibi.com` e `www.helpbibi.com`;
+- `/api/health` e `/api/health/db`;
+- Socket.IO publico por `/socket.io` roteado ao `rescue-service`;
+- entrada cliente/prestador;
+- prestador online recebendo chamada;
+- recusa liberando novo ciclo;
+- aceite, tracking ao vivo, chegada, inicio e conclusao;
+- layout pos-atendimento do cliente;
+- avaliacao, historico e nova solicitacao apos conclusao.
+
+Commits principais homologados:
+- `c2c9561 fix: deliver service offers to online providers`;
+- `1ac3369 fix: unlock new requests after provider decline`;
+- `883f583 fix: update live provider location during service`;
+- `155d2fc fix: normalize client panel layout after service completion`.
+
+Importante: esta aprovacao fecha a homologacao publica da demo operacional. Ela nao autoriza producao comercial definitiva nem ativacao de servicos reais.
+
+## FASE 33 - Preparacao pre-producao
+
+### Status: ABERTA
+
+A Fase 33 existe para preparar a Help Bibi para um corte de pre-producao controlado, sem alterar a demo homologada e sem ativar servicos reais por acidente.
+
+Pendencias futuras antes de producao comercial definitiva:
+- rotacao de secrets;
+- configuracao definitiva de SMTP;
+- Supabase real, se for usado;
+- Mercado Pago real e homologacao sandbox;
+- monitoramento, logs e alertas;
+- backup e restore testados;
+- LGPD, politicas e termos de uso;
+- painel administrativo real;
+- seguranca e hardening;
+- observabilidade;
+- testes de carga;
+- plano de rollback.
+
+Fora de escopo desta tarefa:
+- habilitar Supabase;
+- habilitar Mercado Pago real;
+- alterar `.env`;
+- alterar Docker/Traefik;
+- alterar banco/volumes;
+- alterar fluxo da demo homologada;
+- publicar porta `3003`.
+
 ## Seguranca de Secrets e Versionamento
 - `.env` real nao deve ser rastreado pelo Git.
 - `.env.example` e o unico modelo seguro versionado e contem apenas placeholders.

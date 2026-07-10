@@ -1999,6 +1999,47 @@ Stage Summary:
 - Mercado Pago real continua desabilitado.
 
 ---
+Task ID: 33.0
+Agent: main
+Task: Fechar oficialmente a Fase 32 e abrir a Fase 33 de preparacao pre-producao.
+
+Work Log:
+- Data do registro: 2026-07-10.
+- Fase 32 marcada como APROVADA para a demo publica operacional em `https://helpbibi.com`.
+- Estado tecnico final aprovado:
+  - dominio `helpbibi.com` funcionando;
+  - `app`, `rescue-service`, `postgres` e `redis` saudaveis;
+  - `/api/health` retornando 200;
+  - `/api/health/db` retornando 200 database connected;
+  - `/socket.io/?EIO=4&transport=polling` retornando 200 com `sid`;
+  - `.env` fora do Git;
+  - `db/.gitkeep` como unico arquivo rastreado em `db`;
+  - nenhum banco local versionado.
+- Bugs de homologacao publica fechados:
+  - F32-001: entrada da demo publica destravada;
+  - F32-002: Socket.IO publico roteado para o `rescue-service`;
+  - F32-003: prestador online recebe chamada;
+  - F32-004: recusa libera nova solicitacao;
+  - F32-005: localizacao em tempo real atualiza no cliente;
+  - F32-006A: layout pos-atendimento do cliente normalizado;
+  - F32-006B: fluxo final completo aprovado.
+- Commits relevantes homologados:
+  - `c2c9561 fix: deliver service offers to online providers`;
+  - `1ac3369 fix: unlock new requests after provider decline`;
+  - `883f583 fix: update live provider location during service`;
+  - `155d2fc fix: normalize client panel layout after service completion`.
+- Documentacao atualizada para separar o que esta aprovado na demo publica do que ainda e pendencia de pre-producao/comercial.
+- Criados documentos dedicados:
+  - `docs/fase-32-homologacao-publica.md`;
+  - `docs/pre-production-checklist.md`.
+
+Stage Summary:
+- FASE 32: APROVADA como homologacao publica da demo operacional.
+- FASE 33: ABERTA como preparacao pre-producao.
+- Nao houve alteracao de codigo, infraestrutura, Docker, Traefik, `.env`, banco, Supabase ou Mercado Pago.
+- Proximos passos controlados: rotacao de secrets, SMTP definitivo, Supabase real se usado, Mercado Pago real, monitoramento/logs, backup/restore, LGPD/politicas, termos, admin real, hardening, observabilidade, testes de carga e rollback.
+
+---
 Task ID: 32.5
 Agent: main
 Task: Corrigir F32-005 - localizacao em tempo real do prestador nao atualizava no cliente apos aceite.

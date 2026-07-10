@@ -247,3 +247,49 @@
 - [ ] Prestador inicia e conclui atendimento
 - [ ] Cliente ve conclusao
 - [ ] Logs do `rescue-service` mostram `tracking started`, `update emitted`, `arrival marked`, `route updated` e `tracking ended`
+
+## 23. FASE 32 - Checklist final aprovado da homologacao publica
+
+> Registro de fechamento: 2026-07-10. Este bloco documenta a homologacao publica aprovada; novos testes de pre-producao devem entrar em fases futuras controladas.
+
+- [x] Home publica abre em `https://helpbibi.com`
+- [x] `https://helpbibi.com/api/health` retorna 200
+- [x] `https://helpbibi.com/api/health/db` retorna 200 com banco conectado
+- [x] `https://helpbibi.com/socket.io` responde via Traefik/Dokploy sem publicar `3003:3003`
+- [x] Entrada cliente avanca no navegador publico
+- [x] Entrada prestador avanca no navegador publico
+- [x] Prestador fica online e visivel para a demo
+- [x] Cliente cria solicitacao de socorro
+- [x] Prestador recebe chamada
+- [x] Recusa do prestador libera nova solicitacao/ciclo
+- [x] Aceite do prestador atualiza cliente e prestador
+- [x] Localizacao em tempo real do prestador atualiza no cliente
+- [x] Chegada ao local aparece para o cliente
+- [x] Inicio do atendimento aparece para o cliente
+- [x] Conclusao aparece para o cliente
+- [x] Layout pos-atendimento do cliente fica empilhado, sem sobreposicao
+- [x] Avaliacao do atendimento funciona no fluxo homologado
+- [x] Historico/andamento permanecem legiveis e rolaveis
+- [x] Botao `Nova solicitacao` fica visivel sem cobrir blocos acima
+- [x] Nova solicitacao apos conclusao inicia novo ciclo
+- [x] Cancelamento segue coberto pelo checklist existente quando aplicavel
+- [x] `.env` continua fora do Git
+- [x] `db/.gitkeep` e o unico arquivo rastreado em `db`
+- [x] Nenhum `.db`, `.sqlite` ou `.bak*` foi versionado
+- [x] Mercado Pago real permanece desabilitado
+- [x] Supabase permanece nao integrado
+
+## 24. FASE 33 - Preparacao pre-producao
+
+- [ ] Rotacionar secrets antes de uso comercial
+- [ ] Configurar SMTP definitivo
+- [ ] Decidir e integrar Supabase real somente em fase autorizada
+- [ ] Homologar Mercado Pago real em sandbox antes de producao comercial
+- [ ] Configurar monitoramento, logs e alertas
+- [ ] Validar backup e restore
+- [ ] Formalizar LGPD, politicas e termos de uso
+- [ ] Definir painel administrativo real e usuarios operacionais
+- [ ] Executar hardening de seguranca
+- [ ] Validar observabilidade e trilhas de auditoria
+- [ ] Executar testes de carga
+- [ ] Documentar plano de rollback
