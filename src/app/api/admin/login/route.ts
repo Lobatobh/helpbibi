@@ -12,6 +12,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { setSessionCookie } from '@/server/auth/session'
+import { hashPassword, verifyPassword } from '@/server/auth'
 import { applyRateLimit, RATE_LIMITS, getClientIp } from '@/server/rate-limit'
 import { audit } from '@/server/audit'
 import { logger } from '@/server/logger'
@@ -31,39 +32,58 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}))
     const { email, password } = body as { email?: string; password?: string }
+    const normalizedEmail = email?.trim().toLowerCase()
     const isProd = process.env.NODE_ENV === 'production'
     const seedEnabled = process.env.ADMIN_SEED_ENABLED === 'true'
 
-    // Production: block seed credentials entirely.
-    if (isProd) {
-      logger.warn('admin', 'Seed admin login blocked in production', {
-        emailHint: email ? `${email.slice(0, 3)}***` : 'none',
-      })
-      audit('login_failure', {
+    if (!normalizedEmail || !password) {
+      return NextResponse.json({ message: 'Email and password required' }, { status: 400 })
+    }
+
+    const admin = await db.user.findFirst({
+      where: { email: normalizedEmail, role: 'ADMIN' },
+      select: { id: true, name: true, role: true, email: true, passwordHash: true, status: true },
+    })
+
+    if (admin && admin.status === 'ACTIVE' && verifyPassword(password, admin.passwordHash)) {
+      const headers = new Headers()
+      headers.append('Set-Cookie', setSessionCookie(admin.id, 'ADMIN'))
+      logger.info('admin', 'Admin login success', { userId: admin.id })
+      audit('admin_login', {
+        actor: admin.id,
+        actorRole: 'ADMIN',
         ip: getClientIp(req),
         route: 'admin/login',
-        metadata: { reason: 'seed_blocked_in_prod' },
       })
       return NextResponse.json(
-        { message: 'Admin login requires configured credentials in production' },
-        { status: 403 }
+        {
+          ok: true,
+          user: { id: admin.id, role: 'ADMIN', name: admin.name, email: admin.email },
+        },
+        { headers }
       )
     }
 
-    // Dev: allow seed admin if ADMIN_SEED_ENABLED=true.
+    // Dev only: allow seed admin bootstrap when ADMIN_SEED_ENABLED=true.
     if (
+      !isProd &&
       seedEnabled &&
-      email === ADMIN_SEED_EMAIL &&
+      normalizedEmail === ADMIN_SEED_EMAIL &&
       password === ADMIN_SEED_PASSWORD
     ) {
-      // Find or create the seed admin user.
       let adminUser = await db.user.findFirst({
         where: { email: ADMIN_SEED_EMAIL, role: 'ADMIN' },
         select: { id: true, name: true, role: true },
       })
       if (!adminUser) {
         adminUser = await db.user.create({
-          data: { email: ADMIN_SEED_EMAIL, name: 'Admin', role: 'ADMIN' },
+          data: {
+            email: ADMIN_SEED_EMAIL,
+            name: 'Admin',
+            role: 'ADMIN',
+            status: 'ACTIVE',
+            passwordHash: hashPassword(ADMIN_SEED_PASSWORD),
+          },
           select: { id: true, name: true, role: true },
         })
       }
@@ -85,20 +105,15 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Any other combination: invalid credentials.
     audit('login_failure', {
       ip: getClientIp(req),
       route: 'admin/login',
       metadata: {
-        reason: seedEnabled ? 'invalid_credentials' : 'seed_disabled',
+        reason: 'invalid_credentials',
       },
     })
     return NextResponse.json(
-      {
-        message: seedEnabled
-          ? 'Invalid credentials'
-          : 'Admin seed login is disabled. Set ADMIN_SEED_ENABLED=true in dev.',
-      },
+      { message: 'Invalid credentials' },
       { status: 401 }
     )
   } catch (error: any) {

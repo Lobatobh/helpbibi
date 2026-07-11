@@ -1,15 +1,17 @@
 import { scryptSync, randomBytes, timingSafeEqual } from 'crypto'
-import { cookies } from 'next/headers'
-import { db } from './db/prisma'
+import {
+  COOKIE_NAME,
+  getCurrentUserFromCookies,
+  setSessionCookie as createSignedSessionCookie,
+  type AuthRole,
+} from './auth/session'
 
 // ============================================================
 // Help Bibi — Authentication helpers
-// Uses scrypt (Node built-in) for password hashing and DB-backed
-// sessions with httpOnly cookies. No external auth library needed.
+// Uses scrypt (Node built-in) for password hashing and HMAC-signed
+// httpOnly session cookies. No external auth library needed.
 // ============================================================
 
-const SESSION_COOKIE = 'helpbibi_session'
-const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
 
 // ----------------------- Password hashing -----------------------
 export function hashPassword(password: string): string {
@@ -32,58 +34,32 @@ export function verifyPassword(password: string, stored: string | null | undefin
 }
 
 // ----------------------- Sessions -----------------------
-export async function createSession(userId: string): Promise<string> {
-  const token = randomBytes(32).toString('hex')
-  const expiresAt = new Date(Date.now() + SESSION_DURATION_MS)
-  await db.session.create({ data: { token, userId, expiresAt } })
-  return token
-}
-
-export async function getSession(token: string | undefined) {
-  if (!token) return null
-  try {
-    const session = await db.session.findUnique({
-      where: { token },
-      include: { user: true },
-    })
-    if (!session) return null
-    if (session.expiresAt < new Date()) {
-      await db.session.delete({ where: { id: session.id } }).catch(() => {})
-      return null
-    }
-    return session
-  } catch {
-    return null
-  }
+export async function createSession(userId: string, role: AuthRole = 'CLIENT'): Promise<string> {
+  return createSignedSessionCookie(userId, role)
 }
 
 export async function getCurrentUser() {
-  const cookieStore = await cookies()
-  const token = cookieStore.get(SESSION_COOKIE)?.value
-  const session = await getSession(token)
-  return session?.user || null
+  return getCurrentUserFromCookies()
 }
 
 export async function requireAdmin() {
-  const user = await getCurrentUser()
+  const user = await getCurrentUserFromCookies()
   if (!user || user.role !== 'ADMIN') return null
   return user
 }
 
-export async function setSessionCookie(token: string) {
-  const cookieStore = await cookies()
-  cookieStore.set(SESSION_COOKIE, token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-    maxAge: SESSION_DURATION_MS / 1000,
-  })
-}
+export {
+  canAccessRole,
+  clearSessionCookie,
+  getCurrentUserFromCookies,
+  getCurrentUserFromRequest,
+  getDefaultPathForRole,
+  getSessionUser,
+  requireCurrentUser,
+  requireRole,
+  setSessionCookie,
+  type AuthRole,
+  type CurrentUser,
+} from './auth/session'
 
-export async function clearSessionCookie() {
-  const cookieStore = await cookies()
-  cookieStore.delete(SESSION_COOKIE)
-}
-
-export const SESSION_COOKIE_NAME = SESSION_COOKIE
+export const SESSION_COOKIE_NAME = COOKIE_NAME

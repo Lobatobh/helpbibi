@@ -209,25 +209,34 @@ Falta para MVP:
 
 ## Ordem recomendada de implementacao
 
-### F35-01 - Congelar baseline e criar testes de guarda
+### F35-01 - Fundacao de autenticacao, roles e admin shell
 
-Objetivo: garantir que a demo homologada continue funcionando durante a transformacao para MVP.
-
-Entregas:
-- checklist de regressao F32 como teste manual obrigatorio;
-- testes automatizados focados em entrada cliente/prestador, socket, matching, recusa, aceite, tracking e pos-atendimento;
-- criterio de bloqueio: nenhuma mudanca funcional pode quebrar a demo publica.
-
-### F35-02 - Alinhar schema, auth e contas reais
-
-Objetivo: deixar cadastro/login cliente, prestador e admin coerentes com Prisma e sessoes.
+Objetivo: criar a base inicial de autenticacao real sem quebrar a demo publica homologada.
 
 Entregas:
-- fluxo real de cadastro/login cliente;
-- fluxo real de cadastro/login prestador;
-- primeiro admin real documentado;
-- sessao/RBAC consistentes;
-- provider criado como pendente ate aprovacao.
+- roles `CLIENT`, `PROVIDER` e `ADMIN` padronizadas;
+- login/logout/me com sessao por cookie HMAC;
+- hash de senha com `scrypt`, sem senha em texto puro e sem expor `passwordHash`;
+- rotas base `/login`, `/cliente`, `/prestador`, `/admin/login` e `/admin`;
+- protecao server-side de `/cliente`, `/prestador` e `/admin` por role;
+- admin real autenticado por usuario existente, sem cadastro publico de admin;
+- seed/bootstrap de admin mantido apenas como etapa controlada futura;
+- demo publica preservada sem login obrigatorio.
+
+Nota de banco:
+- os schemas Prisma versionados passam a declarar `User.passwordHash`, `User.status`, `ProviderProfile.city` e `ProviderProfile.isDemoProvider`;
+- antes de qualquer deploy desta fase, sera obrigatoria uma aplicacao controlada do schema no banco alvo, sem `db push` improvisado em producao.
+
+### F35-02 - Cadastro real e onboarding minimo
+
+Objetivo: conectar cadastro cliente/prestador ao fluxo principal e preparar onboarding de prestadores.
+
+Entregas:
+- fluxo real de cadastro/login cliente validado em navegador;
+- fluxo real de cadastro/login prestador validado em navegador;
+- provider criado como pendente ate aprovacao;
+- mensagens claras para prestador pendente/rejeitado/bloqueado;
+- checklist manual de regressao da demo F32 executado apos auth.
 
 ### F35-03 - Persistir ciclo de atendimento completo
 
@@ -349,8 +358,8 @@ Entregas:
 
 ## Proximos passos sugeridos
 
-1. Iniciar F35-01 com testes de guarda da demo homologada.
-2. Em seguida, executar F35-02 para alinhar schema/auth/contas reais antes de ampliar fluxo.
+1. Concluir F35-01 com auth/RBAC/admin shell sem quebrar a demo homologada.
+2. Em seguida, executar F35-02 para cadastro real e onboarding minimo de cliente/prestador.
 3. So depois persistir o ciclo completo de atendimento em F35-03.
 4. Manter commits pequenos por modulo.
 5. Rodar checklist manual da demo a cada mudanca de fluxo socket ou painel.

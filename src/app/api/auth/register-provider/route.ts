@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { setSessionCookie } from '@/server/auth/session'
+import { hashPassword } from '@/server/auth'
 import { db } from '../../../../server/db/prisma'
-import { hashPassword, createSession } from '../../../../server/auth'
 
 export async function POST(req: NextRequest) {
   try {
@@ -22,11 +23,17 @@ export async function POST(req: NextRequest) {
     const passwordHash = await hashPassword(password)
     const user = await db.user.create({
       data: {
-        name, email, phone: phone || null, passwordHash,
+        name,
+        email,
+        phone: phone || null,
+        passwordHash,
         role: 'PROVIDER',
+        status: 'ACTIVE',
         providerProfile: {
           create: {
-            vehicle, plate, city: city || null,
+            vehicle,
+            plate,
+            city: city || null,
             isAvailable: false, // Not available until approved
             isVerified: false, // Always starts pending — admin must approve
             isDemoProvider: false,
@@ -39,7 +46,8 @@ export async function POST(req: NextRequest) {
       include: { providerProfile: true, loyaltyAccount: true },
     })
 
-    await createSession(user.id)
+    const headers = new Headers()
+    headers.append('Set-Cookie', setSessionCookie(user.id, user.role))
 
     return NextResponse.json({
       id: user.id,
@@ -49,7 +57,7 @@ export async function POST(req: NextRequest) {
       role: user.role,
       providerProfile: user.providerProfile,
       loyaltyAccount: user.loyaltyAccount,
-    })
+    }, { headers })
   } catch (error) {
     console.error('[auth/register-provider] Error:', error)
     return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 })

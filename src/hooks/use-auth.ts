@@ -45,11 +45,12 @@ export function useAuth() {
     })
     if (!res.ok) {
       const data = await res.json()
-      throw new Error(data.error || 'Erro ao fazer login')
+      throw new Error(data.error || data.message || 'Erro ao fazer login')
     }
     const data = await res.json()
-    setUser(data)
-    return data
+    const user = data.user || data
+    setUser(user)
+    return user
   }, [])
 
   const registerClient = useCallback(async (data: { name: string; email: string; phone?: string; password: string }) => {

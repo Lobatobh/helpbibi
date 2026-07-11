@@ -2152,3 +2152,29 @@ Stage Summary:
 - Nenhum codigo de aplicacao foi alterado.
 - Docker, `.env`, banco, volumes, Supabase real, Mercado Pago real, SMTP real e deploy nao foram alterados.
 - Demo homologada deve continuar como baseline de regressao para as proximas fases.
+
+---
+Task ID: 35.1
+Agent: main
+Task: Fundacao de autenticacao, RBAC e admin shell.
+
+Work Log:
+- Data do registro: 2026-07-11.
+- F35-01 implementada como base inicial de plataforma real, sem alterar Docker, `.env`, deploy, Supabase, SMTP ou Mercado Pago real.
+- `src/server/auth/session.ts` ficou como helper canonico de sessao por cookie HMAC `hb_session`.
+- `src/server/auth.ts` foi padronizado como camada de compatibilidade para hashing de senha e reexports de sessao/RBAC, removendo a dependencia antiga de `db.session`.
+- Adicionados helpers RBAC para roles `CLIENT`, `PROVIDER` e `ADMIN`.
+- `/api/auth/login` passou a autenticar por email/senha com `passwordHash`, sem aceitar `userId/role` enviados pelo cliente.
+- `/api/auth/logout` e `/api/auth/me` permanecem como base de sessao.
+- `/api/admin/login` passou a autenticar admin real existente por email/senha; seed admin continua restrito a desenvolvimento controlado com `ADMIN_SEED_ENABLED=true`.
+- Criadas paginas base `/login`, `/cliente`, `/prestador` e `/admin/login`.
+- `/cliente`, `/prestador` e `/admin` foram protegidos por role; a demo publica em `/` continua acessivel sem login obrigatorio.
+- Schemas Prisma versionados atualizados com `User.passwordHash`, `User.status`, `ProviderProfile.city` e `ProviderProfile.isDemoProvider`.
+- Teste F35 adicionado para validar schema, padronizacao de auth, paginas base, protecao por role, rotas login/logout/me, admin login e demo publica acessivel.
+
+Stage Summary:
+- Nenhuma secret foi lida ou commitada.
+- `.env` nao foi alterado.
+- Banco/volumes reais nao foram alterados.
+- Como houve alteracao de schema Prisma versionado, existe uma etapa futura obrigatoria: aplicar o schema de forma controlada no banco alvo antes de deploy desta fase.
+- Fluxo completo de aprovacao de prestadores, upload de documentos, gestao operacional completa, Supabase real, Mercado Pago real e SMTP real continuam fora do escopo desta etapa.

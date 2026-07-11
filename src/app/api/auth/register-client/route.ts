@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { setSessionCookie } from '@/server/auth/session'
+import { hashPassword } from '@/server/auth'
 import { db } from '../../../../server/db/prisma'
-import { hashPassword, createSession } from '../../../../server/auth'
 
 export async function POST(req: NextRequest) {
   try {
@@ -22,15 +23,20 @@ export async function POST(req: NextRequest) {
     const passwordHash = await hashPassword(password)
     const user = await db.user.create({
       data: {
-        name, email, phone: phone || null, passwordHash,
+        name,
+        email,
+        phone: phone || null,
+        passwordHash,
         role: 'CLIENT',
+        status: 'ACTIVE',
         clientProfile: { create: {} },
         loyaltyAccount: { create: { points: 0, tier: 'Bronze' } },
       },
       include: { clientProfile: true, loyaltyAccount: true },
     })
 
-    await createSession(user.id)
+    const headers = new Headers()
+    headers.append('Set-Cookie', setSessionCookie(user.id, user.role))
 
     return NextResponse.json({
       id: user.id,
@@ -40,7 +46,7 @@ export async function POST(req: NextRequest) {
       role: user.role,
       clientProfile: user.clientProfile,
       loyaltyAccount: user.loyaltyAccount,
-    })
+    }, { headers })
   } catch (error) {
     console.error('[auth/register-client] Error:', error)
     return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 })

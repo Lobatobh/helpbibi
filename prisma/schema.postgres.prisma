@@ -15,13 +15,15 @@ datasource db {
 // ============================================================
 
 model User {
-  id        String   @id @default(cuid())
-  email     String?  @unique
-  name      String
-  phone     String?
-  role      UserRole @default(CLIENT)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String     @id @default(cuid())
+  email        String?    @unique
+  name         String
+  phone        String?
+  passwordHash String?
+  role         UserRole   @default(CLIENT)
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
   clientProfile   ClientProfile?
   providerProfile ProviderProfile?
@@ -34,6 +36,11 @@ enum UserRole {
   CLIENT
   PROVIDER
   ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
 }
 
 model ClientProfile {
@@ -50,6 +57,7 @@ model ProviderProfile {
   user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   vehicle         String
   plate           String
+  city            String?
   ratingSum       Int                 @default(48)
   ratingCount     Int                 @default(10)
   rating          Float               @default(4.8)
@@ -57,6 +65,7 @@ model ProviderProfile {
   earningsToday   Int                 @default(0)
   isAvailable     Boolean             @default(true)
   isVerified      Boolean             @default(false)
+  isDemoProvider  Boolean             @default(false)
   documentStatus  VerificationStatus  @default(PENDING)
   vehicleStatus   VerificationStatus  @default(PENDING)
   createdAt       DateTime            @default(now())
