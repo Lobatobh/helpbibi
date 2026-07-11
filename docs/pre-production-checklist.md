@@ -97,3 +97,18 @@
 - [x] Nenhum `.env` real deve ser rastreado pelo Git.
 - [x] Nenhum banco local deve ser versionado.
 - [ ] Pre-producao operacional depende das pendencias acima.
+
+## F34-B - Inventario e runbook de secrets
+- [x] Criar inventario seguro de variaveis/secrets: `docs/secrets-inventory.md`.
+- [x] Criar runbook futuro de rotacao: `docs/secret-rotation-runbook.md`.
+- [x] Atualizar plano de rotacao com links para inventario e runbook.
+- [x] Registrar que nenhuma secret real foi lida, exposta ou alterada.
+- [ ] Executar rotacao real de `SESSION_SECRET` em janela propria.
+- [ ] Executar rotacao real de `PAYMENT_WEBHOOK_SECRET` em janela propria.
+- [ ] Planejar rotacao de senha PostgreSQL somente apos backup/restore validado.
+- [ ] Manter Mercado Pago real, Supabase real e SMTP real fora de escopo ate fases proprias.
+
+### Go/no-go F34-B
+- [x] Fase documental concluida sem mudanca de codigo.
+- [x] Inventario e runbook criados sem valores reais.
+- [ ] Producao comercial ainda nao liberada.

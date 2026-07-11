@@ -2103,3 +2103,30 @@ Stage Summary:
 - Supabase continua nao integrado.
 - SMTP real continua nao configurado.
 - Proximos passos controlados: rotacionar secrets, testar backup/restore, ensaiar rollback, configurar alertas e aprovar documentos LGPD/juridicos.
+
+---
+Task ID: 34-B
+Agent: main
+Task: Inventario e runbook de rotacao de secrets.
+
+Work Log:
+- Data do registro: 2026-07-10.
+- F34-B executada como fase estritamente documental.
+- Inventario seguro criado em `docs/secrets-inventory.md`, com nomes, categorias, sensibilidade, origem esperada, impacto e validacao pos-rotacao.
+- Runbook futuro criado em `docs/secret-rotation-runbook.md`, separado por grupos:
+  - Grupo A: sessao/app;
+  - Grupo B: banco Postgres;
+  - Grupo C: webhook/pagamento;
+  - Grupo D: Supabase futuro;
+  - Grupo E: SMTP futuro;
+  - Grupo F: APIs externas futuras.
+- `docs/secrets-rotation-plan.md` atualizado para apontar para inventario e runbook.
+- `docs/pre-production-checklist.md` e `docs/production-readiness.md` atualizados com status F34-B.
+- Nenhuma secret real foi lida, exibida, copiada ou alterada.
+- `.env` real nao foi aberto.
+
+Stage Summary:
+- Nenhuma rotacao real foi executada.
+- Nenhum codigo funcional foi alterado.
+- Docker, Traefik, banco, volumes, Supabase, Mercado Pago real, SMTP real e deploy nao foram alterados.
+- Producao comercial continua nao liberada.

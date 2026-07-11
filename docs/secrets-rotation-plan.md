@@ -17,6 +17,10 @@ Definir um procedimento seguro para rotacionar credenciais antes de pre-producao
 
 ## Inventario por grupo
 
+Inventario detalhado e runbook operacional:
+- `docs/secrets-inventory.md` lista nomes, categorias, sensibilidade, origem esperada, impacto e validacao.
+- `docs/secret-rotation-runbook.md` descreve a rotacao futura por grupos, sem executar troca real.
+
 | Grupo | Variaveis esperadas | Estado |
 | --- | --- | --- |
 | Aplicacao | `SESSION_SECRET` | Precisa rotacao antes de pre-producao real |
@@ -60,3 +64,11 @@ Definir um procedimento seguro para rotacionar credenciais antes de pre-producao
 - Nenhum valor real aparece em commits, docs ou logs compartilhados.
 - Rotacao foi validada por health checks.
 - Rollback do secret anterior esta documentado para a janela de manutencao.
+
+## F34-B - Status documental
+
+- Inventario seguro criado em `docs/secrets-inventory.md`.
+- Runbook de rotacao futura criado em `docs/secret-rotation-runbook.md`.
+- Nenhuma secret real foi lida, exposta ou alterada.
+- Rotacao real segue pendente para janela propria.
+- Producao comercial continua nao liberada.

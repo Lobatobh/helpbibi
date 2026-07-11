@@ -414,3 +414,37 @@ Riscos principais formalizados:
 - Mercado Pago real, Supabase real e SMTP real continuam fora de escopo e nao habilitados.
 
 Esta fase nao libera producao comercial definitiva. Ela organiza a trilha de hardening necessaria para uma pre-producao controlada.
+
+---
+
+## F34-B - Inventario e runbook de rotacao de secrets
+
+### Status: DOCUMENTADA
+
+Em 2026-07-10, a F34-B criou um inventario seguro de variaveis/secrets e um runbook de rotacao futura, sem ler, expor ou alterar qualquer valor real de `.env`.
+
+Documentos criados/atualizados:
+- `docs/secrets-inventory.md`;
+- `docs/secret-rotation-runbook.md`;
+- `docs/secrets-rotation-plan.md`;
+- `docs/pre-production-checklist.md`;
+- `worklog.md`.
+
+Categorias inventariadas:
+- variaveis publicas `NEXT_PUBLIC_*`;
+- app/runtime;
+- banco PostgreSQL;
+- sessao/admin;
+- pagamento simulado e Mercado Pago futuro;
+- Socket.IO/CORS;
+- Redis/rate limit;
+- auditoria/logs;
+- Supabase futuro;
+- SMTP futuro;
+- APIs externas futuras.
+
+Status operacional:
+- rotacao real ainda pendente;
+- `.env` real deve permanecer local e fora do Git;
+- producao comercial continua nao liberada;
+- Supabase, Mercado Pago e SMTP reais continuam nao habilitados.
