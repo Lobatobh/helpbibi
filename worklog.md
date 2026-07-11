@@ -2130,3 +2130,25 @@ Stage Summary:
 - Nenhum codigo funcional foi alterado.
 - Docker, Traefik, banco, volumes, Supabase, Mercado Pago real, SMTP real e deploy nao foram alterados.
 - Producao comercial continua nao liberada.
+
+---
+Task ID: 35.0
+Agent: main
+Task: Conclusao do MVP funcional - roadmap de implementacao.
+
+Work Log:
+- Data do registro: 2026-07-10.
+- Fase 35 iniciada para sair dos ciclos documentais longos e voltar ao desenvolvimento funcional do produto.
+- Criado `docs/mvp-completion-roadmap.md` com:
+  - baseline homologado F32-006B;
+  - pendencias por modulo: Cliente, Prestador, Admin, Operacao, Banco/persistencia, Pagamentos, Notificacoes e Juridico/termos;
+  - ordem recomendada F35-01 a F35-09;
+  - itens que devem continuar simulados;
+  - itens que ficam para producao real;
+  - criterios de aceite do MVP funcional.
+- Registro mantem a distincao: MVP funcional para piloto controlado nao equivale a producao comercial definitiva.
+
+Stage Summary:
+- Nenhum codigo de aplicacao foi alterado.
+- Docker, `.env`, banco, volumes, Supabase real, Mercado Pago real, SMTP real e deploy nao foram alterados.
+- Demo homologada deve continuar como baseline de regressao para as proximas fases.
