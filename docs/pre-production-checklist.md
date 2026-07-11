@@ -76,3 +76,24 @@
 - [ ] Definir processo de onboarding de prestadores.
 - [ ] Definir suporte ao cliente final.
 - [ ] Definir criterios de go/no-go para producao comercial.
+
+## F34-A - Planos documentais criados
+- [x] Registrar plano de hardening: `docs/production-hardening-plan.md`.
+- [x] Registrar plano de rotacao de secrets: `docs/secrets-rotation-plan.md`.
+- [x] Registrar plano de backup e restore: `docs/backup-restore-plan.md`.
+- [x] Registrar plano de rollback: `docs/rollback-plan.md`.
+- [x] Registrar plano de monitoramento e observabilidade: `docs/monitoring-observability-plan.md`.
+- [x] Registrar checklist legal/LGPD: `docs/legal-lgpd-checklist.md`.
+- [ ] Executar rotacao real de secrets em janela propria.
+- [ ] Configurar backup automatico e testar restore isolado.
+- [ ] Configurar monitoramento e alertas.
+- [ ] Aprovar termos, privacidade, retencao e canal LGPD.
+- [ ] Homologar SMTP real em fase propria.
+- [ ] Homologar Mercado Pago sandbox antes de qualquer credencial real.
+- [ ] Decidir integracao Supabase antes de ativar dependencia real.
+
+### Go/no-go F34-A
+- [x] Fase documental concluida sem mudanca de codigo.
+- [x] Nenhum `.env` real deve ser rastreado pelo Git.
+- [x] Nenhum banco local deve ser versionado.
+- [ ] Pre-producao operacional depende das pendencias acima.

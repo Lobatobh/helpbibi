@@ -390,3 +390,27 @@ Fora de escopo desta tarefa:
 - Dominio real ainda precisa estar configurado no `.env` da VPS/Dokploy se `NEXT_PUBLIC_APP_URL` ou `SOCKET_CORS_ORIGIN` ainda estiverem como placeholder.
 
 ---
+
+## F34-A - Auditoria documental de pre-producao e hardening controlado
+
+### Status: DOCUMENTADA
+
+Em 2026-07-10, a F34-A registrou os planos documentais minimos para pre-producao sem alterar codigo, Docker, Traefik, `.env`, banco, volumes, Supabase, Mercado Pago, SMTP, deploy ou regras de negocio.
+
+Documentos criados:
+- `docs/production-hardening-plan.md`;
+- `docs/secrets-rotation-plan.md`;
+- `docs/backup-restore-plan.md`;
+- `docs/rollback-plan.md`;
+- `docs/monitoring-observability-plan.md`;
+- `docs/legal-lgpd-checklist.md`.
+
+Riscos principais formalizados:
+- secrets precisam de rotacao controlada antes de uso real;
+- backup automatico e restore isolado ainda precisam ser implantados e testados;
+- rollback precisa ser ensaiado antes de janelas sensiveis;
+- monitoramento e alertas ainda precisam ser configurados;
+- termos, privacidade, retencao e canal LGPD ainda precisam de aprovacao;
+- Mercado Pago real, Supabase real e SMTP real continuam fora de escopo e nao habilitados.
+
+Esta fase nao libera producao comercial definitiva. Ela organiza a trilha de hardening necessaria para uma pre-producao controlada.

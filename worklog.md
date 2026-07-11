@@ -1998,7 +1998,6 @@ Stage Summary:
 - `.env`, banco, volumes, Supabase e Mercado Pago real nao foram alterados.
 - Mercado Pago real continua desabilitado.
 
----
 Task ID: 33.0
 Agent: main
 Task: Fechar oficialmente a Fase 32 e abrir a Fase 33 de preparacao pre-producao.
@@ -2079,3 +2078,28 @@ Stage Summary:
 - Nenhum Docker/Traefik alterado.
 - `.env`, banco, volumes, Supabase e Mercado Pago real nao foram alterados.
 - Mercado Pago real continua desabilitado.
+
+---
+Task ID: 34-A
+Agent: main
+Task: Auditoria documental de pre-producao e hardening controlado.
+
+Work Log:
+- Data do registro: 2026-07-10.
+- F34-A iniciada como fase estritamente documental, sem alteracao de codigo, Docker, Traefik, `.env`, banco, volumes, GitHub Actions, deploy, Supabase, Mercado Pago ou SMTP.
+- Criados planos dedicados para:
+  - hardening de producao/pre-producao;
+  - rotacao de secrets;
+  - backup e restore;
+  - rollback;
+  - monitoramento e observabilidade;
+  - legal/LGPD.
+- `docs/production-readiness.md` atualizado para registrar que a F34-A nao libera producao comercial definitiva.
+- `docs/pre-production-checklist.md` atualizado com referencias aos planos e pendencias go/no-go.
+
+Stage Summary:
+- Demo publica homologada permanece como baseline.
+- Mercado Pago real continua nao habilitado.
+- Supabase continua nao integrado.
+- SMTP real continua nao configurado.
+- Proximos passos controlados: rotacionar secrets, testar backup/restore, ensaiar rollback, configurar alertas e aprovar documentos LGPD/juridicos.
