@@ -1,58 +1,78 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireAdmin } from '@/server/auth'
-import { db } from '@/server/db/prisma'
+import { requireRole } from '@/server/auth/session'
+import { audit } from '@/server/audit'
+import { getClientIp } from '@/server/rate-limit'
+import {
+  changeProviderApprovalStatus,
+  findProviderForAdmin,
+} from '@/server/repositories/providers.repository'
+import {
+  auditEventForProviderApproval,
+  type ProviderApprovalAction,
+} from '@/server/providers/provider-approval'
 
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const admin = await requireAdmin()
-  if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+const ACTIONS = new Set<ProviderApprovalAction>(['approve', 'reject', 'suspend'])
+
+async function requireAdmin(req: NextRequest) {
+  try {
+    return await requireRole(req, 'ADMIN')
+  } catch {
+    audit('unauthorized_access', {
+      actor: 'anonymous',
+      actorRole: 'unknown',
+      ip: getClientIp(req),
+      route: 'admin/providers/:id',
+      severity: 'warning',
+    })
+    return null
+  }
+}
+
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const admin = await requireAdmin(req)
+  if (!admin) return NextResponse.json({ message: 'Forbidden' }, { status: 403 })
 
   const { id } = await params
-  const body = await req.json()
-  const action = body.action as string
+  const provider = await findProviderForAdmin(id)
+  if (!provider) return NextResponse.json({ message: 'Not found' }, { status: 404 })
 
-  const profileUpdate: any = {}
-  const userUpdate: any = {}
+  return NextResponse.json({ provider })
+}
 
-  switch (action) {
-    case 'approve':
-      profileUpdate.isVerified = true
-      profileUpdate.documentStatus = 'APPROVED'
-      profileUpdate.vehicleStatus = 'APPROVED'
-      profileUpdate.isAvailable = true
-      userUpdate.status = 'ACTIVE'
-      break
-    case 'reject':
-      profileUpdate.isVerified = false
-      profileUpdate.documentStatus = 'REJECTED'
-      profileUpdate.vehicleStatus = 'REJECTED'
-      profileUpdate.isAvailable = false
-      break
-    case 'block':
-      userUpdate.status = 'SUSPENDED'
-      profileUpdate.isAvailable = false
-      break
-    case 'unblock':
-      userUpdate.status = 'ACTIVE'
-      break
-    default:
-      if (body.isVerified !== undefined) profileUpdate.isVerified = body.isVerified
-      if (body.documentStatus !== undefined) profileUpdate.documentStatus = body.documentStatus
-      if (body.vehicleStatus !== undefined) profileUpdate.vehicleStatus = body.vehicleStatus
-      if (body.isAvailable !== undefined) profileUpdate.isAvailable = body.isAvailable
+export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const admin = await requireAdmin(req)
+  if (!admin) return NextResponse.json({ message: 'Forbidden' }, { status: 403 })
+
+  const { id } = await params
+  const body = await req.json().catch(() => ({}))
+  const action = body?.action as ProviderApprovalAction
+  if (!ACTIONS.has(action)) {
+    return NextResponse.json({ message: 'Invalid provider action' }, { status: 400 })
   }
 
-  if (Object.keys(profileUpdate).length > 0) {
-    await db.providerProfile.update({ where: { id }, data: profileUpdate })
-  }
-  if (Object.keys(userUpdate).length > 0) {
-    const profile = await db.providerProfile.findUnique({ where: { id } })
-    if (profile) await db.user.update({ where: { id: profile.userId }, data: userUpdate })
-  }
+  const before = await findProviderForAdmin(id)
+  if (!before) return NextResponse.json({ message: 'Not found' }, { status: 404 })
 
-  const updated = await db.providerProfile.findUnique({
-    where: { id },
-    include: { user: { select: { status: true } } },
-  })
-
-  return NextResponse.json({ success: true, provider: { id: updated!.id, isVerified: updated!.isVerified, documentStatus: updated!.documentStatus, vehicleStatus: updated!.vehicleStatus, isAvailable: updated!.isAvailable, userStatus: updated!.user.status } })
+  try {
+    const provider = await changeProviderApprovalStatus(id, action, admin.id, body?.reason)
+    audit(auditEventForProviderApproval(action), {
+      actor: admin.id,
+      actorRole: admin.role,
+      ip: getClientIp(req),
+      route: 'admin/providers/:id',
+      target: id,
+      metadata: {
+        action,
+        previousStatus: before.approvalStatus,
+        nextStatus: provider.approvalStatus,
+        reason: provider.approvalReason,
+      },
+    })
+    return NextResponse.json({ ok: true, provider })
+  } catch (error) {
+    return NextResponse.json(
+      { message: error instanceof Error ? error.message : 'Provider update failed' },
+      { status: 400 },
+    )
+  }
 }

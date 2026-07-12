@@ -1,5 +1,10 @@
 import { db } from '@/server/db/prisma'
-import type { ProviderProfile, VerificationStatus } from '@prisma/client'
+import type { ProviderProfile } from '@prisma/client'
+import {
+  buildProviderApprovalUpdate,
+  serializeProviderForAdmin,
+  type ProviderApprovalAction,
+} from '@/server/providers/provider-approval'
 
 export async function createProviderProfile(
   userId: string,
@@ -10,7 +15,11 @@ export async function createProviderProfile(
       userId,
       vehicle: data.vehicle,
       plate: data.plate,
-      isAvailable: true,
+      isAvailable: false,
+      isVerified: false,
+      approvalStatus: 'PENDING',
+      documentStatus: 'PENDING',
+      vehicleStatus: 'PENDING',
     },
   })
 }
@@ -57,4 +66,48 @@ export async function getLeaderboard() {
     orderBy: [{ completedCount: 'desc' }, { rating: 'desc' }],
     take: 10,
   })
+}
+
+const providerAdminInclude = {
+  user: {
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      phone: true,
+      status: true,
+      createdAt: true,
+    },
+  },
+} as const
+
+export async function listProvidersForAdmin() {
+  const providers = await db.providerProfile.findMany({
+    include: providerAdminInclude,
+    orderBy: { createdAt: 'desc' },
+  })
+  return providers.map(serializeProviderForAdmin)
+}
+
+export async function findProviderForAdmin(id: string) {
+  const provider = await db.providerProfile.findUnique({
+    where: { id },
+    include: providerAdminInclude,
+  })
+  return provider ? serializeProviderForAdmin(provider) : null
+}
+
+export async function changeProviderApprovalStatus(
+  id: string,
+  action: ProviderApprovalAction,
+  adminUserId: string,
+  reason?: unknown,
+) {
+  const data = buildProviderApprovalUpdate(action, adminUserId, reason)
+  const provider = await db.providerProfile.update({
+    where: { id },
+    data,
+    include: providerAdminInclude,
+  })
+  return serializeProviderForAdmin(provider)
 }

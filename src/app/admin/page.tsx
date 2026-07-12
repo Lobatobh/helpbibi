@@ -490,7 +490,7 @@ export default function AdminPage() {
                 icon={<Users className="size-5" />}
                 title="Prestadores"
                 description="Aprovação e verificação"
-                href="/api/admin/providers"
+                href="/admin/providers"
                 accent="slate"
               />
               <QuickLinkCard

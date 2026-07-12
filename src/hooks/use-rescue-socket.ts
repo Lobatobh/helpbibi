@@ -39,12 +39,26 @@ export type ProviderSession = {
   messages: ChatMessage[]
   newMessage: ChatMessage | null
   offerTaken: { serviceId: string; acceptedBy: string | null; cancelled: boolean } | null
+  operationError: string | null
 }
 
 const REGISTER_TIMEOUT_MS = 8000
 const REGISTRATION_TIMEOUT_MESSAGE =
   'Não recebemos confirmação do serviço em tempo real. Tente novamente em alguns segundos.'
 const PROVIDER_ACTIVE_SERVICE_STATUSES = new Set(['accepted', 'arriving', 'arrived', 'in_progress', 'completed', 'cancelled'])
+const PROVIDER_OPERATION_DENIED_MESSAGES: Record<string, string> = {
+  provider_pending: 'Seu cadastro ainda esta em analise pelo ADM.',
+  provider_rejected: 'Seu cadastro foi rejeitado pelo ADM.',
+  provider_suspended: 'Seu cadastro esta suspenso pelo ADM.',
+  provider_not_verified: 'Seu cadastro ainda nao foi aprovado para operar.',
+  documents_not_approved: 'A documentacao do prestador ainda nao foi aprovada.',
+  vehicle_not_approved: 'O veiculo ainda nao foi aprovado.',
+  user_not_active: 'Sua conta esta inativa ou suspensa.',
+}
+
+function getProviderOperationDeniedMessage(reason?: string): string {
+  return PROVIDER_OPERATION_DENIED_MESSAGES[reason || ''] || 'Prestador ainda nao autorizado para operar.'
+}
 
 function isPendingProviderService(service: ServiceData | null): boolean {
   return !!service && !PROVIDER_ACTIVE_SERVICE_STATUSES.has(service.status)
@@ -299,6 +313,7 @@ export function useProviderSocket() {
     messages: [],
     newMessage: null,
     offerTaken: null,
+    operationError: null,
   })
 
   useEffect(() => {
@@ -338,6 +353,14 @@ export function useProviderSocket() {
 
     s.on('provider:state', (st: ProviderState) => {
       setState((p) => ({ ...p, state: st }))
+    })
+
+    s.on('provider:online-denied', (data: { reason?: string }) => {
+      setState((p) => ({
+        ...p,
+        operationError: getProviderOperationDeniedMessage(data?.reason),
+        state: p.state ? { ...p.state, online: false, canOperate: false } : p.state,
+      }))
     })
 
     s.on('service:offer', (svc: ServiceData) => {
@@ -394,6 +417,7 @@ export function useProviderSocket() {
   )
 
   const toggleOnline = useCallback((online: boolean) => {
+    setState((p) => ({ ...p, operationError: null }))
     socketRef.current?.emit('provider:toggle-online', { online })
   }, [])
 

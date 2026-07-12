@@ -15,6 +15,7 @@ const baseProvider = (overrides: Partial<MatchingProvider> = {}): MatchingProvid
   currentServiceId: null,
   isDemoProvider: false,
   isVerified: true,
+  approvalStatus: 'APPROVED',
   documentStatus: 'APPROVED',
   vehicleStatus: 'APPROVED',
   userStatus: 'ACTIVE',
@@ -84,6 +85,12 @@ describe('matching — isEligibleForMatching', () => {
   test('11. REJECTED vehicle is rejected in prod', () => {
     const p = baseProvider({ isDemoProvider: false, isVerified: true, documentStatus: 'APPROVED', vehicleStatus: 'REJECTED' })
     expect(isEligibleForMatching(p, prodOptions)).toBe(false)
+  })
+
+  test('11b. pending rejected or suspended provider approval is rejected', () => {
+    expect(getMatchingRejectionReason(baseProvider({ approvalStatus: 'PENDING' }), prodOptions)).toBe('provider_pending')
+    expect(getMatchingRejectionReason(baseProvider({ approvalStatus: 'REJECTED' }), prodOptions)).toBe('provider_rejected')
+    expect(getMatchingRejectionReason(baseProvider({ approvalStatus: 'SUSPENDED' }), prodOptions)).toBe('provider_suspended')
   })
 
   test('12. demo provider in devMode=false but demoMode=true is eligible', () => {

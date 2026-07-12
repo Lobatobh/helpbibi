@@ -66,6 +66,10 @@ model ProviderProfile {
   isAvailable     Boolean             @default(true)
   isVerified      Boolean             @default(false)
   isDemoProvider  Boolean             @default(false)
+  approvalStatus  ProviderApprovalStatus @default(PENDING)
+  approvalReviewedAt DateTime?
+  approvalReviewedById String?
+  approvalReason  String?
   documentStatus  VerificationStatus  @default(PENDING)
   vehicleStatus   VerificationStatus  @default(PENDING)
   createdAt       DateTime            @default(now())
@@ -78,6 +82,13 @@ enum VerificationStatus {
   PENDING
   APPROVED
   REJECTED
+}
+
+enum ProviderApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SUSPENDED
 }
 
 // ============================================================

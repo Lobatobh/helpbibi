@@ -61,7 +61,7 @@ type Provider = {
   tripStartPos?: LatLng | null; tripTarget?: LatLng | null; tripStartedAt?: number | null; tripTotalKm?: number;
   // DB linkage
   dbUserId?: string; dbProviderProfileId?: string;
-  isDemoProvider: boolean; isVerified: boolean; documentStatus: string; vehicleStatus: string; userStatus: string; isGpsPosition: boolean;
+  isDemoProvider: boolean; isVerified: boolean; approvalStatus: string; documentStatus: string; vehicleStatus: string; userStatus: string; isGpsPosition: boolean;
 }
 
 type ServiceRequest = {
@@ -251,8 +251,21 @@ const providerPublic = (p: Provider) => ({
   position: p.position, online: p.online, completedCount: p.completedCount,
 })
 
+const getProviderOperationBlockReason = (p: Provider): string | null => {
+  if (p.userStatus !== 'ACTIVE') return 'user_not_active'
+  if (p.isDemoProvider) {
+    if (!MATCHING_OPTIONS.isDevMode && !MATCHING_OPTIONS.demoMode) return 'demo_mode_disabled'
+    return null
+  }
+  if (p.approvalStatus !== 'APPROVED') return `provider_${p.approvalStatus.toLowerCase()}`
+  if (p.isVerified !== true) return 'provider_not_verified'
+  if (p.documentStatus !== 'APPROVED') return 'documents_not_approved'
+  if (p.vehicleStatus !== 'APPROVED') return 'vehicle_not_approved'
+  return null
+}
+
 const availableProviderPublic = () => Array.from(providers.values())
-  .filter((x) => x.online && !x.currentServiceId)
+  .filter((x) => x.online && !x.currentServiceId && getProviderOperationBlockReason(x) === null)
   .map(providerPublic)
 
 const emitProvider = (p: Provider) => {
@@ -261,6 +274,7 @@ const emitProvider = (p: Provider) => {
     rating: p.rating, online: p.online, position: p.position,
     currentServiceId: p.currentServiceId, completedCount: p.completedCount,
     earningsToday: p.earningsToday,
+    approvalStatus: p.approvalStatus, canOperate: getProviderOperationBlockReason(p) === null,
     tripStartPos: p.tripStartPos || null, tripTarget: p.tripTarget || null,
     tripStartedAt: p.tripStartedAt || null, tripTotalKm: p.tripTotalKm || 0,
   } as any)
@@ -505,7 +519,7 @@ io.on('connection', (socket) => {
     // Persist user + provider profile to DB
     let dbUserId: string | undefined
     let dbProviderProfileId: string | undefined
-    let isVerified = false; let documentStatus = 'PENDING'; let vehicleStatus = 'PENDING'
+    let isVerified = false; let approvalStatus = 'PENDING'; let documentStatus = 'PENDING'; let vehicleStatus = 'PENDING'
     try {
       const user = await db.user.upsert({
         where: { email: `demo_${data.name}@helpbibi.com` },
@@ -515,7 +529,16 @@ io.on('connection', (socket) => {
           email: `demo_${data.name}@helpbibi.com`,
           role: 'PROVIDER',
           providerProfile: {
-            create: { vehicle: data.vehicle, plate: data.plate, isAvailable: true },
+            create: {
+              vehicle: data.vehicle,
+              plate: data.plate,
+              isAvailable: true,
+              isVerified: true,
+              isDemoProvider: true,
+              approvalStatus: 'APPROVED',
+              documentStatus: 'APPROVED',
+              vehicleStatus: 'APPROVED',
+            },
           },
           loyaltyAccount: { create: { points: 0, tier: 'Bronze' } },
         },
@@ -524,6 +547,7 @@ io.on('connection', (socket) => {
       dbUserId = user.id
       dbProviderProfileId = user.providerProfile?.id
       isVerified = user.providerProfile?.isVerified ?? false
+      approvalStatus = user.providerProfile?.approvalStatus ?? 'PENDING'
       documentStatus = user.providerProfile?.documentStatus ?? 'PENDING'
       vehicleStatus = user.providerProfile?.vehicleStatus ?? 'PENDING'
     } catch (e) {
@@ -537,13 +561,13 @@ io.on('connection', (socket) => {
       position: { lat: CITY.center.lat + (Math.random() - 0.5) * CITY.span, lng: CITY.center.lng + (Math.random() - 0.5) * CITY.span },
       currentServiceId: null,
       dbUserId, dbProviderProfileId,
-      isDemoProvider: true, isVerified, documentStatus, vehicleStatus, userStatus: 'ACTIVE', isGpsPosition: false,
+      isDemoProvider: true, isVerified, approvalStatus, documentStatus, vehicleStatus, userStatus: 'ACTIVE', isGpsPosition: false,
     }
     providers.set(id, provider)
     socketToRole.set(socket.id, { role: 'provider', id })
     emitProvider(provider)
     socket.emit('provider:registered', { id })
-    console.log(`[provider] registered id=${id} demo=${provider.isDemoProvider} online=${provider.online} verified=${provider.isVerified} documentStatus=${provider.documentStatus} vehicleStatus=${provider.vehicleStatus} dbUser=${dbUserId ?? 'none'}`)
+    console.log(`[provider] registered id=${id} demo=${provider.isDemoProvider} online=${provider.online} approvalStatus=${provider.approvalStatus} verified=${provider.isVerified} documentStatus=${provider.documentStatus} vehicleStatus=${provider.vehicleStatus} dbUser=${dbUserId ?? 'none'}`)
   })
 
   socket.on('provider:toggle-online', (data: { online: boolean }) => {
@@ -551,6 +575,19 @@ io.on('connection', (socket) => {
     if (!role || role.role !== 'provider') return
     const p = providers.get(role.id)
     if (!p) return
+    if (data.online) {
+      const reason = getProviderOperationBlockReason(p)
+      if (reason) {
+        p.online = false
+        emitProvider(p)
+        socket.emit('provider:online-denied', { reason })
+        console.log(`[provider] online denied id=${p.id} reason=${reason}`)
+        if (p.dbProviderProfileId) {
+          db.providerProfile.update({ where: { id: p.dbProviderProfileId }, data: { isAvailable: false } }).catch(() => {})
+        }
+        return
+      }
+    }
     p.online = data.online
     emitProvider(p)
     console.log(`[provider] ${data.online ? 'online' : 'offline'} id=${p.id}`)
@@ -710,8 +747,16 @@ io.on('connection', (socket) => {
     const svc = services.get(data.serviceId)
     if (!svc || svc.status !== 'offered') return
     if (!svc.notifiedProviderIds.includes(role.id)) return
-    clearOfferTimer(svc)
     const winner = providers.get(role.id)!
+    const blockReason = getProviderOperationBlockReason(winner)
+    if (blockReason) {
+      winner.online = false
+      emitProvider(winner)
+      io.to(winner.socketId).emit('provider:online-denied', { reason: blockReason })
+      console.log(`[service] accept denied service=${svc.id} provider=${winner.id} reason=${blockReason}`)
+      return
+    }
+    clearOfferTimer(svc)
     svc.notifiedProviderIds.forEach((pid) => {
       if (pid !== role.id) {
         const np = providers.get(pid)

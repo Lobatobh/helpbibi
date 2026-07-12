@@ -64,8 +64,9 @@ describe('live provider tracking flow', () => {
     const service = readFileSync('mini-services/rescue-service/index.ts', 'utf8')
 
     expect(service).toContain('function emitLiveTrackingUpdate')
+    expect(service).toContain('const blockReason = getProviderOperationBlockReason(winner)')
+    expect(service).toContain("io.to(winner.socketId).emit('provider:online-denied'")
     expect(service).toContain('winner.online = true')
-    expect(service).not.toContain('winner.online = false')
     expect(service).toContain('emitLiveTrackingUpdate(svc, p)')
     expect(service).toContain('[tracking] update emitted')
   })

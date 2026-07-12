@@ -2205,3 +2205,28 @@ Stage Summary:
 - `.env`, Docker, Supabase, Mercado Pago real e SMTP nao foram alterados.
 - Nenhuma senha real foi criada ou versionada.
 - Aplicacao do schema e bootstrap permanecem pendentes para janela controlada futura.
+
+---
+
+Task ID: 35.3
+Agent: main
+Task: Cadastro, analise e aprovacao de prestadores pelo ADM.
+
+Work Log:
+- Data do registro: 2026-07-12.
+- F35-03 implementada localmente, sem acessar VPS, sem deploy, sem bootstrap real e sem aplicar schema em PostgreSQL real.
+- Schemas Prisma versionados receberam `ProviderApprovalStatus` e campos aditivos em `ProviderProfile` para aprovacao operacional: status, data de revisao, admin responsavel e motivo.
+- Cadastro real de prestador passa a criar perfil `PENDING`, indisponivel e nao verificado.
+- Criado helper server-side para normalizar status de aprovacao, validar motivo, montar updates administrativos, serializar dados seguros e calcular se o prestador pode operar.
+- APIs ADM de prestadores passaram a exigir sessao `ADMIN`, listar prestadores, abrir detalhes e aprovar/rejeitar/suspender sem confiar em dados de role/status enviados pelo frontend.
+- Rejeicao e suspensao exigem motivo; aprovacao deixa o prestador verificado, mas ainda offline ate ativacao consciente.
+- Painel protegido do prestador exibe status de aprovacao, bloqueio operacional, motivo e informacoes cadastrais.
+- Painel ADM recebeu lista e detalhe de prestadores com acoes de aprovacao, rejeicao e suspensao.
+- `rescue-service` e matching passaram a bloquear prestadores pendentes, rejeitados ou suspensos em runtime real; prestadores demo continuam liberados como demo publica homologada.
+- Testes adicionados para regras de aprovacao, cadastro pendente, bloqueio por role, listagem ADM, aprovacao, rejeicao com motivo e suspensao.
+
+Stage Summary:
+- Nenhuma regra de negocio fora do fluxo de aprovacao de prestadores foi alterada.
+- `.env`, Docker, Supabase, Mercado Pago real, SMTP e deploy nao foram alterados.
+- Banco/volumes reais nao foram acessados.
+- Antes de qualquer deploy desta fase, a alteracao aditiva do schema deve ser aplicada em janela controlada e validada contra dados existentes.

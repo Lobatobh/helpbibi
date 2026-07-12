@@ -3,7 +3,7 @@ export type LatLng = { lat: number; lng: number }
 export type MatchingProvider = {
   id: string; name: string; online: boolean; position: LatLng; currentServiceId?: string | null;
   isDemoProvider: boolean; isVerified: boolean; documentStatus: string; vehicleStatus: string;
-  userStatus: string; isGpsPosition?: boolean;
+  approvalStatus?: string; userStatus: string; isGpsPosition?: boolean;
 }
 export type MatchingOptions = { isDevMode: boolean; demoMode?: boolean }
 
@@ -25,6 +25,9 @@ export function getMatchingRejectionReason(provider: MatchingProvider, options: 
   if (provider.isDemoProvider) {
     if (!options.isDevMode && !options.demoMode) return 'demo_mode_disabled'
     return null
+  }
+  if (provider.approvalStatus && provider.approvalStatus !== 'APPROVED') {
+    return `provider_${provider.approvalStatus.toLowerCase()}`
   }
   if (provider.isVerified !== true) return 'provider_not_verified'
   if (provider.documentStatus !== 'APPROVED') return 'documents_not_approved'

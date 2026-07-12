@@ -8,12 +8,12 @@ export async function GET() {
 
   const [totalProviders, pendingProviders, approvedProviders, rejectedProviders, activeServices, completedServices, providers] = await Promise.all([
     db.providerProfile.count(),
-    db.providerProfile.count({ where: { isVerified: false, documentStatus: 'PENDING' } }),
-    db.providerProfile.count({ where: { isVerified: true } }),
-    db.providerProfile.count({ where: { documentStatus: 'REJECTED' } }),
+    db.providerProfile.count({ where: { approvalStatus: 'PENDING' } }),
+    db.providerProfile.count({ where: { approvalStatus: 'APPROVED' } }),
+    db.providerProfile.count({ where: { approvalStatus: 'REJECTED' } }),
     db.serviceRequest.count({ where: { status: { in: ['REQUESTED', 'OFFERED', 'ACCEPTED', 'PROVIDER_EN_ROUTE', 'ARRIVED', 'IN_PROGRESS'] } } }),
     db.serviceRequest.count({ where: { status: 'COMPLETED' } }),
-    db.providerProfile.findMany({ where: { isVerified: true }, select: { rating: true } }),
+    db.providerProfile.findMany({ where: { approvalStatus: 'APPROVED' }, select: { rating: true } }),
   ])
 
   const avgRating = providers.length > 0 ? providers.reduce((s, p) => s + p.rating, 0) / providers.length : 0

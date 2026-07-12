@@ -7,15 +7,16 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const { name, email, phone, password, vehicle, plate, city } = body
+    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : ''
 
-    if (!name || !email || !password || !vehicle || !plate) {
+    if (!name || !normalizedEmail || !password || !vehicle || !plate) {
       return NextResponse.json({ error: 'Nome, email, senha, veículo e placa são obrigatórios' }, { status: 400 })
     }
     if (password.length < 6) {
       return NextResponse.json({ error: 'Senha deve ter no mínimo 6 caracteres' }, { status: 400 })
     }
 
-    const existing = await db.user.findUnique({ where: { email } })
+    const existing = await db.user.findUnique({ where: { email: normalizedEmail } })
     if (existing) {
       return NextResponse.json({ error: 'Email já cadastrado' }, { status: 409 })
     }
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest) {
     const user = await db.user.create({
       data: {
         name,
-        email,
+        email: normalizedEmail,
         phone: phone || null,
         passwordHash,
         role: 'PROVIDER',
@@ -37,6 +38,7 @@ export async function POST(req: NextRequest) {
             isAvailable: false, // Not available until approved
             isVerified: false, // Always starts pending — admin must approve
             isDemoProvider: false,
+            approvalStatus: 'PENDING',
             documentStatus: 'PENDING',
             vehicleStatus: 'PENDING',
           },
@@ -55,7 +57,17 @@ export async function POST(req: NextRequest) {
       email: user.email,
       phone: user.phone,
       role: user.role,
-      providerProfile: user.providerProfile,
+      providerProfile: user.providerProfile ? {
+        id: user.providerProfile.id,
+        vehicle: user.providerProfile.vehicle,
+        plate: user.providerProfile.plate,
+        city: user.providerProfile.city,
+        approvalStatus: user.providerProfile.approvalStatus,
+        documentStatus: user.providerProfile.documentStatus,
+        vehicleStatus: user.providerProfile.vehicleStatus,
+        isAvailable: user.providerProfile.isAvailable,
+        isVerified: user.providerProfile.isVerified,
+      } : null,
       loyaltyAccount: user.loyaltyAccount,
     }, { headers })
   } catch (error) {

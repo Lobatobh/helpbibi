@@ -25,6 +25,7 @@ export type AuditEvent =
   | 'provider_approved'
   | 'provider_rejected'
   | 'provider_blocked'
+  | 'provider_suspended'
   | 'webhook_received'
   | 'webhook_invalid_signature'
   | 'webhook_duplicate'

@@ -31,6 +31,8 @@ export type ProviderPublic = {
 
 export type ProviderState = ProviderPublic & {
   plate: string
+  approvalStatus?: 'PENDING' | 'APPROVED' | 'REJECTED' | 'SUSPENDED' | string
+  canOperate?: boolean
   currentServiceId?: string | null
   tripStartPos?: LatLng | null
   tripTarget?: LatLng | null

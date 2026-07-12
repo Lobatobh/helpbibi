@@ -245,16 +245,26 @@ Gate operacional futuro:
 - antes do proximo deploy, o plano de `docs/production-readiness.md` deve ser executado em janela aprovada;
 - o bootstrap so pode rodar depois da aplicacao e verificacao do schema PostgreSQL.
 
-### F35-03 - Cadastro real e onboarding minimo
+### F35-03 - Cadastro, analise e aprovacao de prestadores pelo ADM
 
-Objetivo: conectar cadastro cliente/prestador ao fluxo principal e preparar onboarding de prestadores.
+Objetivo: implementar o fluxo local de prestador pendente, analise administrativa e bloqueio operacional de prestadores nao aprovados, preservando a demo publica homologada.
 
 Entregas:
-- fluxo real de cadastro/login cliente validado em navegador;
-- fluxo real de cadastro/login prestador validado em navegador;
-- provider criado como pendente ate aprovacao;
-- mensagens claras para prestador pendente/rejeitado/bloqueado;
-- checklist manual de regressao da demo F32 executado apos auth.
+- cadastro real de prestador cria usuario `PROVIDER` com perfil `PENDING`, sem disponibilidade operacional;
+- status operacional do prestador fica separado do `UserStatus` de autenticacao;
+- prestador ve no painel protegido seu estado de aprovacao, motivo e bloqueio quando aplicavel;
+- ADM lista prestadores, abre detalhes e aprova, rejeita ou suspende com sessao `ADMIN`;
+- rejeicao e suspensao exigem motivo;
+- alteracoes registram data, administrador responsavel e motivo quando aplicavel;
+- APIs administrativas nao aceitam role/status enviados pelo frontend;
+- resposta de cadastro e APIs ADM nao expõem `passwordHash`;
+- `rescue-service` e matching bloqueiam prestadores pendentes, rejeitados ou suspensos;
+- demo publica permanece acessivel e prestadores demo continuam tratados como demo aprovada no runtime publico.
+
+Nota de banco:
+- os schemas Prisma versionados passam a declarar `ProviderApprovalStatus`, `ProviderProfile.approvalStatus`, `approvalReviewedAt`, `approvalReviewedById` e `approvalReason`;
+- a alteracao e aditiva, mas exige aplicacao controlada do schema antes de qualquer deploy desta fase em ambiente com dados reais;
+- nenhum `db push` em PostgreSQL real faz parte da F35-03 local.
 
 ### F35-04 - Persistir ciclo de atendimento completo
 
@@ -267,14 +277,15 @@ Entregas:
 - reentrada apos refresh/relogin;
 - idempotencia para eventos duplicados.
 
-### F35-05 - Aprovar prestadores e travar matching real
+### F35-05 - Consolidar matching real persistido
 
-Objetivo: impedir que prestador nao aprovado receba chamadas reais.
+Objetivo: apos persistir o ciclo de atendimento, reconciliar elegibilidade, ocupacao e disponibilidade usando o banco como fonte canonica.
 
 Entregas:
-- admin aprova/rejeita prestador;
-- provider pendente ve mensagem clara;
-- matching considera apenas prestador aprovado, online e livre;
+- matching considera apenas prestador aprovado, online, livre e dentro da regiao de operacao;
+- estado online/ocupado e reconstruivel apos restart/reconnect;
+- aceite e recusa usam locks/idempotencia contra eventos duplicados;
+- prestador suspenso durante operacao perde elegibilidade para novas ofertas;
 - demo publica preserva comportamento homologado.
 
 ### F35-06 - Historico, perfil e avaliacoes persistidos
@@ -378,7 +389,7 @@ Entregas:
 
 1. Manter F35-01 como baseline de auth/RBAC/admin shell sem quebrar a demo homologada.
 2. Concluir a preparacao F35-02 e executar a aplicacao controlada somente em janela aprovada.
-3. Em seguida, executar F35-03 para cadastro real e onboarding minimo de cliente/prestador.
+3. Em seguida, aplicar o schema da F35-03 em ambiente controlado antes de qualquer deploy com dados reais.
 4. So depois persistir o ciclo completo de atendimento em F35-04.
 5. Manter commits pequenos por modulo.
 6. Rodar checklist manual da demo a cada mudanca de fluxo socket ou painel.

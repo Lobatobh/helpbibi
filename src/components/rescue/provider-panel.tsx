@@ -70,7 +70,7 @@ export function getProviderAvailability(provider: ProviderState | null): {
 export function ProviderPanel() {
   const {
     connected, connectionError, registered, registering, registrationError,
-    state, offer, currentService, messages, newMessage, offerTaken,
+    state, offer, currentService, messages, newMessage, offerTaken, operationError,
     register, toggleOnline, accept, reject, arrived, start, complete, rateClient,
     sendChat, clearNewMessage, clearOfferTaken, clearCurrent,
   } = useProviderSocket()
@@ -228,6 +228,11 @@ export function ProviderPanel() {
           <div className="mb-3 flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
             <span>Conexão perdida. Reconectando...</span>
+          </div>
+        )}
+        {operationError && (
+          <div className="mb-3 rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-200">
+            {operationError}
           </div>
         )}
         {view === 'home' && (
