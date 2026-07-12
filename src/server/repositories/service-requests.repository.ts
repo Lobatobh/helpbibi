@@ -1,16 +1,8 @@
 import { db } from '@/server/db/prisma'
 import type { PaymentMethod, Prisma, ServiceRequest, ServiceStatus, ServiceType } from '@prisma/client'
+import { ACTIVE_SERVICE_STATUSES, isActiveServiceStatus } from '@/server/services/service-status'
 
 type LatLng = { lat: number; lng: number }
-
-export const ACTIVE_SERVICE_STATUSES: ServiceStatus[] = [
-  'REQUESTED',
-  'OFFERED',
-  'ACCEPTED',
-  'PROVIDER_EN_ROUTE',
-  'ARRIVED',
-  'IN_PROGRESS',
-]
 
 const serviceTypeToPublic: Record<string, string> = {
   REBOQUE: 'reboque',
@@ -68,10 +60,6 @@ function parseLocation(value: string): LatLng {
     // fall through
   }
   return { lat: 0, lng: 0 }
-}
-
-export function isActiveServiceStatus(status: ServiceStatus | string): boolean {
-  return ACTIVE_SERVICE_STATUSES.includes(status as ServiceStatus)
 }
 
 const activeServiceInclude = {

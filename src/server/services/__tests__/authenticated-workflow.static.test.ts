@@ -78,4 +78,16 @@ describe('F35-05 authenticated operational workflow wiring', () => {
     expect(lifecycle).toContain('.updateMany')
     expect(lifecycle).toContain('service_claim_conflict')
   })
+
+  test('authenticated chat persists through the central service before socket emission', () => {
+    const service = read('mini-services/rescue-service/index.ts')
+
+    expect(service).toContain("socket.on('auth:chat:send'")
+    expect(service).toContain("socket.on('auth:chat:history'")
+    expect(service).toContain('createServiceChatMessage(data.serviceId, currentUserFromAuth(auth)')
+    expect(service).toContain('const message = await createServiceChatMessage')
+    expect(service).toContain('await emitAuthenticatedChatMessage(data.serviceId, message)')
+    expect(service).toContain("io.to(socketId).emit('auth:chat:new', message)")
+    expect(service).toContain("socket.on('chat:send'")
+  })
 })

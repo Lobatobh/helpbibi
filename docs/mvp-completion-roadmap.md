@@ -304,16 +304,27 @@ Entregas:
 - prestador suspenso durante operacao perde elegibilidade para novas ofertas;
 - demo publica preserva comportamento homologado.
 
-### F35-06 - Historico, perfil e avaliacoes persistidos
+### F35-06 - Historico, chat, avaliacoes e perfis autenticados
 
-Objetivo: substituir historico local como fonte principal.
+Objetivo: substituir historico local como fonte principal e conectar comunicacao, avaliacoes e perfis ao fluxo autenticado.
 
 Entregas:
 - historico cliente via API;
 - historico prestador via API;
+- detalhes com timeline persistida;
+- chat persistido por atendimento;
 - ratings bidirecionais persistidos;
-- loyalty basico persistido;
 - perfil minimo editavel.
+
+Status local F35-06:
+- rotas de historico cliente/prestador usam somente sessao assinada e ignoram IDs enviados por query/body;
+- helper central de participante valida CLIENT contra `ServiceRequest.clientId` e PROVIDER contra `ProviderProfile.userId`;
+- `/api/services/[id]/chat` lista e cria mensagens persistidas, com autor derivado da sessao;
+- `auth:chat:send` no Socket.IO autenticado persiste a mensagem antes de emitir `auth:chat:new`;
+- `/api/services/[id]/ratings` permite avaliacao somente apos `COMPLETED`, deriva o alvo pela sessao e controla duplicidade;
+- `/api/client/profile` e `/api/provider/profile` editam somente campos permitidos e nao retornam `passwordHash`;
+- paineis autenticados de cliente e prestador exibem historico, detalhe/timeline, chat ativo, avaliacao e perfil;
+- nao houve alteracao de schema Prisma, Docker, `.env`, Supabase, Mercado Pago, SMTP, deploy, VPS ou PostgreSQL real.
 
 ### F35-07 - Pagamento simulado canonico
 
@@ -338,12 +349,11 @@ Entregas:
 - auditoria consultavel;
 - acoes manuais minimas com registro.
 
-### F35-09 - Notificacoes e chat MVP
+### F35-09 - Notificacoes MVP
 
-Objetivo: tornar comunicacao e avisos confiaveis sem SMTP real.
+Objetivo: tornar avisos operacionais confiaveis sem SMTP real.
 
 Entregas:
-- chat persistido por service request;
 - notificacoes in-app por eventos principais;
 - estado de lida/nao lida se necessario;
 - reconexao socket refaz estado pelo banco.

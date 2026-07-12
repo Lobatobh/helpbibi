@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { io, type Socket } from 'socket.io-client'
 import { RESCUE_SOCKET_PATH, resolveRescueSocketUrl, rescueSocketStatusMessage } from '@/lib/rescue-socket-url'
-import type { PaymentMethod, ServiceData, ServiceType } from '@/lib/rescue-types'
+import type { ChatMessage, PaymentMethod, ServiceData, ServiceType } from '@/lib/rescue-types'
 
 type RequestPayload = {
   type: ServiceType
@@ -45,11 +45,16 @@ export function useAuthenticatedClientSocket(initialService: ServiceData | null)
   const [connectionError, setConnectionError] = useState<string | null>(null)
   const [operationError, setOperationError] = useState<string | null>(null)
   const [service, setService] = useState<ServiceData | null>(initialService)
+  const serviceIdRef = useRef<string | null>(initialService?.id || null)
+  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [submitting, setSubmitting] = useState(false)
 
-  useEffect(() => {
-    setService(initialService)
-  }, [initialService])
+  const refreshChat = useCallback(async (serviceId: string) => {
+    const response = await fetch(`/api/services/${serviceId}/chat`, { credentials: 'include' })
+    if (!response.ok) return
+    const data = await response.json()
+    setMessages(Array.isArray(data.messages) ? data.messages : [])
+  }, [])
 
   useEffect(() => {
     const socket = createAuthenticatedSocket()
@@ -69,12 +74,25 @@ export function useAuthenticatedClientSocket(initialService: ServiceData | null)
       setOperationError(payload?.message || 'Sessao invalida. Entre novamente.')
     })
     socket.on('auth:snapshot', (payload: { service?: ServiceData | null }) => {
-      setService(payload?.service || null)
+      const nextService = payload?.service || null
+      serviceIdRef.current = nextService?.id || null
+      setService(nextService)
+      if (nextService?.id) socket.emit('auth:chat:history', { serviceId: nextService.id })
+      else setMessages([])
     })
     socket.on('auth:service:update', (payload: ServiceData) => {
+      serviceIdRef.current = payload.id
       setService(payload)
       setSubmitting(false)
       setOperationError(null)
+      socket.emit('auth:chat:history', { serviceId: payload.id })
+    })
+    socket.on('auth:chat:messages', (payload: { serviceId: string; messages?: ChatMessage[] }) => {
+      if (payload?.serviceId === serviceIdRef.current) setMessages(Array.isArray(payload.messages) ? payload.messages : [])
+    })
+    socket.on('auth:chat:new', (message: ChatMessage) => {
+      if (message.serviceId !== serviceIdRef.current) return
+      setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message])
     })
     socket.on('auth:operation-error', (payload: { message?: string }) => {
       setSubmitting(false)
@@ -102,7 +120,31 @@ export function useAuthenticatedClientSocket(initialService: ServiceData | null)
     const response = await fetch('/api/client/services/active', { credentials: 'include' })
     if (!response.ok) return
     const data = await response.json()
-    setService(data.service || null)
+    const nextService = data.service || null
+    serviceIdRef.current = nextService?.id || null
+    setService(nextService)
+    if (nextService?.id) await refreshChat(nextService.id)
+    else setMessages([])
+  }, [refreshChat])
+
+  useEffect(() => {
+    if (!service?.id) return
+    const controller = new AbortController()
+    fetch(`/api/services/${service.id}/chat`, {
+      credentials: 'include',
+      signal: controller.signal,
+    })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => {
+        if (data) setMessages(Array.isArray(data.messages) ? data.messages : [])
+      })
+      .catch(() => {})
+    return () => controller.abort()
+  }, [service?.id])
+
+  const sendChat = useCallback((serviceId: string, text: string) => {
+    setOperationError(null)
+    socketRef.current?.emit('auth:chat:send', { serviceId, text })
   }, [])
 
   return {
@@ -110,10 +152,13 @@ export function useAuthenticatedClientSocket(initialService: ServiceData | null)
     connectionError,
     operationError,
     service,
+    messages,
     submitting,
     requestService,
     cancelService,
+    sendChat,
     refreshSnapshot,
+    refreshChat,
   }
 }
 
@@ -125,10 +170,15 @@ export function useAuthenticatedProviderSocket(initialService: ServiceData | nul
   const [state, setState] = useState<ProviderRuntimeState | null>(null)
   const [offer, setOffer] = useState<ServiceData | null>(null)
   const [service, setService] = useState<ServiceData | null>(initialService)
+  const serviceIdRef = useRef<string | null>(initialService?.id || null)
+  const [messages, setMessages] = useState<ChatMessage[]>([])
 
-  useEffect(() => {
-    setService(initialService)
-  }, [initialService])
+  const refreshChat = useCallback(async (serviceId: string) => {
+    const response = await fetch(`/api/services/${serviceId}/chat`, { credentials: 'include' })
+    if (!response.ok) return
+    const data = await response.json()
+    setMessages(Array.isArray(data.messages) ? data.messages : [])
+  }, [])
 
   useEffect(() => {
     const socket = createAuthenticatedSocket()
@@ -149,17 +199,30 @@ export function useAuthenticatedProviderSocket(initialService: ServiceData | nul
     })
     socket.on('auth:provider:state', (payload: ProviderRuntimeState) => setState(payload))
     socket.on('auth:snapshot', (payload: { service?: ServiceData | null; provider?: ProviderRuntimeState | null }) => {
-      setService(payload?.service || null)
+      const nextService = payload?.service || null
+      serviceIdRef.current = nextService?.id || null
+      setService(nextService)
       if (payload?.provider) setState(payload.provider)
+      if (nextService?.id) socket.emit('auth:chat:history', { serviceId: nextService.id })
+      else setMessages([])
     })
     socket.on('auth:service:offer', (payload: ServiceData) => {
       setOffer(payload)
       setOperationError(null)
     })
     socket.on('auth:service:update', (payload: ServiceData) => {
+      serviceIdRef.current = payload.id
       setService(payload)
       if (payload.status !== 'offered') setOffer((current) => current?.id === payload.id ? null : current)
       setOperationError(null)
+      socket.emit('auth:chat:history', { serviceId: payload.id })
+    })
+    socket.on('auth:chat:messages', (payload: { serviceId: string; messages?: ChatMessage[] }) => {
+      if (payload?.serviceId === serviceIdRef.current) setMessages(Array.isArray(payload.messages) ? payload.messages : [])
+    })
+    socket.on('auth:chat:new', (message: ChatMessage) => {
+      if (message.serviceId !== serviceIdRef.current) return
+      setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message])
     })
     socket.on('auth:offer-taken', (payload: { serviceId: string }) => {
       setOffer((current) => current?.id === payload.serviceId ? null : current)
@@ -199,7 +262,31 @@ export function useAuthenticatedProviderSocket(initialService: ServiceData | nul
     const response = await fetch('/api/provider/services/active', { credentials: 'include' })
     if (!response.ok) return
     const data = await response.json()
-    setService(data.service || null)
+    const nextService = data.service || null
+    serviceIdRef.current = nextService?.id || null
+    setService(nextService)
+    if (nextService?.id) await refreshChat(nextService.id)
+    else setMessages([])
+  }, [refreshChat])
+
+  useEffect(() => {
+    if (!service?.id) return
+    const controller = new AbortController()
+    fetch(`/api/services/${service.id}/chat`, {
+      credentials: 'include',
+      signal: controller.signal,
+    })
+      .then((response) => response.ok ? response.json() : null)
+      .then((data) => {
+        if (data) setMessages(Array.isArray(data.messages) ? data.messages : [])
+      })
+      .catch(() => {})
+    return () => controller.abort()
+  }, [service?.id])
+
+  const sendChat = useCallback((serviceId: string, text: string) => {
+    setOperationError(null)
+    socketRef.current?.emit('auth:chat:send', { serviceId, text })
   }, [])
 
   return {
@@ -209,10 +296,13 @@ export function useAuthenticatedProviderSocket(initialService: ServiceData | nul
     state,
     offer,
     service,
+    messages,
     toggleOnline,
     accept,
     reject,
     updateStatus,
+    sendChat,
     refreshSnapshot,
+    refreshChat,
   }
 }

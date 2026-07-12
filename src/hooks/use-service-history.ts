@@ -1,146 +1,116 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-
-// ============================================================
-// useServiceHistory — fetches service history from DB API (FASE 21)
-// Replaces localStorage-based history
-// ============================================================
+import { useState, useEffect, useCallback, type Dispatch, type SetStateAction } from 'react'
 
 export type ServiceHistoryItem = {
   id: string
   type: string
   typeLabel: string
-  icon: string
   status: string
   statusLabel: string
+  description: string
   pickupLabel: string
   destinationLabel: string
   distanceKm: number
+  etaMin: number
   price: number
   originalPrice: number
   discount: number
   promoCode: string | null
   paymentMethod: string
   paymentStatus: string
-  pickupSource: string
-  createdAt: number
-  completedAt: number | null
-  acceptedAt: number | null
-  counterpartName: string | null
-  counterpartRating: number | null
-  ratingStars: number | null
-  ratingComment: string | null
+  createdAt: string
+  acceptedAt: string | null
+  completedAt: string | null
+  providerName: string | null
+  providerVehicle: string | null
+  providerRating: number | null
+  clientName: string | null
   clientRatingStars: number | null
   clientRatingComment: string | null
-  trackingUrl: string | null
-  providerPayout?: number
-  platformFee?: number
+  providerRatingStars: number | null
+  providerRatingComment: string | null
+  loyaltyPoints: number
+  latestPayment: {
+    id: string
+    status: string
+    method: string
+    amount: number
+    paidAt: string | null
+    failedAt: string | null
+    failureReason: string | null
+    createdAt: string
+    providerPayout?: number
+  } | null
+  providerPayout?: number | null
 }
 
 export type ServiceHistoryDetail = ServiceHistoryItem & {
-  description: string
-  timeline: Array<{ status: string; label: string; at: number }>
-  chat: Array<{ from: string; fromName: string; text: string; at: number }>
-  priceBreakdown: string | null
-  paymentDisplayStatus: string
-  paidAt: number | null
-  failedAt: number | null
-  failureReason: string | null
-  providerVehicle?: string | null
-  providerPlate?: string | null
+  timeline: Array<{ status: string; label: string; at: string }>
+  breakdownText?: string[]
 }
 
-export function useClientHistory(dbUserId: string | null) {
+type HistoryState = {
+  history: ServiceHistoryItem[]
+  loading: boolean
+  detail: ServiceHistoryDetail | null
+  detailLoading: boolean
+  fetchHistory: () => Promise<void>
+  fetchDetail: (serviceId: string) => Promise<ServiceHistoryDetail | null>
+  setDetail: Dispatch<SetStateAction<ServiceHistoryDetail | null>>
+}
+
+function useHistory(basePath: string, enabled = true): HistoryState {
   const [history, setHistory] = useState<ServiceHistoryItem[]>([])
   const [loading, setLoading] = useState(false)
   const [detail, setDetail] = useState<ServiceHistoryDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
 
   const fetchHistory = useCallback(async () => {
-    if (!dbUserId) return
+    if (!enabled) return
     setLoading(true)
     try {
-      const res = await fetch(`/api/client/services?dbUserId=${dbUserId}`)
+      const res = await fetch(basePath, { credentials: 'include' })
       if (res.ok) {
         const data = await res.json()
-        setHistory(data)
+        setHistory(Array.isArray(data?.services) ? data.services : [])
       }
-    } catch (e) {
-      console.error('[history] fetch error:', e)
+    } catch (error) {
+      console.error('[history] fetch error:', error)
     } finally {
       setLoading(false)
     }
-  }, [dbUserId])
+  }, [basePath, enabled])
 
   const fetchDetail = useCallback(async (serviceId: string) => {
-    if (!dbUserId) return null
+    if (!enabled) return null
     setDetailLoading(true)
     try {
-      const res = await fetch(`/api/client/services/${serviceId}?dbUserId=${dbUserId}`)
+      const res = await fetch(`${basePath}/${serviceId}`, { credentials: 'include' })
       if (res.ok) {
         const data = await res.json()
         setDetail(data)
         return data
       }
-    } catch (e) {
-      console.error('[history] detail error:', e)
+    } catch (error) {
+      console.error('[history] detail error:', error)
     } finally {
       setDetailLoading(false)
     }
     return null
-  }, [dbUserId])
+  }, [basePath, enabled])
 
   useEffect(() => {
-    fetchHistory()
+    void fetchHistory()
   }, [fetchHistory])
 
   return { history, loading, detail, detailLoading, fetchHistory, fetchDetail, setDetail }
 }
 
-export function useProviderHistory(dbUserId: string | null) {
-  const [history, setHistory] = useState<ServiceHistoryItem[]>([])
-  const [loading, setLoading] = useState(false)
-  const [detail, setDetail] = useState<ServiceHistoryDetail | null>(null)
-  const [detailLoading, setDetailLoading] = useState(false)
+export function useClientHistory(enabled = true) {
+  return useHistory('/api/client/services', enabled)
+}
 
-  const fetchHistory = useCallback(async () => {
-    if (!dbUserId) return
-    setLoading(true)
-    try {
-      const res = await fetch(`/api/provider/services?dbUserId=${dbUserId}`)
-      if (res.ok) {
-        const data = await res.json()
-        setHistory(data)
-      }
-    } catch (e) {
-      console.error('[history] fetch error:', e)
-    } finally {
-      setLoading(false)
-    }
-  }, [dbUserId])
-
-  const fetchDetail = useCallback(async (serviceId: string) => {
-    if (!dbUserId) return null
-    setDetailLoading(true)
-    try {
-      const res = await fetch(`/api/provider/services/${serviceId}?dbUserId=${dbUserId}`)
-      if (res.ok) {
-        const data = await res.json()
-        setDetail(data)
-        return data
-      }
-    } catch (e) {
-      console.error('[history] detail error:', e)
-    } finally {
-      setDetailLoading(false)
-    }
-    return null
-  }, [dbUserId])
-
-  useEffect(() => {
-    fetchHistory()
-  }, [fetchHistory])
-
-  return { history, loading, detail, detailLoading, fetchHistory, fetchDetail, setDetail }
+export function useProviderHistory(enabled = true) {
+  return useHistory('/api/provider/services', enabled)
 }

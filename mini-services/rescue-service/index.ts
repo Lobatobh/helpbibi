@@ -19,6 +19,8 @@ import {
   transitionServiceStatus,
   updateServiceProviderPosition,
 } from '../../src/server/services/service-lifecycle'
+import { createServiceChatMessage, listServiceChatMessages } from '../../src/server/services/service-chat'
+import { loadServiceWithParticipants } from '../../src/server/services/service-access'
 import { getSessionUserFromCookieHeader } from '../../src/server/auth/session-token'
 // FASE 26 — Socket.IO hardening helpers (per-socket rate limit + payload validation)
 import {
@@ -441,6 +443,27 @@ async function emitAuthenticatedService(serviceId: string) {
     if (provider) io.to(provider.socketId).emit('auth:service:update', payload)
   }
   return svc
+}
+
+function currentUserFromAuth(auth: AuthenticatedSocket) {
+  return {
+    id: auth.userId,
+    role: auth.role,
+    name: auth.name,
+    email: auth.email,
+  }
+}
+
+async function emitAuthenticatedChatMessage(serviceId: string, message: ChatMessage) {
+  const service = await loadServiceWithParticipants(serviceId)
+  if (!service) return
+  authenticatedSockets.forEach((auth, socketId) => {
+    const isClient = auth.role === 'CLIENT' && auth.userId === service.clientId
+    const isProvider = auth.role === 'PROVIDER' && !!service.providerId && auth.providerProfileId === service.providerId
+    if (isClient || isProvider) {
+      io.to(socketId).emit('auth:chat:new', message)
+    }
+  })
 }
 
 function emitAuthenticatedProviderState(p: Provider) {
@@ -1045,6 +1068,31 @@ io.on('connection', async (socket) => {
       }
     }
     await emitAuthenticatedService(data.serviceId)
+  })
+
+  socket.on('auth:chat:history', async (data: { serviceId: string }) => {
+    const auth = currentAuth()
+    if (!auth) return
+    try {
+      const messages = await listServiceChatMessages(data.serviceId, currentUserFromAuth(auth))
+      socket.emit('auth:chat:messages', { serviceId: data.serviceId, messages })
+    } catch {
+      socket.emit('auth:operation-error', { message: 'Nao foi possivel carregar o chat.' })
+    }
+  })
+
+  socket.on('auth:chat:send', async (data: { serviceId: string; text: string }) => {
+    const auth = currentAuth()
+    if (!auth) return
+    if (!socketRateLimit(socket.id, 'auth:chat:send', 10, 10000)) return
+    try {
+      const message = await createServiceChatMessage(data.serviceId, currentUserFromAuth(auth), {
+        text: data.text,
+      })
+      await emitAuthenticatedChatMessage(data.serviceId, message)
+    } catch {
+      socket.emit('auth:operation-error', { message: 'Nao foi possivel enviar a mensagem.' })
+    }
   })
 
   socket.on('client:register', async (data: { name: string }) => {

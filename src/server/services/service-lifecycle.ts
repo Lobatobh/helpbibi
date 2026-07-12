@@ -6,6 +6,8 @@ import type {
   ServiceType,
 } from '@prisma/client'
 import { canProviderOperate } from '../providers/provider-approval'
+import { ACTIVE_SERVICE_STATUSES, TERMINAL_SERVICE_STATUSES } from './service-status'
+export { isActiveServiceStatus } from './service-status'
 
 type DbClient = PrismaClient | Prisma.TransactionClient
 
@@ -69,16 +71,8 @@ export type TransitionOptions = TimelineInput & {
   audit?: LifecycleAudit
 }
 
-const ACTIVE_STATUSES: ServiceStatus[] = [
-  'REQUESTED',
-  'OFFERED',
-  'ACCEPTED',
-  'PROVIDER_EN_ROUTE',
-  'ARRIVED',
-  'IN_PROGRESS',
-]
-
-const TERMINAL_STATUSES: ServiceStatus[] = ['COMPLETED', 'CANCELED', 'EXPIRED', 'FAILED']
+const ACTIVE_STATUSES = ACTIVE_SERVICE_STATUSES
+const TERMINAL_STATUSES = TERMINAL_SERVICE_STATUSES
 const OPERATIONAL_AUDIT_EVENTS = new Set<string>([
   'request_created',
   'offer_sent',
@@ -111,10 +105,6 @@ function safeJson(value: unknown): string | null {
   } catch {
     return null
   }
-}
-
-export function isActiveServiceStatus(status: ServiceStatus): boolean {
-  return ACTIVE_STATUSES.includes(status)
 }
 
 export function canTransitionServiceStatus(from: ServiceStatus, to: ServiceStatus): boolean {

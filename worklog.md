@@ -2259,3 +2259,29 @@ Stage Summary:
 - `.env`, Docker, VPS, deploy e banco real nao foram alterados.
 - A mudanca de schema e aditiva, mas exige aplicacao controlada antes de qualquer deploy desta fase.
 - SQLite local descartavel so deve ser usado para validacao quando necessario, e nenhum arquivo de banco deve entrar no Git.
+
+---
+
+Task ID: 35.6
+Agent: main
+Task: Historico, chat, avaliacoes e perfis autenticados.
+
+Work Log:
+- Data do registro: 2026-07-12.
+- F35-06 implementada localmente, sem acessar VPS, sem deploy, sem bootstrap real e sem acessar PostgreSQL real.
+- Nenhum schema Prisma foi alterado nesta fase.
+- Criado helper central para status operacionais, estados terminais, limite de chat e limite de comentario de avaliacao.
+- Criado helper central de participante para validar CLIENT pelo `ServiceRequest.clientId` e PROVIDER pelo `ProviderProfile.userId`, sempre a partir da sessao.
+- Rotas de historico cliente/prestador passaram a ignorar `dbUserId` e `providerProfileId` vindos de query/body.
+- Historico agora carrega `PaymentRecord` opcional com `latestPayment=null` quando nao existe pagamento, mantendo servicos antigos funcionais.
+- Criadas rotas `/api/services/[id]/chat` e `/api/services/[id]/ratings` com sessao obrigatoria, validacao de participante e respostas sem dados sensiveis.
+- Chat autenticado persiste mensagens antes de emitir eventos de Socket.IO; chat publico/demo permanece isolado.
+- Avaliacoes so sao aceitas apos `COMPLETED`, derivam o alvo pela sessao e respeitam a unicidade `serviceId,targetRole`.
+- Perfis autenticados de cliente e prestador receberam allowlist de campos editaveis, sem permitir alteracao de role, status, aprovacao, disponibilidade, senha ou IDs.
+- Paineis autenticados de cliente e prestador passaram a exibir historico, detalhe/timeline, chat ativo, avaliacao e perfil.
+- Testes adicionados para anti-spoof de identidade, acesso proprio de historico, servico sem pagamento, chat persistido, bloqueio de terceiros, ratings, duplicidade e perfil seguro.
+
+Stage Summary:
+- `.env`, Docker, Supabase, Mercado Pago real, SMTP, VPS, deploy e banco real nao foram alterados.
+- A demo publica permanece separada dos fluxos autenticados.
+- Nenhum arquivo de banco local deve entrar no Git.

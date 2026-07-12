@@ -537,3 +537,25 @@ unset ADMIN_BOOTSTRAP_EMAIL ADMIN_BOOTSTRAP_PASSWORD ADMIN_BOOTSTRAP_NAME ADMIN_
 - Falha depois do bootstrap: suspender a conta criada/promovida por procedimento administrativo e investigar; nao apagar historico relacionado nem repetir o bootstrap cegamente.
 
 Pendencias: executar o dry-run contra o PostgreSQL real, validar backup/restore, aplicar o schema e rodar o bootstrap em janela futura. Supabase, Mercado Pago real, SMTP, Docker e deploy permanecem fora desta fase.
+
+---
+
+## F35-06 - Historico, chat, avaliacoes e perfis autenticados
+
+### Status: IMPLEMENTADA LOCALMENTE, NAO IMPLANTADA
+
+Em 2026-07-12, a F35-06 conectou historico, chat, avaliacoes e perfis aos fluxos autenticados, sem alterar schemas Prisma, Docker, `.env`, VPS, PostgreSQL real, Supabase, Mercado Pago real ou SMTP.
+
+Pontos de readiness:
+- identidade de cliente/prestador deriva apenas da sessao assinada;
+- rotas de historico ignoram IDs enviados por query/body;
+- chat autenticado persiste mensagens antes de emitir eventos de Socket.IO;
+- avaliacoes sao permitidas somente apos `COMPLETED` e com alvo derivado da sessao;
+- perfis usam allowlist de campos editaveis e nao expõem `passwordHash`;
+- servicos sem `PaymentRecord` continuam funcionais com `latestPayment=null`;
+- demo publica permanece separada dos fluxos autenticados.
+
+Pendencias antes de implantacao futura:
+- aplicar de forma controlada os schemas pendentes das fases anteriores antes de qualquer deploy que dependa deles;
+- validar o fluxo autenticado completo no navegador apos deploy controlado;
+- manter Mercado Pago real, Supabase real e SMTP real desabilitados ate fases proprias.
