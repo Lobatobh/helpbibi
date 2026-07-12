@@ -19,6 +19,7 @@ import {
   transitionServiceStatus,
   updateServiceProviderPosition,
 } from '../../src/server/services/service-lifecycle'
+import { getSessionUserFromCookieHeader } from '../../src/server/auth/session-token'
 // FASE 26 — Socket.IO hardening helpers (per-socket rate limit + payload validation)
 import {
   socketRateBuckets, socketRateLimit,
@@ -93,6 +94,14 @@ type TimelineEvent = { status: ServiceStatus; label: string; at: number }
 
 type ServiceTypeMeta = { label: string; basePrice: number; icon: string }
 
+type AuthenticatedSocket = {
+  userId: string
+  role: 'CLIENT' | 'PROVIDER'
+  name: string
+  email: string | null
+  providerProfileId?: string
+}
+
 const SERVICE_TYPES: Record<ServiceType, ServiceTypeMeta> = {
   reboque: { label: 'Reboque / Guincho', basePrice: 180, icon: 'tow-truck' },
   pneu: { label: 'Troca de Pneu', basePrice: 90, icon: 'tire' },
@@ -164,6 +173,7 @@ const clients = new Map<string, { id: string; socketId: string; name: string; db
 const services = new Map<string, ServiceRequest>()
 const chats = new Map<string, ChatMessage[]>()
 const socketToRole = new Map<string, { role: Role; id: string }>()
+const authenticatedSockets = new Map<string, AuthenticatedSocket>()
 
 const CITY = { center: { lat: -23.5505, lng: -46.6333 }, span: 0.05 }
 
@@ -308,6 +318,143 @@ const sanitizeService = (svc: ServiceRequest) => ({
   timeline: svc.timeline, rating: svc.rating || null, clientRating: svc.clientRating || null,
   loyaltyPoints: svc.loyaltyPoints,
 })
+
+const ACTIVE_DB_STATUSES = ['REQUESTED', 'OFFERED', 'ACCEPTED', 'PROVIDER_EN_ROUTE', 'ARRIVED', 'IN_PROGRESS']
+
+const DB_STATUS_TO_SOCKET: Record<string, ServiceStatus> = {
+  REQUESTED: 'searching',
+  OFFERED: 'offered',
+  ACCEPTED: 'accepted',
+  PROVIDER_EN_ROUTE: 'arriving',
+  ARRIVED: 'arrived',
+  IN_PROGRESS: 'in_progress',
+  COMPLETED: 'completed',
+  CANCELED: 'cancelled',
+  EXPIRED: 'expired',
+  FAILED: 'expired',
+}
+
+const DB_TYPE_TO_SOCKET: Record<string, ServiceType> = {
+  REBOQUE: 'reboque',
+  PNEU: 'pneu',
+  BATERIA: 'bateria',
+  COMBUSTIVEL: 'combustivel',
+  CHAVEIRO: 'chaveiro',
+  PANE: 'pane',
+}
+
+const DB_PAYMENT_TO_SOCKET: Record<string, PaymentMethod> = {
+  PIX: 'pix',
+  CARD: 'card',
+  CASH: 'cash',
+}
+
+const parseDbLocation = (value: string): LatLng => {
+  try {
+    const parsed = JSON.parse(value)
+    if (parsed && typeof parsed.lat === 'number' && typeof parsed.lng === 'number') return parsed
+  } catch {
+    // ignore legacy malformed data
+  }
+  return { lat: 0, lng: 0 }
+}
+
+const authenticatedServiceInclude = {
+  client: { select: { id: true, name: true } },
+  provider: { include: { user: { select: { id: true, name: true } } } },
+  timeline: { orderBy: { createdAt: 'asc' as const } },
+  offers: { orderBy: { createdAt: 'asc' as const } },
+} as const
+
+const serviceFromDb = (dbSvc: any): ServiceRequest => {
+  const type = DB_TYPE_TO_SOCKET[dbSvc.type] || 'reboque'
+  const status = DB_STATUS_TO_SOCKET[dbSvc.status] || 'expired'
+  const pendingOffers = (dbSvc.offers || []).filter((offer: any) => offer.status === 'PENDING').map((offer: any) => offer.providerId)
+  return {
+    id: dbSvc.id,
+    clientId: dbSvc.clientId,
+    clientName: dbSvc.client?.name || 'Cliente',
+    type,
+    description: dbSvc.description || '',
+    pickup: parseDbLocation(dbSvc.pickup),
+    pickupLabel: dbSvc.pickupLabel,
+    destination: parseDbLocation(dbSvc.destination),
+    destinationLabel: dbSvc.destinationLabel,
+    price: dbSvc.price,
+    originalPrice: dbSvc.originalPrice,
+    discount: dbSvc.discount,
+    promoCode: dbSvc.promoCode,
+    distanceKm: dbSvc.distanceKm,
+    etaMin: dbSvc.etaMin,
+    status,
+    paymentMethod: DB_PAYMENT_TO_SOCKET[dbSvc.paymentMethod] || 'pix',
+    providerId: dbSvc.providerId,
+    notifiedProviderIds: pendingOffers,
+    rejectedProviderIds: (dbSvc.offers || []).filter((offer: any) => offer.status === 'DECLINED').map((offer: any) => offer.providerId),
+    createdAt: dbSvc.createdAt.getTime(),
+    acceptedAt: dbSvc.acceptedAt?.getTime() || null,
+    completedAt: dbSvc.completedAt?.getTime() || null,
+    timeline: (dbSvc.timeline || []).map((event: any) => ({
+      status: DB_STATUS_TO_SOCKET[event.status] || 'expired',
+      label: event.label,
+      at: event.createdAt.getTime(),
+    })),
+    rating: null,
+    clientRating: null,
+    loyaltyPoints: dbSvc.loyaltyPoints || 0,
+    dbServiceId: dbSvc.id,
+  }
+}
+
+const loadDbService = (serviceId: string) => db.serviceRequest.findUnique({
+  where: { id: serviceId },
+  include: authenticatedServiceInclude,
+})
+
+const findActiveDbServiceForClient = (clientId: string) => db.serviceRequest.findFirst({
+  where: { clientId, status: { in: ACTIVE_DB_STATUSES as any } },
+  include: authenticatedServiceInclude,
+  orderBy: { createdAt: 'desc' },
+})
+
+const findActiveDbServiceForProvider = (providerId: string) => db.serviceRequest.findFirst({
+  where: { providerId, status: { in: ACTIVE_DB_STATUSES as any } },
+  include: authenticatedServiceInclude,
+  orderBy: { createdAt: 'desc' },
+})
+
+function rememberDbService(dbSvc: any): ServiceRequest {
+  const svc = serviceFromDb(dbSvc)
+  services.set(svc.id, svc)
+  return svc
+}
+
+async function emitAuthenticatedService(serviceId: string) {
+  const dbSvc = await loadDbService(serviceId)
+  if (!dbSvc) return null
+  const svc = rememberDbService(dbSvc)
+  const payload = sanitizeService(svc)
+  const client = clients.get(dbSvc.clientId)
+  if (client) io.to(client.socketId).emit('auth:service:update', payload)
+  if (dbSvc.providerId) {
+    const provider = providers.get(dbSvc.providerId)
+    if (provider) io.to(provider.socketId).emit('auth:service:update', payload)
+  }
+  return svc
+}
+
+function emitAuthenticatedProviderState(p: Provider) {
+  io.to(p.socketId).emit('auth:provider:state', {
+    id: p.id,
+    name: p.name,
+    vehicle: p.vehicle,
+    plate: p.plate,
+    online: p.online,
+    canOperate: getProviderOperationBlockReason(p) === null,
+    currentServiceId: p.currentServiceId || null,
+    approvalStatus: p.approvalStatus,
+  })
+}
 
 const emitService = (svc: ServiceRequest) => {
   const payload = sanitizeService(svc)
@@ -479,9 +626,426 @@ function scheduleOfferExpiry(svc: ServiceRequest) {
   }, 12000)
 }
 
+async function resolveAuthenticatedSocket(cookieHeader: string | undefined): Promise<AuthenticatedSocket | null> {
+  const session = getSessionUserFromCookieHeader(cookieHeader)
+  if (!session || (session.role !== 'CLIENT' && session.role !== 'PROVIDER')) return null
+  const user = await db.user.findUnique({
+    where: { id: session.id },
+    select: {
+      id: true,
+      role: true,
+      name: true,
+      email: true,
+      status: true,
+      providerProfile: { select: { id: true } },
+    },
+  }).catch(() => null)
+  if (!user || user.role !== session.role || user.status !== 'ACTIVE') return null
+  return {
+    userId: user.id,
+    role: user.role as 'CLIENT' | 'PROVIDER',
+    name: user.name,
+    email: user.email,
+    providerProfileId: user.providerProfile?.id,
+  }
+}
+
+async function bindAuthenticatedClient(socket: any, auth: AuthenticatedSocket) {
+  clients.set(auth.userId, { id: auth.userId, socketId: socket.id, name: auth.name, dbUserId: auth.userId })
+  socketToRole.set(socket.id, { role: 'client', id: auth.userId })
+  const dbSvc = await findActiveDbServiceForClient(auth.userId)
+  if (dbSvc) rememberDbService(dbSvc)
+  socket.emit('auth:snapshot', {
+    service: dbSvc ? sanitizeService(serviceFromDb(dbSvc)) : null,
+  })
+}
+
+async function bindAuthenticatedProvider(socket: any, auth: AuthenticatedSocket) {
+  if (!auth.providerProfileId) {
+    socket.emit('auth:error', { message: 'Perfil de prestador nao encontrado.' })
+    return
+  }
+  const profile = await db.providerProfile.findUnique({
+    where: { id: auth.providerProfileId },
+    include: { user: { select: { id: true, name: true, status: true } } },
+  })
+  if (!profile) {
+    socket.emit('auth:error', { message: 'Perfil de prestador nao encontrado.' })
+    return
+  }
+  const dbSvc = await findActiveDbServiceForProvider(profile.id)
+  const provider: Provider = {
+    id: profile.id,
+    socketId: socket.id,
+    name: profile.user.name,
+    vehicle: profile.vehicle,
+    plate: profile.plate,
+    rating: profile.rating,
+    ratingSum: profile.ratingSum,
+    ratingCount: profile.ratingCount,
+    completedCount: profile.completedCount,
+    earningsToday: profile.earningsToday,
+    online: profile.isAvailable && !dbSvc,
+    position: { lat: CITY.center.lat + (Math.random() - 0.5) * CITY.span, lng: CITY.center.lng + (Math.random() - 0.5) * CITY.span },
+    currentServiceId: dbSvc?.id || null,
+    dbUserId: auth.userId,
+    dbProviderProfileId: profile.id,
+    isDemoProvider: false,
+    isVerified: profile.isVerified,
+    approvalStatus: profile.approvalStatus,
+    documentStatus: profile.documentStatus,
+    vehicleStatus: profile.vehicleStatus,
+    userStatus: profile.user.status || 'ACTIVE',
+    isGpsPosition: false,
+  }
+  providers.set(provider.id, provider)
+  socketToRole.set(socket.id, { role: 'provider', id: provider.id })
+  if (dbSvc) rememberDbService(dbSvc)
+  emitAuthenticatedProviderState(provider)
+  socket.emit('auth:snapshot', {
+    provider: {
+      id: provider.id,
+      name: provider.name,
+      vehicle: provider.vehicle,
+      plate: provider.plate,
+      online: provider.online,
+      canOperate: getProviderOperationBlockReason(provider) === null,
+      currentServiceId: provider.currentServiceId || null,
+      approvalStatus: provider.approvalStatus,
+    },
+    service: dbSvc ? sanitizeService(serviceFromDb(dbSvc)) : null,
+  })
+  io.emit('providers:nearby', availableProviderPublic())
+}
+
+async function bindAuthenticatedSocket(socket: any) {
+  const auth = await resolveAuthenticatedSocket(socket.handshake.headers.cookie)
+  if (!auth) return null
+  authenticatedSockets.set(socket.id, auth)
+  if (auth.role === 'CLIENT') await bindAuthenticatedClient(socket, auth)
+  if (auth.role === 'PROVIDER') await bindAuthenticatedProvider(socket, auth)
+  console.log(`[socket] authenticated socket=${socket.id} user=${auth.userId} role=${auth.role}`)
+  return auth
+}
+
+async function closeAuthenticatedServiceWithoutProviders(svc: ServiceRequest, label: string) {
+  clearOfferTimer(svc)
+  pushTimeline(svc, 'expired', label)
+  if (svc.dbServiceId) {
+    await transitionServiceStatus(db as any, svc.dbServiceId, 'EXPIRED' as any, {
+      label,
+      actorRole: 'SYSTEM',
+      eventType: 'service_expired' as any,
+    }).catch(() => null)
+    await emitAuthenticatedService(svc.dbServiceId)
+  } else {
+    emitService(svc)
+  }
+}
+
+async function offerAuthenticatedServiceToProviders(svc: ServiceRequest, toNotify: Provider[], label: string) {
+  if (!svc.dbServiceId || toNotify.length === 0) return
+  const dbProviderIds = toNotify
+    .map((provider) => provider.dbProviderProfileId)
+    .filter((id): id is string => !!id)
+
+  const result = await registerServiceOffers(db as any, svc.dbServiceId, dbProviderIds, {
+    label,
+    actorRole: 'SYSTEM',
+    metadata: { socketProviderIds: toNotify.map((provider) => provider.id), authenticated: true },
+    audit: audit as any,
+  })
+  const offered = toNotify.filter((provider) => result.offeredProviderIds.includes(provider.dbProviderProfileId || ''))
+  if (offered.length === 0) {
+    await closeAuthenticatedServiceWithoutProviders(svc, 'Nenhum prestador disponivel no momento')
+    return
+  }
+
+  svc.notifiedProviderIds = offered.map((provider) => provider.id)
+  svc.providerId = null
+  pushTimeline(svc, 'offered', label)
+  services.set(svc.id, svc)
+  const payload = sanitizeService(svc)
+  const client = clients.get(svc.clientId)
+  if (client) io.to(client.socketId).emit('auth:service:update', payload)
+  offered.forEach((provider) => io.to(provider.socketId).emit('auth:service:offer', payload))
+  console.log(`[auth-service] offer emitted service=${svc.id} providers=${svc.notifiedProviderIds.join(',')}`)
+}
+
+function authenticatedCandidateProviders(svc: ServiceRequest): Provider[] {
+  return rankProvidersByDistanceExcluding(
+    Array.from(providers.values()).filter((provider) => !provider.isDemoProvider && !!provider.dbProviderProfileId) as any,
+    svc.pickup,
+    { isDevMode: IS_DEV_MODE, demoMode: false },
+    excludedProviderIdsFor(svc),
+    MULTI_NOTIFY_COUNT,
+  ) as unknown as Provider[]
+}
+
 // ----------------------- Connection -----------------------
-io.on('connection', (socket) => {
+io.on('connection', async (socket) => {
   console.log(`[socket] connected ${socket.id}`)
+  await bindAuthenticatedSocket(socket)
+
+  const currentAuth = () => authenticatedSockets.get(socket.id)
+
+  socket.on('auth:snapshot', async () => {
+    const auth = currentAuth()
+    if (!auth) {
+      socket.emit('auth:error', { message: 'Sessao invalida.' })
+      return
+    }
+    if (auth.role === 'CLIENT') {
+      await bindAuthenticatedClient(socket, auth)
+    } else {
+      await bindAuthenticatedProvider(socket, auth)
+    }
+  })
+
+  socket.on('auth:provider:toggle-online', async (data: { online: boolean }) => {
+    const auth = currentAuth()
+    if (!auth || auth.role !== 'PROVIDER' || !auth.providerProfileId) return
+    const p = providers.get(auth.providerProfileId)
+    const profile = await db.providerProfile.findUnique({
+      where: { id: auth.providerProfileId },
+      include: { user: { select: { id: true, status: true } } },
+    })
+    if (!profile || !p) return
+    Object.assign(p, {
+      isVerified: profile.isVerified,
+      approvalStatus: profile.approvalStatus,
+      documentStatus: profile.documentStatus,
+      vehicleStatus: profile.vehicleStatus,
+      userStatus: profile.user.status || 'ACTIVE',
+    })
+
+    const active = await findActiveDbServiceForProvider(profile.id)
+    if (data.online && active) {
+      p.online = false
+      p.currentServiceId = active.id
+      emitAuthenticatedProviderState(p)
+      socket.emit('auth:operation-error', { message: 'Voce ja possui atendimento ativo.' })
+      return
+    }
+
+    const reason = getProviderOperationBlockReason(p)
+    if (data.online && reason) {
+      p.online = false
+      await db.providerProfile.update({ where: { id: profile.id }, data: { isAvailable: false } }).catch(() => null)
+      emitAuthenticatedProviderState(p)
+      socket.emit('provider:online-denied', { reason })
+      socket.emit('auth:operation-error', { message: reason })
+      return
+    }
+
+    await db.providerProfile.update({ where: { id: profile.id }, data: { isAvailable: data.online === true } })
+    p.online = data.online === true
+    p.currentServiceId = null
+    emitAuthenticatedProviderState(p)
+    io.emit('providers:nearby', availableProviderPublic())
+  })
+
+  socket.on('auth:client:request', async (data: {
+    type: ServiceType; description: string;
+    pickup: LatLng; pickupLabel: string; destination: LatLng; destinationLabel: string;
+    paymentMethod: PaymentMethod
+  }) => {
+    const auth = currentAuth()
+    if (!auth || auth.role !== 'CLIENT') return
+    if (!socketRateLimit(socket.id, 'auth:client:request', 5, 60000)) {
+      socket.emit('auth:operation-error', { message: 'Muitas solicitacoes. Aguarde alguns segundos.' })
+      return
+    }
+    if (!data || !TYPE_MAP[data.type] || !isValidLatLng(data.pickup) || !isValidLatLng(data.destination) ||
+      !isNonEmptyString(data.pickupLabel, 200) || !isNonEmptyString(data.destinationLabel, 200)) {
+      socket.emit('auth:operation-error', { message: 'Dados da solicitacao invalidos.' })
+      return
+    }
+
+    const distanceKm = haversineKm(data.pickup, data.destination)
+    const breakdown = calcPriceBreakdown(data.type, data.pickup, data.destination, distanceKm, null)
+    const price = Math.round(breakdown.total)
+    const originalPrice = Math.round(breakdown.beforeDiscount)
+    const discount = Math.round(breakdown.discountAmount)
+    const etaMin = calcEta(distanceKm)
+
+    try {
+      const dbSvc = await createOperationalService(db as any, {
+        clientId: auth.userId,
+        type: TYPE_MAP[data.type] as any,
+        description: (data.description || '').slice(0, 500),
+        pickup: data.pickup,
+        pickupLabel: data.pickupLabel.slice(0, 200),
+        destination: data.destination,
+        destinationLabel: data.destinationLabel.slice(0, 200),
+        distanceKm: Number(distanceKm.toFixed(2)),
+        etaMin,
+        price,
+        originalPrice,
+        discount,
+        promoCode: null,
+        paymentMethod: PAYMENT_MAP[data.paymentMethod || 'pix'] as any,
+        loyaltyPoints: 0,
+        label: 'Solicitacao enviada - procurando prestador proximo',
+      }, { dedupeActive: true, audit: audit as any })
+      if (!(dbSvc as any).deduped) {
+        await db.trackingShare.create({ data: { serviceId: dbSvc.id } }).catch(() => null)
+      }
+
+      const loaded = await loadDbService(dbSvc.id)
+      if (!loaded) throw new Error('Service not found after create')
+      const svc = rememberDbService(loaded)
+      socket.emit('auth:service:update', sanitizeService(svc))
+
+      if ((dbSvc as any).deduped) {
+        console.log(`[auth-service] duplicate request blocked service=${svc.id} client=${auth.userId}`)
+        return
+      }
+
+      const candidates = authenticatedCandidateProviders(svc)
+      if (candidates.length === 0) {
+        await closeAuthenticatedServiceWithoutProviders(svc, 'Nenhum prestador disponivel no momento')
+        return
+      }
+      await offerAuthenticatedServiceToProviders(
+        svc,
+        candidates,
+        `Chamada enviada para ${candidates.length} prestador(es) aprovado(s)`,
+      )
+    } catch (error: any) {
+      console.error('[auth-service] request error:', error)
+      socket.emit('auth:operation-error', { message: error?.message || 'Nao foi possivel criar a solicitacao.' })
+    }
+  })
+
+  socket.on('auth:service:accept', async (data: { serviceId: string }) => {
+    const auth = currentAuth()
+    if (!auth || auth.role !== 'PROVIDER' || !auth.providerProfileId) return
+    const p = providers.get(auth.providerProfileId)
+    if (!p) return
+    try {
+      const result = await acceptServiceOffer(db as any, data.serviceId, auth.providerProfileId, {
+        label: `${p.name} aceitou a chamada e esta a caminho`,
+        actorRole: 'PROVIDER',
+        actorUserId: auth.userId,
+        providerProfileId: auth.providerProfileId,
+        audit: audit as any,
+      })
+      if ((result as any).conflict) {
+        socket.emit('auth:operation-error', { message: 'Esta chamada ja foi aceita por outro prestador.' })
+        return
+      }
+      p.currentServiceId = data.serviceId
+      p.online = true
+      p.tripStartPos = { ...p.position }
+      const svc = services.get(data.serviceId)
+      if (svc) {
+        p.tripTarget = svc.pickup
+        p.destination = svc.pickup
+        p.tripStartedAt = Date.now()
+        p.tripTotalKm = haversineKm(p.position, svc.pickup)
+      }
+      emitAuthenticatedProviderState(p)
+      const updated = await emitAuthenticatedService(data.serviceId)
+      if (updated) {
+        updated.notifiedProviderIds.forEach((providerId) => {
+          if (providerId === auth.providerProfileId) return
+          const other = providers.get(providerId)
+          if (other) io.to(other.socketId).emit('auth:offer-taken', { serviceId: data.serviceId })
+        })
+      }
+    } catch (error: any) {
+      socket.emit('auth:operation-error', { message: error?.message || 'Nao foi possivel aceitar.' })
+    }
+  })
+
+  socket.on('auth:service:reject', async (data: { serviceId: string; reason?: string }) => {
+    const auth = currentAuth()
+    if (!auth || auth.role !== 'PROVIDER' || !auth.providerProfileId) return
+    const p = providers.get(auth.providerProfileId)
+    if (!p) return
+    await declineServiceOffer(db as any, data.serviceId, auth.providerProfileId, {
+      label: `${p.name} recusou a chamada`,
+      actorRole: 'PROVIDER',
+      actorUserId: auth.userId,
+      providerProfileId: auth.providerProfileId,
+      reason: data.reason || 'provider_declined',
+      audit: audit as any,
+    }).catch(() => null)
+    if (p.currentServiceId === data.serviceId) p.currentServiceId = null
+    emitAuthenticatedProviderState(p)
+    await emitAuthenticatedService(data.serviceId)
+  })
+
+  const transitionAuthenticatedProviderStatus = async (
+    serviceId: string,
+    status: 'ARRIVED' | 'IN_PROGRESS' | 'COMPLETED',
+    label: string,
+  ) => {
+    const auth = currentAuth()
+    if (!auth || auth.role !== 'PROVIDER' || !auth.providerProfileId) return
+    const p = providers.get(auth.providerProfileId)
+    if (!p) return
+    const dbSvc = await loadDbService(serviceId)
+    if (!dbSvc || dbSvc.providerId !== auth.providerProfileId) return
+    await transitionServiceStatus(db as any, serviceId, status as any, {
+      label,
+      actorRole: 'PROVIDER',
+      actorUserId: auth.userId,
+      providerProfileId: auth.providerProfileId,
+      audit: audit as any,
+    })
+    if (status === 'COMPLETED') {
+      p.currentServiceId = null
+      p.destination = null
+      p.tripStartPos = null
+      p.tripTarget = null
+      p.tripStartedAt = null
+      p.tripTotalKm = 0
+      await db.providerProfile.update({
+        where: { id: auth.providerProfileId },
+        data: { completedCount: { increment: 1 }, earningsToday: { increment: dbSvc.price }, isAvailable: true },
+      }).catch(() => null)
+    } else {
+      p.currentServiceId = serviceId
+    }
+    emitAuthenticatedProviderState(p)
+    await emitAuthenticatedService(serviceId)
+  }
+
+  socket.on('auth:service:arrived', (data: { serviceId: string }) => {
+    void transitionAuthenticatedProviderStatus(data.serviceId, 'ARRIVED', 'Prestador chegou ao local do atendimento')
+  })
+  socket.on('auth:service:start', (data: { serviceId: string }) => {
+    void transitionAuthenticatedProviderStatus(data.serviceId, 'IN_PROGRESS', 'Servico em andamento')
+  })
+  socket.on('auth:service:complete', (data: { serviceId: string }) => {
+    void transitionAuthenticatedProviderStatus(data.serviceId, 'COMPLETED', 'Servico concluido com sucesso')
+  })
+
+  socket.on('auth:service:cancel', async (data: { serviceId: string; reason?: string }) => {
+    const auth = currentAuth()
+    if (!auth || auth.role !== 'CLIENT') return
+    const dbSvc = await loadDbService(data.serviceId)
+    if (!dbSvc || dbSvc.clientId !== auth.userId) return
+    await transitionServiceStatus(db as any, data.serviceId, 'CANCELED' as any, {
+      label: 'Solicitacao cancelada pelo cliente',
+      actorRole: 'CLIENT',
+      actorUserId: auth.userId,
+      canceledByRole: 'CLIENT',
+      canceledByUserId: auth.userId,
+      cancellationReason: (data.reason || 'client_cancelled').slice(0, 500),
+      audit: audit as any,
+    }).catch(() => null)
+    if (dbSvc.providerId) {
+      const p = providers.get(dbSvc.providerId)
+      if (p) {
+        p.currentServiceId = null
+        emitAuthenticatedProviderState(p)
+      }
+    }
+    await emitAuthenticatedService(data.serviceId)
+  })
 
   socket.on('client:register', async (data: { name: string }) => {
     if (!socketRateLimit(socket.id, 'client:register', 5, 60000)) return
@@ -1141,7 +1705,10 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     const role = socketToRole.get(socket.id)
-    if (!role) return
+    if (!role) {
+      authenticatedSockets.delete(socket.id)
+      return
+    }
     if (role.role === 'client') { clients.delete(role.id) }
     else if (role.role === 'provider') {
       const p = providers.get(role.id)
@@ -1149,6 +1716,7 @@ io.on('connection', (socket) => {
     }
     socketRateBuckets.delete(socket.id)
     socketToRole.delete(socket.id)
+    authenticatedSockets.delete(socket.id)
     console.log(`[socket] disconnected ${socket.id}`)
   })
 })

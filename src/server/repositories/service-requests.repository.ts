@@ -3,6 +3,252 @@ import type { PaymentMethod, Prisma, ServiceRequest, ServiceStatus, ServiceType 
 
 type LatLng = { lat: number; lng: number }
 
+export const ACTIVE_SERVICE_STATUSES: ServiceStatus[] = [
+  'REQUESTED',
+  'OFFERED',
+  'ACCEPTED',
+  'PROVIDER_EN_ROUTE',
+  'ARRIVED',
+  'IN_PROGRESS',
+]
+
+const serviceTypeToPublic: Record<string, string> = {
+  REBOQUE: 'reboque',
+  PNEU: 'pneu',
+  BATERIA: 'bateria',
+  COMBUSTIVEL: 'combustivel',
+  CHAVEIRO: 'chaveiro',
+  PANE: 'pane',
+}
+
+const serviceTypeLabel: Record<string, string> = {
+  REBOQUE: 'Reboque / Guincho',
+  PNEU: 'Troca de Pneu',
+  BATERIA: 'Carga de Bateria',
+  COMBUSTIVEL: 'Combustivel',
+  CHAVEIRO: 'Chaveiro',
+  PANE: 'Pane Mecanica',
+}
+
+const serviceTypeIcon: Record<string, string> = {
+  REBOQUE: 'tow-truck',
+  PNEU: 'tire',
+  BATERIA: 'battery',
+  COMBUSTIVEL: 'fuel',
+  CHAVEIRO: 'key',
+  PANE: 'wrench',
+}
+
+const statusToPublic: Record<string, string> = {
+  REQUESTED: 'searching',
+  OFFERED: 'offered',
+  ACCEPTED: 'accepted',
+  PROVIDER_EN_ROUTE: 'arriving',
+  ARRIVED: 'arrived',
+  IN_PROGRESS: 'in_progress',
+  COMPLETED: 'completed',
+  CANCELED: 'cancelled',
+  EXPIRED: 'expired',
+  FAILED: 'expired',
+}
+
+const paymentToPublic: Record<string, string> = {
+  PIX: 'pix',
+  CARD: 'card',
+  CASH: 'cash',
+}
+
+function parseLocation(value: string): LatLng {
+  try {
+    const parsed = JSON.parse(value)
+    if (parsed && typeof parsed.lat === 'number' && typeof parsed.lng === 'number') {
+      return { lat: parsed.lat, lng: parsed.lng }
+    }
+  } catch {
+    // fall through
+  }
+  return { lat: 0, lng: 0 }
+}
+
+export function isActiveServiceStatus(status: ServiceStatus | string): boolean {
+  return ACTIVE_SERVICE_STATUSES.includes(status as ServiceStatus)
+}
+
+const activeServiceInclude = {
+  client: { select: { id: true, name: true, email: true, phone: true } },
+  provider: {
+    select: {
+      id: true,
+      vehicle: true,
+      plate: true,
+      rating: true,
+      completedCount: true,
+      user: { select: { id: true, name: true, email: true, phone: true } },
+    },
+  },
+  timeline: { orderBy: { createdAt: 'asc' as const } },
+  offers: {
+    include: {
+      provider: {
+        select: {
+          id: true,
+          vehicle: true,
+          plate: true,
+          rating: true,
+          completedCount: true,
+          user: { select: { id: true, name: true } },
+        },
+      },
+    },
+    orderBy: { createdAt: 'asc' as const },
+  },
+} as const
+
+export type ServiceRealtimeSnapshot = {
+  id: string
+  dbServiceId: string
+  clientId: string
+  clientName: string
+  type: string
+  typeLabel: string
+  icon: string
+  description: string
+  pickup: LatLng
+  pickupLabel: string
+  destination: LatLng
+  destinationLabel: string
+  price: number
+  originalPrice: number
+  discount: number
+  promoCode: string | null
+  distanceKm: number
+  etaMin: number
+  status: string
+  dbStatus: ServiceStatus
+  paymentMethod: string
+  paymentStatus: string
+  providerId: string | null
+  notifiedProviderIds: string[]
+  notifiedCount: number
+  provider: {
+    id: string
+    name: string
+    vehicle: string
+    plate: string
+    rating: number
+    completedCount: number
+    position: LatLng | null
+  } | null
+  createdAt: number
+  acceptedAt: number | null
+  completedAt: number | null
+  canceledAt: number | null
+  cancellationReason: string | null
+  timeline: Array<{ status: string; label: string; at: number }>
+  offers: Array<{
+    id: string
+    providerId: string
+    providerName: string | null
+    status: string
+    reason: string | null
+    offeredAt: number
+    respondedAt: number | null
+  }>
+  loyaltyPoints: number
+}
+
+export function serializeRealtimeService(service: any): ServiceRealtimeSnapshot {
+  const notifiedProviderIds = (service.offers || [])
+    .filter((offer: any) => offer.status === 'PENDING')
+    .map((offer: any) => offer.providerId)
+  return {
+    id: service.id,
+    dbServiceId: service.id,
+    clientId: service.clientId,
+    clientName: service.client?.name || 'Cliente',
+    type: serviceTypeToPublic[service.type] || String(service.type).toLowerCase(),
+    typeLabel: serviceTypeLabel[service.type] || service.type,
+    icon: serviceTypeIcon[service.type] || 'wrench',
+    description: service.description || '',
+    pickup: parseLocation(service.pickup),
+    pickupLabel: service.pickupLabel,
+    destination: parseLocation(service.destination),
+    destinationLabel: service.destinationLabel,
+    price: service.price,
+    originalPrice: service.originalPrice,
+    discount: service.discount,
+    promoCode: service.promoCode,
+    distanceKm: service.distanceKm,
+    etaMin: service.etaMin,
+    status: statusToPublic[service.status] || 'expired',
+    dbStatus: service.status,
+    paymentMethod: paymentToPublic[service.paymentMethod] || 'pix',
+    paymentStatus: service.paymentStatus,
+    providerId: service.providerId || null,
+    notifiedProviderIds,
+    notifiedCount: notifiedProviderIds.length,
+    provider: service.provider
+      ? {
+          id: service.provider.id,
+          name: service.provider.user?.name || 'Prestador',
+          vehicle: service.provider.vehicle,
+          plate: service.provider.plate,
+          rating: service.provider.rating,
+          completedCount: service.provider.completedCount,
+          position: service.providerLat && service.providerLng
+            ? { lat: service.providerLat, lng: service.providerLng }
+            : null,
+        }
+      : null,
+    createdAt: service.createdAt.getTime(),
+    acceptedAt: service.acceptedAt?.getTime() || null,
+    completedAt: service.completedAt?.getTime() || null,
+    canceledAt: service.canceledAt?.getTime() || null,
+    cancellationReason: service.cancellationReason || null,
+    timeline: (service.timeline || []).map((event: any) => ({
+      status: statusToPublic[event.status] || 'expired',
+      label: event.label,
+      at: event.createdAt.getTime(),
+    })),
+    offers: (service.offers || []).map((offer: any) => ({
+      id: offer.id,
+      providerId: offer.providerId,
+      providerName: offer.provider?.user?.name || null,
+      status: offer.status,
+      reason: offer.reason || null,
+      offeredAt: offer.offeredAt.getTime(),
+      respondedAt: offer.respondedAt?.getTime() || null,
+    })),
+    loyaltyPoints: service.loyaltyPoints || 0,
+  }
+}
+
+export async function findActiveServiceForClient(clientId: string) {
+  const service = await db.serviceRequest.findFirst({
+    where: { clientId, status: { in: ACTIVE_SERVICE_STATUSES } },
+    include: activeServiceInclude,
+    orderBy: { createdAt: 'desc' },
+  })
+  return service ? serializeRealtimeService(service) : null
+}
+
+export async function findActiveServiceForProvider(providerId: string) {
+  const service = await db.serviceRequest.findFirst({
+    where: { providerId, status: { in: ACTIVE_SERVICE_STATUSES } },
+    include: activeServiceInclude,
+    orderBy: { createdAt: 'desc' },
+  })
+  return service ? serializeRealtimeService(service) : null
+}
+
+export async function findRealtimeServiceById(id: string) {
+  const service = await db.serviceRequest.findUnique({
+    where: { id },
+    include: activeServiceInclude,
+  })
+  return service ? serializeRealtimeService(service) : null
+}
+
 export async function createServiceRequest(data: {
   clientId: string
   type: ServiceType

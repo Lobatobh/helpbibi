@@ -190,8 +190,19 @@ function emitAudit(
 export async function createOperationalService(
   db: DbClient,
   input: CreateOperationalServiceInput,
-  options: { audit?: LifecycleAudit } = {},
+  options: { audit?: LifecycleAudit; dedupeActive?: boolean } = {},
 ) {
+  if (options.dedupeActive && 'findFirst' in db.serviceRequest) {
+    const existing = await (db.serviceRequest as any).findFirst({
+      where: {
+        clientId: input.clientId,
+        status: { in: ACTIVE_STATUSES },
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+    if (existing) return { ...existing, deduped: true }
+  }
+
   const label = input.label || 'Solicitacao enviada - procurando prestador proximo'
   const service = await db.serviceRequest.create({
     data: {
@@ -330,46 +341,108 @@ export async function acceptServiceOffer(
   providerId: string,
   options: TimelineInput & { audit?: LifecycleAudit },
 ) {
-  const provider = await db.providerProfile.findUnique({
-    where: { id: providerId },
-    include: { user: { select: { id: true, status: true } } },
-  })
-  if (!provider) throw new Error(`ProviderProfile not found: ${providerId}`)
-  const blockReason = providerBlockReason(provider)
-  if (blockReason) throw new Error(`Provider cannot operate: ${blockReason}`)
+  const run = async (tx: DbClient) => {
+    const provider = await tx.providerProfile.findUnique({
+      where: { id: providerId },
+      include: { user: { select: { id: true, status: true } } },
+    })
+    if (!provider) throw new Error(`ProviderProfile not found: ${providerId}`)
+    const blockReason = providerBlockReason(provider)
+    if (blockReason) throw new Error(`Provider cannot operate: ${blockReason}`)
 
-  const offer = await db.serviceOffer.findUnique({
-    where: { serviceId_providerId: { serviceId, providerId } },
-  })
-  if (!offer) throw new Error('Service offer not found for provider')
-  if (offer.status === 'ACCEPTED') {
-    return { changed: false, offer }
+    const offer = await tx.serviceOffer.findUnique({
+      where: { serviceId_providerId: { serviceId, providerId } },
+    })
+    if (!offer) throw new Error('Service offer not found for provider')
+
+    const service = await tx.serviceRequest.findUnique({ where: { id: serviceId } })
+    if (!service) throw new Error(`ServiceRequest not found: ${serviceId}`)
+
+    if (offer.status === 'ACCEPTED') {
+      if (service.providerId === providerId && service.status === 'ACCEPTED') {
+        return { changed: false, conflict: false, offer, service }
+      }
+      return { changed: false, conflict: true, reason: 'offer_already_accepted', offer, service }
+    }
+    if (offer.status !== 'PENDING') {
+      return { changed: false, conflict: true, reason: `offer_${String(offer.status).toLowerCase()}`, offer, service }
+    }
+    if (service.providerId && service.providerId !== providerId) {
+      return { changed: false, conflict: true, reason: 'service_already_accepted', offer, service }
+    }
+    if (!['REQUESTED', 'OFFERED'].includes(service.status)) {
+      return { changed: false, conflict: true, reason: `service_${String(service.status).toLowerCase()}`, offer, service }
+    }
+
+    const now = new Date()
+    const claimService = 'updateMany' in tx.serviceRequest
+      ? await (tx.serviceRequest as any).updateMany({
+          where: {
+            id: serviceId,
+            providerId: service.providerId || null,
+            status: { in: ['REQUESTED', 'OFFERED'] },
+          },
+          data: {
+            status: 'ACCEPTED',
+            providerId,
+            ...(service.acceptedAt ? {} : { acceptedAt: now }),
+          },
+        })
+      : { count: 1 }
+
+    if (claimService.count !== 1) {
+      const latest = await tx.serviceRequest.findUnique({ where: { id: serviceId } })
+      return { changed: false, conflict: true, reason: 'service_claim_conflict', offer, service: latest || service }
+    }
+
+    const claimOffer = 'updateMany' in tx.serviceOffer
+      ? await tx.serviceOffer.updateMany({
+          where: { id: offer.id, status: 'PENDING' },
+          data: { status: 'ACCEPTED', respondedAt: now },
+        })
+      : { count: 1 }
+
+    if (claimOffer.count !== 1) {
+      throw new Error('Service offer claim conflict')
+    }
+
+    const accepted = 'update' in tx.serviceOffer
+      ? await tx.serviceOffer.update({
+          where: { id: offer.id },
+          data: { status: 'ACCEPTED', respondedAt: now },
+        })
+      : { ...offer, status: 'ACCEPTED', respondedAt: now }
+
+    await tx.serviceOffer.updateMany({
+      where: { serviceId, providerId: { not: providerId }, status: 'PENDING' },
+      data: { status: 'CANCELED', respondedAt: now, reason: 'accepted_by_other_provider' },
+    })
+
+    await createTimelineEvent(tx, serviceId, 'ACCEPTED', {
+      ...options,
+      eventType: 'offer_accepted',
+      providerProfileId: providerId,
+      actorRole: options.actorRole || 'PROVIDER',
+      actorUserId: options.actorUserId || provider.userId,
+    })
+    emitAudit(options.audit, 'offer_accepted', serviceId, {
+      ...options,
+      providerProfileId: providerId,
+      actorRole: options.actorRole || 'PROVIDER',
+      actorUserId: options.actorUserId || provider.userId,
+    })
+
+    const updatedService = await tx.serviceRequest.findUnique({ where: { id: serviceId } })
+    return { changed: true, conflict: false, offer: accepted, service: updatedService }
   }
-  if (offer.status !== 'PENDING') {
-    throw new Error(`Service offer cannot be accepted from ${offer.status}`)
+
+  if ('$transaction' in db && typeof (db as any).$transaction === 'function') {
+    return (db as any).$transaction((tx: DbClient) => run(tx), {
+      isolationLevel: 'Serializable',
+    })
   }
 
-  const now = new Date()
-  const accepted = await db.serviceOffer.update({
-    where: { id: offer.id },
-    data: { status: 'ACCEPTED', respondedAt: now },
-  })
-  await db.serviceOffer.updateMany({
-    where: { serviceId, providerId: { not: providerId }, status: 'PENDING' },
-    data: { status: 'CANCELED', respondedAt: now, reason: 'accepted_by_other_provider' },
-  })
-
-  await transitionServiceStatus(db, serviceId, 'ACCEPTED', {
-    ...options,
-    providerId,
-    providerProfileId: providerId,
-    actorRole: options.actorRole || 'PROVIDER',
-    actorUserId: options.actorUserId || provider.userId,
-    eventType: 'offer_accepted',
-    audit: options.audit,
-  })
-
-  return { changed: true, offer: accepted }
+  return run(db)
 }
 
 export async function declineServiceOffer(

@@ -395,10 +395,19 @@ export default function Home() {
             imprevistos na estrada com agilidade e segurança.
           </p>
           <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row">
-            <Button size="lg" className="bg-sky-500 px-7 py-6 text-base font-bold text-slate-950 hover:bg-sky-400">
+            <Button
+              size="lg"
+              onClick={() => { window.location.href = '/login' }}
+              className="bg-sky-500 px-7 py-6 text-base font-bold text-slate-950 hover:bg-sky-400"
+            >
               <Shield className="mr-2 h-5 w-5" /> Sou cliente
             </Button>
-            <Button size="lg" variant="outline" className="border-orange-600 bg-orange-600/10 px-7 py-6 text-base font-bold text-orange-400 hover:bg-orange-600/20">
+            <Button
+              size="lg"
+              variant="outline"
+              onClick={() => { window.location.href = '/login' }}
+              className="border-orange-600 bg-orange-600/10 px-7 py-6 text-base font-bold text-orange-400 hover:bg-orange-600/20"
+            >
               <Truck className="mr-2 h-5 w-5" /> Quero ser prestador
             </Button>
           </div>

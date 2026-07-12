@@ -2,53 +2,24 @@
 // Cookie-based session using HMAC-signed JSON. No DB Session model needed.
 // Cookie name: hb_session. Value: base64(JSON({userId, role, exp})) + "." + HMAC signature.
 
-import { createHmac, timingSafeEqual } from 'crypto'
 import { cookies } from 'next/headers'
 import type { NextRequest } from 'next/server'
 import { db } from '@/server/db/prisma'
-
-const COOKIE_NAME = 'hb_session'
-const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
-export type AuthRole = 'CLIENT' | 'PROVIDER' | 'ADMIN'
+import {
+  COOKIE_NAME,
+  SESSION_TTL_MS,
+  decodeSession,
+  encodeSession,
+  getSessionUserFromCookieHeader,
+  getSessionUserFromCookieValue,
+  type AuthRole,
+} from './session-token'
 
 export type CurrentUser = {
   id: string
   role: AuthRole
   name: string
   email: string | null
-}
-
-function getSecret(): string {
-  const secret = process.env.SESSION_SECRET || 'dev_secret_change_me_in_production'
-  if (process.env.NODE_ENV === 'production' && (secret === 'dev_secret_change_me_in_production' || !secret)) {
-    throw new Error('[session] SESSION_SECRET must be set in production')
-  }
-  return secret
-}
-
-function sign(payload: string): string {
-  return createHmac('sha256', getSecret()).update(payload).digest('hex')
-}
-
-function encodeSession(data: { userId: string; role: AuthRole | string }): string {
-  const exp = Date.now() + SESSION_TTL_MS
-  const payload = JSON.stringify({ ...data, exp })
-  const b64 = Buffer.from(payload).toString('base64url')
-  const sig = sign(b64)
-  return `${b64}.${sig}`
-}
-
-function decodeSession(cookieValue: string): { userId: string; role: string; exp: number } | null {
-  try {
-    const [b64, sig] = cookieValue.split('.')
-    if (!b64 || !sig) return null
-    const expectedSig = sign(b64)
-    const a = Buffer.from(sig); const b = Buffer.from(expectedSig)
-    if (a.length !== b.length || !timingSafeEqual(a, b)) return null
-    const payload = JSON.parse(Buffer.from(b64, 'base64url').toString())
-    if (payload.exp < Date.now()) return null
-    return payload
-  } catch { return null }
 }
 
 export function setSessionCookie(userId: string, role: string): string {
@@ -63,11 +34,7 @@ export function clearSessionCookie(): string {
 }
 
 export function getSessionUser(request: NextRequest): { id: string; role: string } | null {
-  const cookie = request.cookies.get(COOKIE_NAME)?.value
-  if (!cookie) return null
-  const decoded = decodeSession(cookie)
-  if (!decoded) return null
-  return { id: decoded.userId, role: decoded.role }
+  return getSessionUserFromCookieValue(request.cookies.get(COOKIE_NAME)?.value)
 }
 
 function normalizeRole(role: string): AuthRole | null {
@@ -133,4 +100,5 @@ export async function requireRole(request: NextRequest, role: AuthRole): Promise
   return user
 }
 
-export { COOKIE_NAME }
+export { COOKIE_NAME, getSessionUserFromCookieHeader, getSessionUserFromCookieValue }
+export type { AuthRole }

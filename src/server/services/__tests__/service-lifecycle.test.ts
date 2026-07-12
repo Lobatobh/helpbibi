@@ -51,12 +51,27 @@ function createFakeDb() {
         }
         return service
       },
+      findFirst: async ({ where }: any) => services.find((service) => {
+        if (where.clientId && service.clientId !== where.clientId) return false
+        if (where.status?.in && !where.status.in.includes(service.status)) return false
+        return true
+      }) || null,
       findUnique: async ({ where }: any) => services.find((service) => service.id === where.id) || null,
       update: async ({ where, data }: any) => {
         const service = services.find((item) => item.id === where.id)
         if (!service) throw new Error('service not found')
         Object.assign(service, data)
         return service
+      },
+      updateMany: async ({ where, data }: any) => {
+        const selected = services.filter((service) => {
+          if (where.id && service.id !== where.id) return false
+          if (where.providerId !== undefined && service.providerId !== where.providerId) return false
+          if (where.status?.in && !where.status.in.includes(service.status)) return false
+          return true
+        })
+        selected.forEach((service) => Object.assign(service, data))
+        return { count: selected.length }
       },
     },
     serviceTimelineEvent: {
@@ -96,6 +111,7 @@ function createFakeDb() {
       },
       updateMany: async ({ where, data }: any) => {
         const selected = offers.filter((offer) => {
+          if (where.id && offer.id !== where.id) return false
           if (where.serviceId && offer.serviceId !== where.serviceId) return false
           if (where.status && offer.status !== where.status) return false
           if (where.providerId?.not && offer.providerId === where.providerId.not) return false
@@ -242,6 +258,41 @@ describe('service lifecycle persistence', () => {
     const repeated = await transitionServiceStatus(db as any, service.id, 'COMPLETED', { label: 'Concluiu novamente' })
     expect(repeated.changed).toBe(false)
     expect(db._state.timeline).toHaveLength(before)
+  })
+
+  test('acceptance compare-and-set returns conflict after another provider wins', async () => {
+    const db = createFakeDb()
+    db._state.providers.push({
+      id: 'provider_second',
+      userId: 'user_provider_second',
+      vehicle: 'Guincho 2',
+      plate: 'DDD4D44',
+      approvalStatus: 'APPROVED',
+      isVerified: true,
+      documentStatus: 'APPROVED',
+      vehicleStatus: 'APPROVED',
+      isDemoProvider: false,
+      user: { id: 'user_provider_second', status: 'ACTIVE' },
+    })
+    const service = await createService(db)
+    await registerServiceOffers(db as any, service.id, ['provider_approved', 'provider_second'], { label: 'Oferta enviada' })
+
+    const winner = await acceptServiceOffer(db as any, service.id, 'provider_approved', {
+      label: 'Prestador aceitou',
+      actorRole: 'PROVIDER',
+      providerProfileId: 'provider_approved',
+    })
+    const loser = await acceptServiceOffer(db as any, service.id, 'provider_second', {
+      label: 'Prestador tentou aceitar',
+      actorRole: 'PROVIDER',
+      providerProfileId: 'provider_second',
+    })
+
+    expect(winner.changed).toBe(true)
+    expect(loser.changed).toBe(false)
+    expect((loser as any).conflict).toBe(true)
+    expect(db._state.services[0].providerId).toBe('provider_approved')
+    expect(db._state.offers.filter((offer) => offer.status === 'ACCEPTED')).toHaveLength(1)
   })
 
   test('decline and cancel keep operational reasons', async () => {
