@@ -448,3 +448,92 @@ Status operacional:
 - `.env` real deve permanecer local e fora do Git;
 - producao comercial continua nao liberada;
 - Supabase, Mercado Pago e SMTP reais continuam nao habilitados.
+
+---
+
+## F35-02 - Aplicacao controlada do schema e bootstrap do primeiro ADMIN
+
+### Status: PREPARADA, NAO EXECUTADA
+
+Esta fase prepara a alteracao do PostgreSQL e o primeiro ADMIN, mas nao acessa a VPS, nao executa `db push` em producao e nao cria usuario real. A aplicacao abaixo depende de janela aprovada, backup valido e operador autorizado.
+
+### Diff de schema desde F35-01
+
+| Alteracao | Classificacao | Dados existentes | Acao necessaria |
+|---|---|---|---|
+| `User.passwordHash String?` | Aditiva segura; nullable temporario | Usuarios existentes ficam com `NULL` e nao autenticam por senha ate definicao controlada | Nenhum backfill global; definir hash apenas no cadastro, recuperacao futura ou bootstrap autorizado |
+| `UserStatus` com `ACTIVE` e `SUSPENDED` | Aditiva segura no PostgreSQL | Cria um novo tipo enum, sem converter coluna anterior | Revisar o SQL gerado antes da aplicacao |
+| `User.status UserStatus @default(ACTIVE)` | Aditiva com default; requer backfill tecnico | Linhas existentes recebem `ACTIVE` pelo default durante a adicao da coluna | Conferir contagem e distribuicao apos aplicar; nao ha backfill manual esperado |
+| `ProviderProfile.city String?` | Aditiva segura; nullable temporario | Perfis existentes ficam com `NULL` | Preencher apenas durante onboarding/edicao futura |
+| `ProviderProfile.isDemoProvider Boolean @default(false)` | Aditiva com default; requer backfill tecnico | Perfis existentes recebem `false`, escolha conservadora para nao liberar bypass de verificacao | Revisar perfis demo persistidos; marcar `true` somente por procedimento explicito se realmente forem contas demo |
+
+Nao existem remocoes, renomes, mudancas de tipo ou alteracoes de chave/relacao neste diff. Nenhuma mudanca foi classificada como destrutiva. O risco operacional restante e lock durante `ALTER TABLE`, espaco/tempo de backfill dos defaults e classificacao semantica dos prestadores demo existentes.
+
+### Compatibilidade esperada
+
+- SQLite e PostgreSQL mantem os mesmos campos e defaults desta fase.
+- Usuarios existentes sem `passwordHash` permanecem validos para os dados historicos, mas o login por senha deve falhar de forma segura.
+- Todos os usuarios existentes passam a `ACTIVE`; antes da janela, confirmar se existe algum usuario que deveria iniciar suspenso.
+- Prestadores existentes passam a `isDemoProvider=false`. Isso preserva a seguranca do matching; contas demo persistidas devem ser identificadas e tratadas explicitamente, nunca por backfill amplo.
+- O fluxo publico da demo usa registro demo proprio no rescue-service e nao depende de transformar todos os perfis persistidos em demo.
+
+### Plano de aplicacao controlada futura
+
+1. Confirmar commit aprovado, responsavel, janela e criterio de abortar.
+2. Colocar o fluxo de escrita em manutencao controlada e registrar contagens de `User`, roles, status de prestadores e ADMINs existentes.
+3. Gerar e validar backup PostgreSQL restauravel antes de qualquer DDL.
+4. Validar e gerar o Prisma Client PostgreSQL com `prisma/schema.postgres.prisma`.
+5. Gerar o SQL de diff contra o banco alvo e revisar se contem apenas criacao do enum e adicao das quatro colunas esperadas.
+6. Abortar se o Prisma indicar perda de dados, remocao, rename inesperado ou se ja existir ADMIN nao reconhecido.
+7. Aplicar `prisma db push --schema=prisma/schema.postgres.prisma` sem `--accept-data-loss`.
+8. Verificar schema, defaults, valores nulos esperados, contagens e `/api/health/db` antes do bootstrap.
+9. Executar `scripts/bootstrap-admin.ts` uma unica vez com variaveis injetadas no processo.
+10. Validar login em `/admin/login`, sessao, `/api/auth/me`, acesso ADMIN e bloqueio para CLIENT/PROVIDER.
+11. Remover as variaveis temporarias do processo e registrar apenas o codigo seguro retornado pelo script.
+
+Comandos de diagnostico e preparacao para a janela futura:
+
+```bash
+bunx prisma validate --schema=prisma/schema.postgres.prisma
+bunx prisma generate --schema=prisma/schema.postgres.prisma
+bunx prisma migrate diff --from-url "$POSTGRES_DATABASE_URL" --to-schema-datamodel prisma/schema.postgres.prisma --script
+bunx prisma db push --schema=prisma/schema.postgres.prisma
+```
+
+O ultimo comando e operacional e nao foi executado nesta fase. Antes dele, salvar o SQL de diff em area restrita, revisar o plano e produzir backup com a ferramenta PostgreSQL aprovada pelo runbook de backup.
+
+### Bootstrap seguro do primeiro ADMIN
+
+O script `scripts/bootstrap-admin.ts`:
+
+- exige `POSTGRES_DATABASE_URL`, `ADMIN_BOOTSTRAP_EMAIL` e `ADMIN_BOOTSTRAP_PASSWORD` no ambiente;
+- aceita `ADMIN_BOOTSTRAP_NAME` opcional;
+- exige no minimo 16 caracteres, maiuscula, minuscula, numero e simbolo;
+- normaliza o e-mail e usa `scrypt` com salt aleatorio;
+- executa em transacao serializavel e usa advisory lock PostgreSQL;
+- retorna `ADMIN_ALREADY_BOOTSTRAPPED` sem alterar dados quando qualquer ADMIN ja existe;
+- nao atualiza senha, nome ou status de ADMIN existente;
+- exige `ADMIN_BOOTSTRAP_ALLOW_PROMOTION=true` e `ADMIN_BOOTSTRAP_CONFIRM_EMAIL` igual ao e-mail alvo para promover CLIENT/PROVIDER existente;
+- retorna somente `ok`, `code` e `changed`, sem e-mail, ID, senha ou hash.
+
+Na janela futura, carregar as variaveis por canal seguro e evitar senha literal no comando ou historico do shell:
+
+```bash
+read -r ADMIN_BOOTSTRAP_EMAIL
+read -r -s ADMIN_BOOTSTRAP_PASSWORD
+export ADMIN_BOOTSTRAP_EMAIL ADMIN_BOOTSTRAP_PASSWORD
+bun scripts/bootstrap-admin.ts
+unset ADMIN_BOOTSTRAP_EMAIL ADMIN_BOOTSTRAP_PASSWORD ADMIN_BOOTSTRAP_NAME ADMIN_BOOTSTRAP_ALLOW_PROMOTION ADMIN_BOOTSTRAP_CONFIRM_EMAIL
+```
+
+`ADMIN_BOOTSTRAP_ALLOW_PROMOTION=true` e `ADMIN_BOOTSTRAP_CONFIRM_EMAIL` devem ser definidos somente quando o diagnostico aprovar explicitamente a promocao de uma conta existente. Sem essa flag, o script aborta sem modificar CLIENT/PROVIDER mesmo que o e-mail coincida. O script nao substitui rotacao de senha e nao deve ser reutilizado para criar ADMINs adicionais.
+
+### Verificacao e rollback
+
+- Sucesso de schema: quatro colunas presentes, enum `UserStatus` presente, contagens preservadas e nenhum aviso de perda de dados.
+- Sucesso de bootstrap: exatamente um ADMIN ativo, login e RBAC validados, nenhum dado sensivel em logs.
+- Falha antes do DDL: abortar sem mudanca.
+- Falha durante/depois do DDL: interromper deploy e restaurar o backup conforme runbook; nao remover colunas manualmente sem plano revisado.
+- Falha depois do bootstrap: suspender a conta criada/promovida por procedimento administrativo e investigar; nao apagar historico relacionado nem repetir o bootstrap cegamente.
+
+Pendencias: executar o dry-run contra o PostgreSQL real, validar backup/restore, aplicar o schema e rodar o bootstrap em janela futura. Supabase, Mercado Pago real, SMTP, Docker e deploy permanecem fora desta fase.

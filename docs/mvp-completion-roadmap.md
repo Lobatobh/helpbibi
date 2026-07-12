@@ -227,7 +227,25 @@ Nota de banco:
 - os schemas Prisma versionados passam a declarar `User.passwordHash`, `User.status`, `ProviderProfile.city` e `ProviderProfile.isDemoProvider`;
 - antes de qualquer deploy desta fase, sera obrigatoria uma aplicacao controlada do schema no banco alvo, sem `db push` improvisado em producao.
 
-### F35-02 - Cadastro real e onboarding minimo
+### F35-02 - Aplicacao controlada do schema e bootstrap do primeiro ADMIN
+
+Objetivo: preparar a atualizacao aditiva do PostgreSQL e a criacao unica do primeiro ADMIN, sem executar qualquer alteracao em banco real nesta etapa.
+
+Entregas:
+- diff dos schemas F35-01 classificado por risco e compatibilidade;
+- plano controlado com backup, dry-run, janela, verificacao e rollback;
+- bootstrap idempotente em `scripts/bootstrap-admin.ts`;
+- credenciais recebidas somente por variaveis de ambiente no momento da execucao;
+- senha protegida com o mesmo `scrypt` usado pela autenticacao;
+- protecao contra segundo ADMIN e contra promocao sem `ADMIN_BOOTSTRAP_ALLOW_PROMOTION=true` e confirmacao explicita;
+- testes automatizados sem acesso ao PostgreSQL real.
+
+Gate operacional futuro:
+- nenhuma aplicacao na VPS faz parte da F35-02 de preparacao;
+- antes do proximo deploy, o plano de `docs/production-readiness.md` deve ser executado em janela aprovada;
+- o bootstrap so pode rodar depois da aplicacao e verificacao do schema PostgreSQL.
+
+### F35-03 - Cadastro real e onboarding minimo
 
 Objetivo: conectar cadastro cliente/prestador ao fluxo principal e preparar onboarding de prestadores.
 
@@ -238,7 +256,7 @@ Entregas:
 - mensagens claras para prestador pendente/rejeitado/bloqueado;
 - checklist manual de regressao da demo F32 executado apos auth.
 
-### F35-03 - Persistir ciclo de atendimento completo
+### F35-04 - Persistir ciclo de atendimento completo
 
 Objetivo: fazer request, oferta, aceite, recusa, status, cancelamento, conclusao e timeline usarem o banco como fonte canonica.
 
@@ -249,7 +267,7 @@ Entregas:
 - reentrada apos refresh/relogin;
 - idempotencia para eventos duplicados.
 
-### F35-04 - Aprovar prestadores e travar matching real
+### F35-05 - Aprovar prestadores e travar matching real
 
 Objetivo: impedir que prestador nao aprovado receba chamadas reais.
 
@@ -259,7 +277,7 @@ Entregas:
 - matching considera apenas prestador aprovado, online e livre;
 - demo publica preserva comportamento homologado.
 
-### F35-05 - Historico, perfil e avaliacoes persistidos
+### F35-06 - Historico, perfil e avaliacoes persistidos
 
 Objetivo: substituir historico local como fonte principal.
 
@@ -270,7 +288,7 @@ Entregas:
 - loyalty basico persistido;
 - perfil minimo editavel.
 
-### F35-06 - Pagamento simulado canonico
+### F35-07 - Pagamento simulado canonico
 
 Objetivo: manter pagamento simulado, mas com trilha financeira consistente.
 
@@ -281,7 +299,7 @@ Entregas:
 - cancel/refund/reconcile simulados funcionam;
 - Mercado Pago real permanece desabilitado.
 
-### F35-07 - Admin operacional minimo
+### F35-08 - Admin operacional minimo
 
 Objetivo: dar ao operador capacidade de acompanhar e destravar o piloto.
 
@@ -293,7 +311,7 @@ Entregas:
 - auditoria consultavel;
 - acoes manuais minimas com registro.
 
-### F35-08 - Notificacoes e chat MVP
+### F35-09 - Notificacoes e chat MVP
 
 Objetivo: tornar comunicacao e avisos confiaveis sem SMTP real.
 
@@ -303,7 +321,7 @@ Entregas:
 - estado de lida/nao lida se necessario;
 - reconexao socket refaz estado pelo banco.
 
-### F35-09 - Termos, consentimento e fechamento MVP
+### F35-10 - Termos, consentimento e fechamento MVP
 
 Objetivo: preparar piloto com minimo juridico e operacional.
 
@@ -358,8 +376,9 @@ Entregas:
 
 ## Proximos passos sugeridos
 
-1. Concluir F35-01 com auth/RBAC/admin shell sem quebrar a demo homologada.
-2. Em seguida, executar F35-02 para cadastro real e onboarding minimo de cliente/prestador.
-3. So depois persistir o ciclo completo de atendimento em F35-03.
-4. Manter commits pequenos por modulo.
-5. Rodar checklist manual da demo a cada mudanca de fluxo socket ou painel.
+1. Manter F35-01 como baseline de auth/RBAC/admin shell sem quebrar a demo homologada.
+2. Concluir a preparacao F35-02 e executar a aplicacao controlada somente em janela aprovada.
+3. Em seguida, executar F35-03 para cadastro real e onboarding minimo de cliente/prestador.
+4. So depois persistir o ciclo completo de atendimento em F35-04.
+5. Manter commits pequenos por modulo.
+6. Rodar checklist manual da demo a cada mudanca de fluxo socket ou painel.

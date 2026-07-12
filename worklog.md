@@ -2178,3 +2178,30 @@ Stage Summary:
 - Banco/volumes reais nao foram alterados.
 - Como houve alteracao de schema Prisma versionado, existe uma etapa futura obrigatoria: aplicar o schema de forma controlada no banco alvo antes de deploy desta fase.
 - Fluxo completo de aprovacao de prestadores, upload de documentos, gestao operacional completa, Supabase real, Mercado Pago real e SMTP real continuam fora do escopo desta etapa.
+
+---
+
+Task ID: 35.2
+Agent: main
+Task: Preparacao controlada do schema PostgreSQL e bootstrap seguro do primeiro ADMIN.
+
+Work Log:
+- Data do registro: 2026-07-12.
+- Revisado o diff de schema introduzido na F35-01 contra o commit anterior.
+- Alteracoes classificadas como aditivas: `User.passwordHash` nullable, enum `UserStatus`, `User.status` com default `ACTIVE`, `ProviderProfile.city` nullable e `ProviderProfile.isDemoProvider` com default `false`.
+- Nenhuma remocao, rename, conversao de tipo ou mudanca de relacao foi encontrada.
+- `User.status` e `ProviderProfile.isDemoProvider` exigem backfill tecnico por default durante a adicao; perfis demo persistidos exigem revisao semantica explicita antes da janela.
+- Nao foi necessario alterar novamente os schemas Prisma.
+- Criado `scripts/bootstrap-admin.ts`, que recebe credenciais apenas por ambiente, exige senha forte, usa o `scrypt` da autenticacao, executa em transacao serializavel com advisory lock e nao retorna dados sensiveis.
+- O bootstrap e de primeira execucao: se qualquer ADMIN existir, retorna estado idempotente sem sobrescrever senha, nome ou status.
+- A promocao de CLIENT/PROVIDER existente requer `ADMIN_BOOTSTRAP_ALLOW_PROMOTION=true` e `ADMIN_BOOTSTRAP_CONFIRM_EMAIL` exatamente igual ao e-mail normalizado; sem a flag, aborta sem escrita.
+- Adicionados testes para validacao de entrada, hashing, criacao, idempotencia, protecao contra sobrescrita, promocao confirmada, retorno seguro e lock transacional.
+- `docs/production-readiness.md` recebeu plano futuro de backup, dry-run, aplicacao, verificacao, bootstrap e rollback.
+- `docs/mvp-completion-roadmap.md` passou a registrar esta preparacao como F35-02 e deslocou o onboarding real para F35-03.
+
+Stage Summary:
+- Nenhuma VPS foi acessada.
+- Nenhum `db push`, bootstrap real, deploy ou alteracao de banco/volume foi executado.
+- `.env`, Docker, Supabase, Mercado Pago real e SMTP nao foram alterados.
+- Nenhuma senha real foi criada ou versionada.
+- Aplicacao do schema e bootstrap permanecem pendentes para janela controlada futura.
