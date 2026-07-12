@@ -2230,3 +2230,32 @@ Stage Summary:
 - `.env`, Docker, Supabase, Mercado Pago real, SMTP e deploy nao foram alterados.
 - Banco/volumes reais nao foram acessados.
 - Antes de qualquer deploy desta fase, a alteracao aditiva do schema deve ser aplicada em janela controlada e validada contra dados existentes.
+
+---
+
+Task ID: 35.4
+Agent: main
+Task: Persistencia e gestao operacional dos servicos pelo ADMIN.
+
+Work Log:
+- Data do registro: 2026-07-12.
+- F35-04 implementada localmente, sem acessar VPS, sem deploy e sem aplicar schema em PostgreSQL real.
+- Schemas Prisma versionados receberam mudancas aditivas para operacao de servicos:
+  - datas operacionais em `ServiceRequest`;
+  - cancelamento com ator, motivo e data;
+  - metadados de evento/ator em `ServiceTimelineEvent`;
+  - novo modelo `ServiceOffer` para registrar oferta, aceite, recusa e expiracao por prestador.
+- Criada camada `src/server/services/service-lifecycle.ts` para centralizar transicoes de status, bloquear transicoes invalidas, registrar timeline e manter idempotencia de eventos terminais.
+- `rescue-service` passou a usar a camada operacional para criar solicitacoes, registrar ofertas, aceitar, recusar, expirar ofertas, atualizar status e persistir posicao do prestador.
+- Matching continua bloqueando prestadores pendentes, rejeitados ou suspensos; apenas prestadores aprovados/verificados podem receber e aceitar chamadas reais.
+- Painel ADMIN recebeu lista e detalhe de servicos em `/admin/services` e `/admin/services/[id]`, com filtro, busca, timeline, ofertas, cancelamento, cliente, prestador e dados de pagamento simulado.
+- API `/api/admin/services` passou a retornar dados sanitizados por repositório, e `/api/admin/services/[id]` foi criada para detalhe.
+- Resumo administrativo corrigido para somar `platformFee` e `providerPayout` a partir de `PaymentRecord`, nao de `ServiceRequest`.
+- Testes unitarios adicionados para criacao persistida, oferta somente a prestador aprovado, aceite, transicoes validas, transicoes invalidas, idempotencia de conclusao, recusa e cancelamento com motivo.
+
+Stage Summary:
+- Nenhuma regra de negocio de pagamento real foi alterada.
+- Mercado Pago real, Supabase e SMTP continuam desabilitados/fora do escopo.
+- `.env`, Docker, VPS, deploy e banco real nao foram alterados.
+- A mudanca de schema e aditiva, mas exige aplicacao controlada antes de qualquer deploy desta fase.
+- SQLite local descartavel so deve ser usado para validacao quando necessario, e nenhum arquivo de banco deve entrar no Git.

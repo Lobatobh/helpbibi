@@ -22,6 +22,7 @@ import {
   Wallet,
   Users,
   LayoutDashboard,
+  ClipboardList,
   Activity,
   AlertTriangle,
   CheckCircle2,
@@ -478,13 +479,20 @@ export default function AdminPage() {
             </div>
 
             {/* Quick links */}
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
               <QuickLinkCard
                 icon={<Wallet className="size-5" />}
                 title="Financeiro"
                 description="Resumo de pagamentos e taxas"
                 href="/api/admin/payments"
                 accent="emerald"
+              />
+              <QuickLinkCard
+                icon={<ClipboardList className="size-5" />}
+                title="Servicos"
+                description="Tracking operacional"
+                href="/admin/services"
+                accent="slate"
               />
               <QuickLinkCard
                 icon={<Users className="size-5" />}

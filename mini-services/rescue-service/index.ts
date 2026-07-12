@@ -8,6 +8,17 @@ import {
 } from './matching'
 import { calculatePrice } from '../../src/server/pricing/pricing-engine'
 import { validateEnv } from '../../src/server/env'
+import { audit } from '../../src/server/audit'
+import {
+  acceptServiceOffer,
+  createOperationalService,
+  declineServiceOffer,
+  expirePendingServiceOffers,
+  operationalEventForStatus,
+  registerServiceOffers,
+  transitionServiceStatus,
+  updateServiceProviderPosition,
+} from '../../src/server/services/service-lifecycle'
 // FASE 26 — Socket.IO hardening helpers (per-socket rate limit + payload validation)
 import {
   socketRateBuckets, socketRateLimit,
@@ -195,28 +206,33 @@ const calcEta = (distanceKm: number) => Math.max(3, Math.round(distanceKm / 0.5)
 const pushTimeline = (svc: ServiceRequest, status: ServiceStatus, label: string) => {
   svc.status = status
   svc.timeline.push({ status, label, at: Date.now() })
-  // Persist timeline event to DB (fire-and-forget)
-  if (svc.dbServiceId) {
-    db.serviceTimelineEvent.create({
-      data: {
-        serviceId: svc.dbServiceId,
-        status: STATUS_MAP[status] as any,
-        label,
-      }
-    }).catch(() => {})
-  }
 }
 
 // Persist service status update to DB (fire-and-forget, non-blocking)
-const persistServiceStatus = (svc: ServiceRequest) => {
+const persistServiceStatus = (svc: ServiceRequest, options: {
+  eventType?: any
+  actorRole?: string
+  actorUserId?: string | null
+  providerProfileId?: string | null
+  providerId?: string | null
+  canceledByRole?: string
+  canceledByUserId?: string | null
+  cancellationReason?: string | null
+} = {}) => {
   if (!svc.dbServiceId) return
-  db.serviceRequest.update({
-    where: { id: svc.dbServiceId },
-    data: {
-      status: STATUS_MAP[svc.status] as any,
-      ...(svc.acceptedAt && { acceptedAt: new Date(svc.acceptedAt) }),
-      ...(svc.completedAt && { completedAt: new Date(svc.completedAt) }),
-    },
+  const status = STATUS_MAP[svc.status] as any
+  const latest = svc.timeline[svc.timeline.length - 1]
+  transitionServiceStatus(db as any, svc.dbServiceId, status, {
+    label: latest?.label || `Status atualizado para ${status}`,
+    eventType: options.eventType || operationalEventForStatus(status),
+    actorRole: options.actorRole,
+    actorUserId: options.actorUserId,
+    providerProfileId: options.providerProfileId,
+    providerId: options.providerId,
+    canceledByRole: options.canceledByRole,
+    canceledByUserId: options.canceledByUserId,
+    cancellationReason: options.cancellationReason,
+    audit: audit as any,
   }).catch(() => {})
 }
 
@@ -227,10 +243,7 @@ const persistProviderPosition = (svc: ServiceRequest, p: Provider) => {
   const now = Date.now()
   if (now - lastPositionSave < 3000) return // throttle: max once per 3s
   lastPositionSave = now
-  db.serviceRequest.update({
-    where: { id: svc.dbServiceId },
-    data: { providerLat: p.position.lat, providerLng: p.position.lng },
-  }).catch(() => {})
+  updateServiceProviderPosition(db as any, svc.dbServiceId, p.position).catch(() => {})
 }
 
 const stepToward = (from: LatLng, to: LatLng, stepKm: number): { pos: LatLng; arrived: boolean } => {
@@ -403,7 +416,17 @@ function offerServiceToProviders(svc: ServiceRequest, toNotify: Provider[], labe
   svc.providerId = primary.id
   primary.currentServiceId = svc.id
   pushTimeline(svc, 'offered', label)
-  persistServiceStatus(svc)
+  if (svc.dbServiceId) {
+    const dbProviderIds = toNotify
+      .map((p) => p.dbProviderProfileId)
+      .filter((id): id is string => !!id)
+    registerServiceOffers(db as any, svc.dbServiceId, dbProviderIds, {
+      label,
+      actorRole: 'SYSTEM',
+      metadata: { socketProviderIds: toNotify.map((p) => p.id) },
+      audit: audit as any,
+    }).catch(() => {})
+  }
   emitService(svc)
   emitProvider(primary)
   toNotify.forEach((p) => io.to(p.socketId).emit('service:offer', sanitizeService(svc)))
@@ -417,8 +440,17 @@ function scheduleOfferExpiry(svc: ServiceRequest) {
     const s = services.get(svc.id)
     if (!s || s.status !== 'offered') return
 
-    pushTimeline(s, 'expired', `Prestador(es) não respondeu(ram) a tempo — reofertando...`)
-    persistServiceStatus(s)
+    const expiryLabel = `Prestador(es) não respondeu(ram) a tempo — reofertando...`
+    pushTimeline(s, 'expired', expiryLabel)
+    if (s.dbServiceId) {
+      const dbProviderIds = s.notifiedProviderIds
+        .map((pid) => providers.get(pid)?.dbProviderProfileId)
+        .filter((id): id is string => !!id)
+      expirePendingServiceOffers(db as any, s.dbServiceId, dbProviderIds, {
+        label: expiryLabel,
+        actorRole: 'SYSTEM',
+      }).catch(() => {})
+    }
     s.notifiedProviderIds.forEach((pid) => {
       const provider = providers.get(pid)
       if (!provider) return
@@ -680,29 +712,36 @@ io.on('connection', (socket) => {
     // Persist ServiceRequest to DB
     try {
       if (client.dbUserId) {
-        const dbSvc = await db.serviceRequest.create({
-          data: {
+        const dbSvc = await createOperationalService(db as any, {
             clientId: client.dbUserId,
             type: TYPE_MAP[data.type] as any,
             description: data.description,
-            status: 'REQUESTED',
-            pickup: JSON.stringify(data.pickup),
+            pickup: data.pickup,
             pickupLabel: data.pickupLabel,
-            destination: JSON.stringify(data.destination),
+            destination: data.destination,
             destinationLabel: data.destinationLabel,
             distanceKm: svc.distanceKm,
             etaMin,
-            price, originalPrice, discount,
+            price,
+            originalPrice,
+            discount,
             promoCode: svc.promoCode,
             paymentMethod: PAYMENT_MAP[data.paymentMethod || 'pix'] as any,
             loyaltyPoints: 0,
-            timeline: { create: { status: 'REQUESTED', label: 'Solicitação enviada — procurando prestador próximo' } },
-          },
-        })
+            label: 'Solicitação enviada — procurando prestador próximo',
+        }, { audit: audit as any })
         svc.dbServiceId = dbSvc.id
         if (promoValid) {
           await db.serviceTimelineEvent.create({
-            data: { serviceId: dbSvc.id, status: 'REQUESTED', label: `Cupom ${svc.promoCode} aplicado: -R$ ${discount}` }
+            data: {
+              serviceId: dbSvc.id,
+              status: 'REQUESTED',
+              label: `Cupom ${svc.promoCode} aplicado: -R$ ${discount}`,
+              eventType: 'request_created',
+              actorRole: 'CLIENT',
+              actorUserId: client.dbUserId,
+              metadata: JSON.stringify({ promoCode: svc.promoCode, discount }),
+            }
           })
         }
         // Create tracking share
@@ -766,10 +805,16 @@ io.on('connection', (socket) => {
     svc.providerId = winner.id; winner.currentServiceId = svc.id; winner.online = true
     svc.acceptedAt = Date.now()
     pushTimeline(svc, 'accepted', `${winner.name} aceitou a chamada e está a caminho`)
-    persistServiceStatus(svc)
-    // Link provider to service in DB
     if (svc.dbServiceId && winner.dbProviderProfileId) {
-      db.serviceRequest.update({ where: { id: svc.dbServiceId }, data: { providerId: winner.dbProviderProfileId, status: 'ACCEPTED', acceptedAt: new Date() } }).catch(() => {})
+      acceptServiceOffer(db as any, svc.dbServiceId, winner.dbProviderProfileId, {
+        label: `${winner.name} aceitou a chamada e está a caminho`,
+        actorRole: 'PROVIDER',
+        actorUserId: winner.dbUserId || null,
+        providerProfileId: winner.dbProviderProfileId,
+        audit: audit as any,
+      }).catch(() => {})
+    } else {
+      persistServiceStatus(svc)
     }
     winner.tripStartPos = { ...winner.position }; winner.tripTarget = svc.pickup; winner.tripStartedAt = Date.now(); winner.tripTotalKm = haversineKm(winner.position, svc.pickup); winner.destination = svc.pickup
     emitProvider(winner); emitService(svc); emitChatToService(svc.id)
@@ -800,6 +845,16 @@ io.on('connection', (socket) => {
     emitProvider(p)
     console.log(`[service] offer rejected service=${svc.id} provider=${role.id}`)
     console.log(`[provider] released after rejection id=${p.id} online=${p.online}`)
+    if (svc.dbServiceId && p.dbProviderProfileId) {
+      declineServiceOffer(db as any, svc.dbServiceId, p.dbProviderProfileId, {
+        label: `${p.name} recusou a chamada`,
+        actorRole: 'PROVIDER',
+        actorUserId: p.dbUserId || null,
+        providerProfileId: p.dbProviderProfileId,
+        reason: 'provider_declined',
+        audit: audit as any,
+      }).catch(() => {})
+    }
 
     if (svc.notifiedProviderIds.length > 0) {
       const nextPrimary = svc.providerId ? providers.get(svc.providerId) : null
@@ -808,7 +863,6 @@ io.on('connection', (socket) => {
         emitProvider(nextPrimary)
       }
       pushTimeline(svc, 'offered', `${p.name} recusou — aguardando ${svc.notifiedProviderIds.length} prestador(es) ainda notificado(s)`)
-      persistServiceStatus(svc)
       emitService(svc)
       scheduleOfferExpiry(svc)
       return
@@ -837,10 +891,15 @@ io.on('connection', (socket) => {
     if (!role || role.role !== 'provider') return
     const svc = services.get(data.serviceId)
     if (!svc || svc.providerId !== role.id) return
+    if (svc.status === 'completed' || svc.status === 'cancelled') return
     const p = providers.get(role.id)!
     p.position = { ...svc.pickup }
     pushTimeline(svc, 'arrived', `${p.name} chegou ao local do atendimento`)
-    persistServiceStatus(svc)
+    persistServiceStatus(svc, {
+      actorRole: 'PROVIDER',
+      actorUserId: p.dbUserId || null,
+      providerProfileId: p.dbProviderProfileId || null,
+    })
     p.destination = svc.destination; p.tripStartPos = { ...svc.pickup }; p.tripTarget = svc.destination; p.tripStartedAt = Date.now(); p.tripTotalKm = haversineKm(svc.pickup, svc.destination)
     emitProvider(p); emitService(svc)
     console.log(`[tracking] arrival marked service=${svc.id} provider=${p.id}`)
@@ -854,7 +913,11 @@ io.on('connection', (socket) => {
     const p = providers.get(role.id)!
     p.destination = svc.destination; p.tripStartPos = { ...p.position }; p.tripTarget = svc.destination; p.tripStartedAt = Date.now(); p.tripTotalKm = haversineKm(p.position, svc.destination)
     pushTimeline(svc, 'in_progress', 'Serviço em andamento — rumo ao destino final')
-    persistServiceStatus(svc)
+    persistServiceStatus(svc, {
+      actorRole: 'PROVIDER',
+      actorUserId: p.dbUserId || null,
+      providerProfileId: p.dbProviderProfileId || null,
+    })
     emitProvider(p); emitService(svc)
     console.log(`[tracking] route updated service=${svc.id} provider=${p.id} status=in_progress`)
   })
@@ -878,7 +941,11 @@ io.on('connection', (socket) => {
     pushTimeline(svc, 'completed', 'Serviço concluído com sucesso. Avalie o atendimento!')
     if (earned > 0) svc.timeline.push({ status: 'completed', label: `+${earned} pontos de fidelidade (${newTier.name})`, at: Date.now() })
     if (newTier.name !== prevTier.name) svc.timeline.push({ status: 'completed', label: `🎉 Subiu para o tier ${newTier.name}! ${newTier.perk}`, at: Date.now() })
-    persistServiceStatus(svc)
+    persistServiceStatus(svc, {
+      actorRole: 'PROVIDER',
+      actorUserId: p.dbUserId || null,
+      providerProfileId: p.dbProviderProfileId || null,
+    })
     // Persist loyalty + provider stats to DB
     const client = clients.get(svc.clientId)
     if (client?.dbUserId) {
@@ -971,7 +1038,7 @@ io.on('connection', (socket) => {
     console.log(`[rating] service ${svc.id} client rated ${stars}★ by ${p.name}`)
   })
 
-  socket.on('service:cancel', (data: { serviceId: string }) => {
+  socket.on('service:cancel', (data: { serviceId: string; reason?: string }) => {
     const role = socketToRole.get(socket.id)
     if (!role || role.role !== 'client') return
     const svc = services.get(data.serviceId)
@@ -981,9 +1048,16 @@ io.on('connection', (socket) => {
       const np = providers.get(pid)
       if (np) { if (np.currentServiceId === svc.id) np.currentServiceId = null; np.destination = null; np.tripStartPos = null; np.tripTarget = null; np.tripStartedAt = null; np.tripTotalKm = 0; np.online = true; emitProvider(np); io.to(np.socketId).emit('service:offer-taken', { serviceId: svc.id, acceptedBy: null, cancelled: true }) }
     })
-    pushTimeline(svc, 'cancelled', 'Solicitação cancelada pelo cliente')
-    persistServiceStatus(svc)
     svc.completedAt = Date.now()
+    pushTimeline(svc, 'cancelled', 'Solicitação cancelada pelo cliente')
+    const client = clients.get(svc.clientId)
+    persistServiceStatus(svc, {
+      actorRole: 'CLIENT',
+      actorUserId: client?.dbUserId || null,
+      canceledByRole: 'CLIENT',
+      canceledByUserId: client?.dbUserId || null,
+      cancellationReason: (data.reason || 'client_cancelled').slice(0, 500),
+    })
     emitService(svc)
   })
 
@@ -1093,7 +1167,14 @@ setInterval(() => {
         // Persist provider position (throttled)
         persistProviderPosition(svc, p)
         if (arrived) {
-          if (svc.status === 'accepted') { pushTimeline(svc, 'arriving', `${p.name} está próximo do local`); persistServiceStatus(svc) }
+          if (svc.status === 'accepted') {
+            pushTimeline(svc, 'arriving', `${p.name} está próximo do local`)
+            persistServiceStatus(svc, {
+              actorRole: 'PROVIDER',
+              actorUserId: p.dbUserId || null,
+              providerProfileId: p.dbProviderProfileId || null,
+            })
+          }
         } else if (svc.status === 'accepted') {
           pushTimeline(svc, 'arriving', `${p.name} está a caminho do local`)
         }

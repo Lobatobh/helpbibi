@@ -271,11 +271,27 @@ Nota de banco:
 Objetivo: fazer request, oferta, aceite, recusa, status, cancelamento, conclusao e timeline usarem o banco como fonte canonica.
 
 Entregas:
-- request persistida no inicio;
-- timeline persistida em cada transicao;
-- provider atual/ocupado persistido ou reconstruivel;
-- reentrada apos refresh/relogin;
-- idempotencia para eventos duplicados.
+- request persistida no inicio com evento `request_created`;
+- ofertas persistidas por prestador em `ServiceOffer`;
+- aceite, recusa e expiracao de oferta registrados;
+- status operacional centralizado por helper de ciclo de vida;
+- cancelamento com ator, motivo e data;
+- timeline persistida com `eventType`, ator e referencia ao prestador quando aplicavel;
+- painel ADMIN com lista, filtro, busca e detalhe de servicos;
+- detalhe ADMIN com timeline, ofertas, cancelamento, cliente, prestador, datas e pagamento simulado;
+- resumo administrativo corrigido para somar taxas em `PaymentRecord`.
+
+Status local F35-04:
+- implementacao local preparada;
+- schemas Prisma versionados receberam campos aditivos em `ServiceRequest`, metadados em `ServiceTimelineEvent` e o novo modelo `ServiceOffer`;
+- nenhum `db push` em PostgreSQL real foi executado;
+- antes de qualquer deploy, aplicar schema de forma controlada e validar compatibilidade com dados existentes.
+
+Pendencias que ficam para fases seguintes:
+- reentrada completa apos refresh/relogin usando estado ativo reconstruido do banco;
+- lock transacional mais forte para aceite concorrente em alta carga;
+- reconciliacao online/ocupado como fonte canonica em banco;
+- acoes manuais futuras do ADMIN para suporte operacional.
 
 ### F35-05 - Consolidar matching real persistido
 
@@ -390,6 +406,7 @@ Entregas:
 1. Manter F35-01 como baseline de auth/RBAC/admin shell sem quebrar a demo homologada.
 2. Concluir a preparacao F35-02 e executar a aplicacao controlada somente em janela aprovada.
 3. Em seguida, aplicar o schema da F35-03 em ambiente controlado antes de qualquer deploy com dados reais.
-4. So depois persistir o ciclo completo de atendimento em F35-04.
-5. Manter commits pequenos por modulo.
-6. Rodar checklist manual da demo a cada mudanca de fluxo socket ou painel.
+4. Aplicar schema F35-04 em ambiente controlado antes de qualquer deploy com esta fase.
+5. Consolidar matching real persistido em F35-05.
+6. Manter commits pequenos por modulo.
+7. Rodar checklist manual da demo a cada mudanca de fluxo socket ou painel.

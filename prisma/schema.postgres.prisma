@@ -76,6 +76,7 @@ model ProviderProfile {
   updatedAt       DateTime            @updatedAt
 
   services ServiceRequest[] @relation("ProviderServices")
+  offers   ServiceOffer[]   @relation("ProviderOffers")
 }
 
 enum VerificationStatus {
@@ -145,11 +146,20 @@ model ServiceRequest {
 
   // Timestamps
   createdAt       DateTime         @default(now())
+  offeredAt       DateTime?
   acceptedAt      DateTime?
+  enRouteAt       DateTime?
+  arrivedAt       DateTime?
+  startedAt       DateTime?
   completedAt     DateTime?
+  canceledAt      DateTime?
+  canceledByRole  String?
+  canceledByUserId String?
+  cancellationReason String?
 
   // Relations
   timeline        ServiceTimelineEvent[]
+  offers          ServiceOffer[]
   chatMessages    ServiceChatMessage[]
   ratings         ServiceRating[]
   trackingShares  TrackingShare[]
@@ -198,6 +208,37 @@ enum PaymentStatus {
 }
 
 // ============================================================
+// SERVICE OFFERS
+// ============================================================
+
+model ServiceOffer {
+  id          String             @id @default(cuid())
+  serviceId   String
+  service     ServiceRequest     @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  providerId  String
+  provider    ProviderProfile    @relation("ProviderOffers", fields: [providerId], references: [id], onDelete: Cascade)
+  status      ServiceOfferStatus @default(PENDING)
+  reason      String?
+  offeredAt   DateTime           @default(now())
+  respondedAt DateTime?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  @@unique([serviceId, providerId])
+  @@index([serviceId])
+  @@index([providerId])
+  @@index([status])
+}
+
+enum ServiceOfferStatus {
+  PENDING
+  ACCEPTED
+  DECLINED
+  EXPIRED
+  CANCELED
+}
+
+// ============================================================
 // SERVICE TIMELINE
 // ============================================================
 
@@ -207,9 +248,16 @@ model ServiceTimelineEvent {
   service     ServiceRequest @relation(fields: [serviceId], references: [id], onDelete: Cascade)
   status      ServiceStatus
   label       String
+  eventType   String?
+  actorRole   String?
+  actorUserId String?
+  providerProfileId String?
+  metadata    String?
   createdAt   DateTime @default(now())
 
   @@index([serviceId])
+  @@index([eventType])
+  @@index([providerProfileId])
 }
 
 // ============================================================

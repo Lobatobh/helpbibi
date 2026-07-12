@@ -17,11 +17,16 @@ export async function GET() {
   ])
 
   const avgRating = providers.length > 0 ? providers.reduce((s, p) => s + p.rating, 0) / providers.length : 0
-  // Platform revenue = sum of platformFee (20% of each completed service's total)
-  const revenueAgg = await db.serviceRequest.aggregate({
-    where: { status: 'COMPLETED' },
-    _sum: { platformFee: true, providerPayout: true, price: true },
-  })
+  const [serviceRevenueAgg, paymentRevenueAgg] = await Promise.all([
+    db.serviceRequest.aggregate({
+      where: { status: 'COMPLETED' },
+      _sum: { price: true },
+    }),
+    db.paymentRecord.aggregate({
+      where: { serviceRequest: { status: 'COMPLETED' } },
+      _sum: { platformFee: true, providerPayout: true, amount: true },
+    }),
+  ])
 
   // Payment status counts (FASE 17)
   const [pendingPayments, paidPayments, failedPayments, authorizedPayments] = await Promise.all([
@@ -35,9 +40,9 @@ export async function GET() {
     totalProviders, pendingProviders, approvedProviders, rejectedProviders,
     activeServices, completedServices,
     avgRating: Number(avgRating.toFixed(2)),
-    totalRevenue: revenueAgg._sum.platformFee || 0,        // platform fee revenue
-    totalPayout: revenueAgg._sum.providerPayout || 0,      // provider payouts
-    totalGross: revenueAgg._sum.price || 0,                // gross total
+    totalRevenue: paymentRevenueAgg._sum.platformFee || 0,
+    totalPayout: paymentRevenueAgg._sum.providerPayout || 0,
+    totalGross: paymentRevenueAgg._sum.amount || serviceRevenueAgg._sum.price || 0,
     pendingPayments, paidPayments, failedPayments, authorizedPayments,
   })
 }
