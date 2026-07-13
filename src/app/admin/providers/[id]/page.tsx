@@ -3,8 +3,8 @@
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
-import { ArrowLeft, BadgeCheck, Ban, Loader2, ShieldAlert } from 'lucide-react'
-import type { ProviderApprovalStatus } from '@/server/providers/provider-approval'
+import { ArrowLeft, BadgeCheck, Ban, Loader2, ShieldAlert, WifiOff } from 'lucide-react'
+import type { ProviderApprovalStatus, ProviderAdminOperationalState } from '@/server/providers/provider-approval'
 
 type ProviderDetail = {
   id: string
@@ -24,6 +24,14 @@ type ProviderDetail = {
   isAvailable: boolean
   isVerified: boolean
   canOperate: boolean
+  operationalState?: ProviderAdminOperationalState
+  activeService?: {
+    id: string
+    status: string
+    type: string
+    clientName: string | null
+    clientEmail: string | null
+  } | null
 }
 
 const statusLabel: Record<ProviderApprovalStatus, string> = {
@@ -48,6 +56,7 @@ export default function AdminProviderDetailPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<string | null>(null)
   const [error, setError] = useState('')
+  const [warnings, setWarnings] = useState<string[]>([])
 
   useEffect(() => {
     let cancelled = false
@@ -73,6 +82,7 @@ export default function AdminProviderDetailPage() {
   async function update(action: 'approve' | 'reject' | 'suspend') {
     setSaving(action)
     setError('')
+    setWarnings([])
     try {
       const res = await fetch(`/api/admin/providers/${params.id}`, {
         method: 'PATCH',
@@ -83,7 +93,31 @@ export default function AdminProviderDetailPage() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data?.message || 'Falha ao atualizar prestador')
       setProvider(data.provider)
+      setWarnings((data.warnings || []).map((warning: { message?: string }) => warning.message || 'Aviso operacional'))
       setReason('')
+      router.refresh()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro desconhecido')
+    } finally {
+      setSaving(null)
+    }
+  }
+
+  async function forceOffline() {
+    setSaving('force_offline')
+    setError('')
+    setWarnings([])
+    try {
+      const res = await fetch(`/api/admin/providers/${params.id}/actions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ action: 'force_offline', isAvailable: true }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.message || 'Falha ao forcar indisponibilidade')
+      setProvider((current) => current ? { ...current, ...data.provider } : data.provider)
+      setWarnings((data.warnings || []).map((warning: { message?: string }) => warning.message || 'Aviso operacional'))
       router.refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro desconhecido')
@@ -138,8 +172,17 @@ export default function AdminProviderDetailPage() {
                 <Info label="Documentos" value={provider.documentStatus || 'PENDING'} />
                 <Info label="Veiculo aprovado" value={provider.vehicleStatus || 'PENDING'} />
                 <Info label="Operacao" value={provider.canOperate ? 'Liberada' : 'Bloqueada'} />
-                <Info label="Disponibilidade" value={provider.isAvailable ? 'Online no banco' : 'Offline/bloqueada'} />
+                <Info label="Estado operacional" value={provider.operationalState?.label || (provider.isAvailable ? 'DISPONIVEL POR INTENCAO' : 'INDISPONIVEL')} />
               </dl>
+
+              {provider.activeService ? (
+                <div className="mt-6 rounded-md border border-amber-800 bg-amber-950/20 p-4 text-sm text-amber-100">
+                  <p className="font-medium">Atendimento ativo vinculado</p>
+                  <p className="mt-1 font-mono text-xs">{provider.activeService.id}</p>
+                  <p className="mt-1">Status: {provider.activeService.status}</p>
+                  <p>Cliente: {provider.activeService.clientName || provider.activeService.clientEmail || 'Nao informado'}</p>
+                </div>
+              ) : null}
 
               {provider.approvalReason || provider.approvalReviewedAt ? (
                 <div className="mt-6 rounded-md border border-slate-800 bg-slate-950 p-4 text-sm text-slate-300">
@@ -165,6 +208,15 @@ export default function AdminProviderDetailPage() {
               {error ? (
                 <div className="mt-3 rounded-md border border-red-800 bg-red-950/30 px-3 py-2 text-sm text-red-200">
                   {error}
+                </div>
+              ) : null}
+              {warnings.length ? (
+                <div className="mt-3 space-y-2">
+                  {warnings.map((warning) => (
+                    <div key={warning} className="rounded-md border border-amber-800 bg-amber-950/30 px-3 py-2 text-sm text-amber-100">
+                      {warning}
+                    </div>
+                  ))}
                 </div>
               ) : null}
 
@@ -195,6 +247,15 @@ export default function AdminProviderDetailPage() {
                 >
                   {saving === 'suspend' ? <Loader2 className="size-4 animate-spin" /> : <Ban className="size-4" />}
                   Suspender
+                </button>
+                <button
+                  type="button"
+                  onClick={forceOffline}
+                  disabled={!!saving}
+                  className="inline-flex items-center justify-center gap-2 rounded-md border border-sky-800 px-4 py-2 text-sm font-semibold text-sky-200 hover:bg-sky-950/40 disabled:opacity-60"
+                >
+                  {saving === 'force_offline' ? <Loader2 className="size-4 animate-spin" /> : <WifiOff className="size-4" />}
+                  Forcar indisponivel
                 </button>
               </div>
             </section>

@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { Activity, ArrowLeft, Clock3, CreditCard, MapPin, User, UserCheck } from 'lucide-react'
 import { findServiceForAdmin } from '@/server/repositories/service-requests.repository'
+import { AdminServiceActionsPanel } from './admin-service-actions-panel'
 
 const statusLabel: Record<string, string> = {
   REQUESTED: 'Solicitado',
@@ -114,6 +115,15 @@ export default async function AdminServiceDetailPage({
           </section>
 
           <aside className="flex flex-col gap-4">
+            <AdminServiceActionsPanel
+              serviceId={service.id}
+              clientId={service.client?.id || null}
+              clientName={service.clientName}
+              status={service.status}
+              paymentStatus={service.paymentStatus}
+              latestPaymentStatus={service.latestPayment?.status || null}
+            />
+
             <section className="rounded-lg border border-slate-800 bg-slate-900 p-5">
               <h2 className="text-lg font-semibold">Localizacao</h2>
               <dl className="mt-4 space-y-3 text-sm">

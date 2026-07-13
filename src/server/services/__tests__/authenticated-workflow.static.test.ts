@@ -38,8 +38,10 @@ describe('F35-05 authenticated operational workflow wiring', () => {
 
     expect(service).toContain('getSessionUserFromCookieHeader(cookieHeader)')
     expect(service).toContain('authenticatedSockets')
+    expect(service).toContain('const currentActiveAuth = async ()')
+    expect(service).toContain("user.status !== 'ACTIVE'")
     expect(service).toContain("socket.on('auth:client:request'")
-    expect(service).toContain('const auth = currentAuth()')
+    expect(service).toContain('const auth = await currentActiveAuth()')
     expect(service).toContain('clientId: auth.userId')
     expect(service).toContain("socket.on('client:register'")
     expect(service).toContain("socket.on('provider:register'")

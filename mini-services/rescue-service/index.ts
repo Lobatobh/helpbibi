@@ -812,8 +812,59 @@ io.on('connection', async (socket) => {
 
   const currentAuth = () => authenticatedSockets.get(socket.id)
 
-  socket.on('auth:snapshot', async () => {
+  const clearAuthenticatedPresence = (auth: AuthenticatedSocket) => {
+    authenticatedSockets.delete(socket.id)
+    const role = socketToRole.get(socket.id)
+    if (role?.role === 'client') {
+      clients.delete(role.id)
+    } else if (role?.role === 'provider') {
+      const provider = providers.get(role.id)
+      if (provider) {
+        provider.online = false
+        provider.currentServiceId = null
+        emitAuthenticatedProviderState(provider)
+        providers.delete(role.id)
+        io.emit('providers:nearby', availableProviderPublic())
+      }
+    } else if (auth.providerProfileId) {
+      providers.delete(auth.providerProfileId)
+    }
+    socketToRole.delete(socket.id)
+  }
+
+  const currentActiveAuth = async () => {
     const auth = currentAuth()
+    if (!auth) return null
+    const user = await db.user.findUnique({
+      where: { id: auth.userId },
+      select: {
+        id: true,
+        role: true,
+        name: true,
+        email: true,
+        status: true,
+        providerProfile: { select: { id: true } },
+      },
+    }).catch(() => null)
+    if (!user || user.role !== auth.role || user.status !== 'ACTIVE') {
+      clearAuthenticatedPresence(auth)
+      socket.emit('auth:error', { message: 'Sessao invalida.' })
+      socket.emit('auth:operation-error', { message: 'Sessao invalida ou usuario suspenso.' })
+      return null
+    }
+    const fresh: AuthenticatedSocket = {
+      userId: user.id,
+      role: user.role as 'CLIENT' | 'PROVIDER',
+      name: user.name,
+      email: user.email,
+      providerProfileId: user.providerProfile?.id,
+    }
+    authenticatedSockets.set(socket.id, fresh)
+    return fresh
+  }
+
+  socket.on('auth:snapshot', async () => {
+    const auth = await currentActiveAuth()
     if (!auth) {
       socket.emit('auth:error', { message: 'Sessao invalida.' })
       return
@@ -826,7 +877,7 @@ io.on('connection', async (socket) => {
   })
 
   socket.on('auth:provider:toggle-online', async (data: { online: boolean }) => {
-    const auth = currentAuth()
+    const auth = await currentActiveAuth()
     if (!auth || auth.role !== 'PROVIDER' || !auth.providerProfileId) return
     const p = providers.get(auth.providerProfileId)
     const profile = await db.providerProfile.findUnique({
@@ -873,7 +924,7 @@ io.on('connection', async (socket) => {
     pickup: LatLng; pickupLabel: string; destination: LatLng; destinationLabel: string;
     paymentMethod: PaymentMethod
   }) => {
-    const auth = currentAuth()
+    const auth = await currentActiveAuth()
     if (!auth || auth.role !== 'CLIENT') return
     if (!socketRateLimit(socket.id, 'auth:client:request', 5, 60000)) {
       socket.emit('auth:operation-error', { message: 'Muitas solicitacoes. Aguarde alguns segundos.' })
@@ -942,7 +993,7 @@ io.on('connection', async (socket) => {
   })
 
   socket.on('auth:service:accept', async (data: { serviceId: string }) => {
-    const auth = currentAuth()
+    const auth = await currentActiveAuth()
     if (!auth || auth.role !== 'PROVIDER' || !auth.providerProfileId) return
     const p = providers.get(auth.providerProfileId)
     if (!p) return
@@ -983,7 +1034,7 @@ io.on('connection', async (socket) => {
   })
 
   socket.on('auth:service:reject', async (data: { serviceId: string; reason?: string }) => {
-    const auth = currentAuth()
+    const auth = await currentActiveAuth()
     if (!auth || auth.role !== 'PROVIDER' || !auth.providerProfileId) return
     const p = providers.get(auth.providerProfileId)
     if (!p) return
@@ -1005,7 +1056,7 @@ io.on('connection', async (socket) => {
     status: 'ARRIVED' | 'IN_PROGRESS' | 'COMPLETED',
     label: string,
   ) => {
-    const auth = currentAuth()
+    const auth = await currentActiveAuth()
     if (!auth || auth.role !== 'PROVIDER' || !auth.providerProfileId) return
     const p = providers.get(auth.providerProfileId)
     if (!p) return
@@ -1047,7 +1098,7 @@ io.on('connection', async (socket) => {
   })
 
   socket.on('auth:service:cancel', async (data: { serviceId: string; reason?: string }) => {
-    const auth = currentAuth()
+    const auth = await currentActiveAuth()
     if (!auth || auth.role !== 'CLIENT') return
     const dbSvc = await loadDbService(data.serviceId)
     if (!dbSvc || dbSvc.clientId !== auth.userId) return
@@ -1071,7 +1122,7 @@ io.on('connection', async (socket) => {
   })
 
   socket.on('auth:chat:history', async (data: { serviceId: string }) => {
-    const auth = currentAuth()
+    const auth = await currentActiveAuth()
     if (!auth) return
     try {
       const messages = await listServiceChatMessages(data.serviceId, currentUserFromAuth(auth))
@@ -1082,7 +1133,7 @@ io.on('connection', async (socket) => {
   })
 
   socket.on('auth:chat:send', async (data: { serviceId: string; text: string }) => {
-    const auth = currentAuth()
+    const auth = await currentActiveAuth()
     if (!auth) return
     if (!socketRateLimit(socket.id, 'auth:chat:send', 10, 10000)) return
     try {

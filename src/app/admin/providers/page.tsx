@@ -84,7 +84,8 @@ export default async function AdminProvidersPage() {
                       {provider.documentStatus} / {provider.vehicleStatus}
                     </td>
                     <td className="px-4 py-3 text-slate-300">
-                      {provider.canOperate ? 'Liberada' : 'Bloqueada'}
+                      <p>{provider.canOperate ? 'Liberada' : 'Bloqueada'}</p>
+                      <p className="text-xs text-slate-500">{provider.operationalState?.label || 'INDISPONIVEL'}</p>
                     </td>
                     <td className="px-4 py-3 text-right">
                       <Link

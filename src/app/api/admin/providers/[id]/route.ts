@@ -55,6 +55,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   try {
     const provider = await changeProviderApprovalStatus(id, action, admin.id, body?.reason)
+    const warnings = action === 'suspend' && (provider as any).activeService
+      ? [{
+          code: 'active_service_not_cancelled',
+          message: 'Prestador possui servico ativo. Nenhum atendimento foi cancelado automaticamente.',
+          serviceId: (provider as any).activeService.id,
+        }]
+      : []
     audit(auditEventForProviderApproval(action), {
       actor: admin.id,
       actorRole: admin.role,
@@ -66,9 +73,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         previousStatus: before.approvalStatus,
         nextStatus: provider.approvalStatus,
         reason: provider.approvalReason,
+        activeServiceId: (provider as any).activeService?.id || null,
       },
     })
-    return NextResponse.json({ ok: true, provider })
+    return NextResponse.json({ ok: true, provider, warnings })
   } catch (error) {
     return NextResponse.json(
       { message: error instanceof Error ? error.message : 'Provider update failed' },

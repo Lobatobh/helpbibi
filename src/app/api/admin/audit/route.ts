@@ -2,8 +2,7 @@
 // GET /api/admin/audit
 // Returns the most recent audit events (default 50).
 //
-// In production, requires an ADMIN session. In dev, open (matches the existing
-// admin route guard pattern in /api/admin/payments and /api/admin/providers/[id]/approve).
+// Requires an ADMIN session in every NODE_ENV. NODE_ENV is never an auth bypass.
 // Rate limited with RATE_LIMITS.admin (60/min per IP).
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -19,18 +18,16 @@ export async function GET(req: NextRequest) {
     return rateLimited
   }
 
-  // Production: require ADMIN session.
-  if (process.env.NODE_ENV === 'production') {
-    try {
-      await requireRole(req, 'ADMIN')
-    } catch (e: any) {
-      audit('unauthorized_access', {
-        route: 'admin/audit',
-        ip: getClientIp(req),
-        actorRole: 'unknown',
-      })
-      return NextResponse.json({ message: e?.message || 'Unauthorized' }, { status: 401 })
-    }
+  try {
+    await requireRole(req, 'ADMIN')
+  } catch (e: any) {
+    audit('unauthorized_access', {
+      route: 'admin/audit',
+      ip: getClientIp(req),
+      actorRole: 'unknown',
+    })
+    const message = e?.message || 'Unauthorized'
+    return NextResponse.json({ message }, { status: message.startsWith('Forbidden') ? 403 : 401 })
   }
 
   const events = await getRecentAuditEvents(50)

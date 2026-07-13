@@ -21,6 +21,9 @@ export type OperationalAuditEvent =
   | 'service_started'
   | 'service_completed'
   | 'service_cancelled'
+  | 'admin_service_cancelled'
+  | 'admin_service_failed'
+  | 'admin_service_completed'
 
 export type LifecycleAudit = (
   event: OperationalAuditEvent,
@@ -83,6 +86,9 @@ const OPERATIONAL_AUDIT_EVENTS = new Set<string>([
   'service_started',
   'service_completed',
   'service_cancelled',
+  'admin_service_cancelled',
+  'admin_service_failed',
+  'admin_service_completed',
 ])
 
 const ALLOWED_TRANSITIONS: Record<ServiceStatus, ServiceStatus[]> = {

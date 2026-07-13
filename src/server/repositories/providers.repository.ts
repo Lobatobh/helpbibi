@@ -2,9 +2,11 @@ import { db } from '@/server/db/prisma'
 import type { ProviderProfile } from '@prisma/client'
 import {
   buildProviderApprovalUpdate,
+  deriveProviderAdminOperationalState,
   serializeProviderForAdmin,
   type ProviderApprovalAction,
 } from '@/server/providers/provider-approval'
+import { ACTIVE_SERVICE_STATUSES } from '@/server/services/service-status'
 
 export async function createProviderProfile(
   userId: string,
@@ -79,14 +81,48 @@ const providerAdminInclude = {
       createdAt: true,
     },
   },
+  services: {
+    where: { status: { in: ACTIVE_SERVICE_STATUSES } },
+    select: {
+      id: true,
+      status: true,
+      type: true,
+      client: { select: { id: true, name: true, email: true } },
+      createdAt: true,
+    },
+    orderBy: { createdAt: 'desc' as const },
+    take: 1,
+  },
 } as const
+
+function serializeProviderWithOperationalState(provider: any) {
+  const base = serializeProviderForAdmin(provider)
+  const service = provider.services?.[0] || null
+  const activeService = service
+    ? {
+        id: service.id,
+        status: service.status,
+        type: service.type,
+        clientId: service.client?.id || null,
+        clientName: service.client?.name || null,
+        clientEmail: service.client?.email || null,
+        createdAt: service.createdAt,
+      }
+    : null
+
+  return {
+    ...base,
+    activeService,
+    operationalState: deriveProviderAdminOperationalState(base, activeService),
+  }
+}
 
 export async function listProvidersForAdmin() {
   const providers = await db.providerProfile.findMany({
     include: providerAdminInclude,
     orderBy: { createdAt: 'desc' },
   })
-  return providers.map(serializeProviderForAdmin)
+  return providers.map(serializeProviderWithOperationalState)
 }
 
 export async function findProviderForAdmin(id: string) {
@@ -94,7 +130,7 @@ export async function findProviderForAdmin(id: string) {
     where: { id },
     include: providerAdminInclude,
   })
-  return provider ? serializeProviderForAdmin(provider) : null
+  return provider ? serializeProviderWithOperationalState(provider) : null
 }
 
 export async function changeProviderApprovalStatus(
@@ -109,5 +145,5 @@ export async function changeProviderApprovalStatus(
     data,
     include: providerAdminInclude,
   })
-  return serializeProviderForAdmin(provider)
+  return serializeProviderWithOperationalState(provider)
 }

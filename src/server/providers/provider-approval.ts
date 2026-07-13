@@ -34,6 +34,18 @@ export type ProviderOperationalSnapshot = {
   updatedAt?: Date | string
 }
 
+export type ProviderAdminOperationalStateCode =
+  | 'BLOCKED'
+  | 'BUSY'
+  | 'AVAILABLE_INTENT'
+  | 'UNAVAILABLE'
+
+export type ProviderAdminOperationalState = {
+  code: ProviderAdminOperationalStateCode
+  label: string
+  reason: string | null
+}
+
 export function isProviderApprovalStatus(value: string | null | undefined): value is ProviderApprovalStatus {
   return PROVIDER_APPROVAL_STATUSES.includes(value as ProviderApprovalStatus)
 }
@@ -71,6 +83,32 @@ export function canProviderOperate(
   options: { allowDemo?: boolean } = {},
 ): boolean {
   return getProviderOperationBlockReason(provider, options) === null
+}
+
+export function deriveProviderAdminOperationalState(
+  provider: ProviderOperationalSnapshot & { userStatus?: string | null },
+  activeService?: { id?: string | null } | null,
+): ProviderAdminOperationalState {
+  const approvalStatus = normalizeProviderApprovalStatus(provider)
+  const userStatus = provider.userStatus ?? provider.user?.status ?? 'ACTIVE'
+
+  if (userStatus !== 'ACTIVE' || approvalStatus === 'REJECTED' || approvalStatus === 'SUSPENDED') {
+    return {
+      code: 'BLOCKED',
+      label: 'BLOQUEADO',
+      reason: userStatus !== 'ACTIVE' ? 'user_not_active' : `provider_${approvalStatus.toLowerCase()}`,
+    }
+  }
+
+  if (activeService?.id) {
+    return { code: 'BUSY', label: 'OCUPADO', reason: 'active_service' }
+  }
+
+  if (provider.isAvailable === true) {
+    return { code: 'AVAILABLE_INTENT', label: 'DISPONIVEL POR INTENCAO', reason: null }
+  }
+
+  return { code: 'UNAVAILABLE', label: 'INDISPONIVEL', reason: 'availability_intent_false' }
 }
 
 export function requiresProviderApprovalReason(action: ProviderApprovalAction): boolean {
