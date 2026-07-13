@@ -559,3 +559,27 @@ Pendencias antes de implantacao futura:
 - aplicar de forma controlada os schemas pendentes das fases anteriores antes de qualquer deploy que dependa deles;
 - validar o fluxo autenticado completo no navegador apos deploy controlado;
 - manter Mercado Pago real, Supabase real e SMTP real desabilitados ate fases proprias.
+
+---
+
+## F35-09A - Termos, privacidade e consentimentos versionados
+
+### Status: IMPLEMENTADA LOCALMENTE, MVP PERMANECE NO-GO
+
+- `ConsentType` e `ConsentRecord` foram adicionados de forma aditiva aos schemas SQLite e PostgreSQL.
+- Nao existe backfill automatico: usuarios existentes precisam aceitar as versoes atuais antes de operar.
+- Versoes canonicas ficam exclusivamente no servidor; frontend envia apenas flags/tipos permitidos.
+- Cadastro de cliente persiste `TERMS` e `PRIVACY_NOTICE` na mesma transacao do usuario/perfil.
+- Cadastro de prestador persiste tambem `PROVIDER_OPERATIONAL` e continua criando perfil `PENDING`.
+- `LOCATION` nao e aceito no cadastro e fica reservado para F35-09B.
+- Criacao de servico, disponibilidade, aceite/status, chat, avaliacao e pagamento exigem consentimentos atuais; login, perfil, historico, documentos e logout permanecem acessiveis.
+- Cadastros usam e-mail normalizado e o backend de rate limit existente.
+- `/termos` e `/privacidade` registram explicitamente que razao social, CNPJ, endereco, controlador, encarregado e canal institucional ainda dependem de validacao.
+
+Riscos e pre-deploy:
+
+1. Consultar duplicidades case-insensitive de e-mail antes de aplicar o schema real.
+2. Revisar o SQL aditivo e realizar backup restauravel antes do DDL.
+3. Aplicar `ConsentRecord` em janela controlada, sem fabricar aceites para contas existentes.
+4. Comunicar e testar o reconsentimento de CLIENT e PROVIDER existentes.
+5. Manter status NO-GO ate F35-09B corrigir localizacao/tracking/demo e Produto/Legal aprovar dados institucionais e textos.

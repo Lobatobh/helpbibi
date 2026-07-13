@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireCurrentUser } from '@/server/auth/session'
 import { applyRateLimit, RATE_LIMITS, getClientIp } from '@/server/rate-limit'
 import { audit } from '@/server/audit'
 import { logger } from '@/server/logger'
@@ -8,6 +7,7 @@ import {
   simulateClientServicePayment,
   type SimulatedPaymentOutcome,
 } from '@/server/payments/simulated-payment-workflow'
+import { ConsentRequiredError, requireCurrentConsents } from '@/server/consents/consent-service'
 
 const FORBIDDEN_PAYLOAD_FIELDS = [
   'amount',
@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const user = await requireCurrentUser(req)
+    const user = await requireCurrentConsents(req, 'CLIENT')
     const body = await req.json().catch(() => ({}))
     const forbidden = FORBIDDEN_PAYLOAD_FIELDS.filter((field) => Object.prototype.hasOwnProperty.call(body, field))
     if (forbidden.length > 0) {
@@ -61,6 +61,14 @@ export async function POST(req: NextRequest) {
     logger.info('payment', 'simulate', { serviceRequestId, outcome, ip: getClientIp(req) })
     return NextResponse.json({ ok: true, payment })
   } catch (error) {
+    if (error instanceof ConsentRequiredError) {
+      return NextResponse.json({
+        ok: false,
+        code: 'consent_required',
+        message: 'Aceite os documentos vigentes antes de iniciar o pagamento.',
+        pending: error.pending,
+      }, { status: 428 })
+    }
     const mapped = handleSimulatedPaymentError(error)
     return NextResponse.json(mapped.body, { status: mapped.status })
   }

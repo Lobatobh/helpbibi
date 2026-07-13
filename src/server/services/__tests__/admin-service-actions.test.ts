@@ -535,8 +535,11 @@ describe('F35-08 audit and socket hardening', () => {
     )
 
     expect(service).toContain('const currentActiveAuth = async ()')
+    expect(service).toContain('const currentOperationalAuth = async ()')
     expect(service).toContain("user.status !== 'ACTIVE'")
-    expect(requestBlock).toContain('await currentActiveAuth()')
+    expect(service).toContain('await currentActiveAuth()')
+    expect(service).toContain('await hasCurrentConsents(auth.userId, auth.role, db as any)')
+    expect(requestBlock).toContain('await currentOperationalAuth()')
     expect(home).toContain('ClientPanel')
     expect(home).toContain('ProviderPanel')
   })

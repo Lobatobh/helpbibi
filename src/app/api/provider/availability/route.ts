@@ -3,10 +3,11 @@ import { requireRole } from '@/server/auth/session'
 import { db } from '@/server/db/prisma'
 import { canProviderOperate, getProviderOperationBlockReason } from '@/server/providers/provider-approval'
 import { findActiveServiceForProvider } from '@/server/repositories/service-requests.repository'
+import { ConsentRequiredError, requireCurrentConsents } from '@/server/consents/consent-service'
 
 export async function PATCH(req: NextRequest) {
   try {
-    const user = await requireRole(req, 'PROVIDER')
+    const user = await requireCurrentConsents(req, 'PROVIDER')
     const body = await req.json().catch(() => ({}))
     const online = body?.online === true
 
@@ -37,7 +38,14 @@ export async function PATCH(req: NextRequest) {
       isAvailable: updated.isAvailable,
       canOperate: canProviderOperate({ ...updated, user: provider.user }),
     })
-  } catch {
+  } catch (error) {
+    if (error instanceof ConsentRequiredError) {
+      return NextResponse.json({
+        code: 'consent_required',
+        message: 'Aceite os documentos vigentes antes de alterar sua disponibilidade.',
+        pending: error.pending,
+      }, { status: 428 })
+    }
     return NextResponse.json({ message: 'Authentication required' }, { status: 401 })
   }
 }

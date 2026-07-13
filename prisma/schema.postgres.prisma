@@ -30,6 +30,7 @@ model User {
   servicesRequested ServiceRequest[] @relation("ClientServices")
   ratingsGiven     ServiceRating[]   @relation("RatingAuthor")
   loyaltyAccount   LoyaltyAccount?
+  consentRecords   ConsentRecord[]
 }
 
 enum UserRole {
@@ -41,6 +42,27 @@ enum UserRole {
 enum UserStatus {
   ACTIVE
   SUSPENDED
+}
+
+enum ConsentType {
+  TERMS
+  PRIVACY_NOTICE
+  LOCATION
+  PROVIDER_OPERATIONAL
+}
+
+model ConsentRecord {
+  id         String      @id @default(cuid())
+  userId     String
+  type       ConsentType
+  version    String
+  acceptedAt DateTime    @default(now())
+  revokedAt  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type, version])
+  @@index([userId, type, revokedAt])
 }
 
 model ClientProfile {

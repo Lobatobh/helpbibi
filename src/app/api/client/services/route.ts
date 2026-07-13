@@ -7,6 +7,7 @@ import { createOperationalService } from '@/server/services/service-lifecycle'
 import { findRealtimeServiceById } from '@/server/repositories/service-requests.repository'
 import { calculatePrice } from '@/server/pricing/pricing-engine'
 import { db } from '@/server/db/prisma'
+import { ConsentRequiredError, requireCurrentConsents } from '@/server/consents/consent-service'
 
 type LatLng = { lat: number; lng: number }
 
@@ -69,7 +70,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const user = await requireRole(req, 'CLIENT')
+    const user = await requireCurrentConsents(req, 'CLIENT')
     const body = await req.json().catch(() => ({}))
     const type = TYPE_MAP[String(body?.type || '').toLowerCase()]
     const paymentMethod = PAYMENT_MAP[String(body?.paymentMethod || 'pix').toLowerCase()] || 'PIX'
@@ -110,7 +111,14 @@ export async function POST(req: NextRequest) {
 
     const snapshot = await findRealtimeServiceById(service.id)
     return NextResponse.json({ service: snapshot, created: !(service as any).deduped })
-  } catch {
+  } catch (error) {
+    if (error instanceof ConsentRequiredError) {
+      return NextResponse.json({
+        code: 'consent_required',
+        message: 'Aceite os documentos vigentes antes de criar uma solicitação.',
+        pending: error.pending,
+      }, { status: 428 })
+    }
     return NextResponse.json({ message: 'Authentication required' }, { status: 401 })
   }
 }

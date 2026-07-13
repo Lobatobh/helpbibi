@@ -556,12 +556,19 @@ function FooterCol({ title, links }: { title: string; links: string[] }) {
       <ul className="space-y-2">
         {links.map((l) => (
           <li key={l}>
-            <a href="#" className="text-xs text-slate-400 hover:text-white">{l}</a>
+            <a href={footerHref(l)} className="text-xs text-slate-400 hover:text-white">{l}</a>
           </li>
         ))}
       </ul>
     </div>
   )
+}
+
+function footerHref(label: string) {
+  if (label === 'Termos') return '/termos'
+  if (label === 'Privacidade') return '/privacidade'
+  if (label === 'Para clientes' || label === 'Para prestadores') return '/login'
+  return '/'
 }
 
 function HeroPhoneMock() {

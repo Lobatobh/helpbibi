@@ -349,25 +349,31 @@ Entregas:
 - auditoria consultavel;
 - acoes manuais minimas com registro.
 
-### F35-09 - Notificacoes MVP
+### F35-09A - Termos e consentimentos versionados
 
-Objetivo: tornar avisos operacionais confiaveis sem SMTP real.
+Objetivo: publicar o minimo legal do piloto, registrar aceites canonicos e bloquear operacoes reais sem as versoes vigentes.
 
 Entregas:
+- termos e privacidade como paginas publicas versionadas;
+- aceite obrigatorio no cadastro de cliente e prestador;
+- termo operacional especifico para prestador;
+- `ConsentRecord` aditivo, sem backfill artificial;
+- reconsentimento para usuarios existentes;
+- normalizacao de e-mail e rate limit nos cadastros;
+- status permanece NO-GO ate F35-09B e validacao institucional/juridica.
+
+### F35-09B - Geolocalizacao, tracking e isolamento da demo
+
+Objetivo: remover coordenadas/movimento simulados do fluxo autenticado, exigir consentimento LOCATION no momento correto, proteger tracking por token e impedir mistura entre demo e operacao real.
+
+### F35-10 - Notificacoes posteriores ao fechamento tecnico
+
+Objetivo: tornar avisos operacionais confiaveis sem SMTP real, depois que os bloqueadores de consentimento, localizacao e isolamento forem resolvidos.
+
+Entregas futuras:
 - notificacoes in-app por eventos principais;
 - estado de lida/nao lida se necessario;
 - reconexao socket refaz estado pelo banco.
-
-### F35-10 - Termos, consentimento e fechamento MVP
-
-Objetivo: preparar piloto com minimo juridico e operacional.
-
-Entregas:
-- termos e privacidade publicados como paginas simples;
-- aceite de termos no cadastro;
-- consentimento de localizacao;
-- checklist manual completo;
-- registro de go/no-go do MVP.
 
 ## Itens que devem continuar simulados por enquanto
 

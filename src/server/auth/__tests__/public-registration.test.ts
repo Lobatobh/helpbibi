@@ -5,6 +5,7 @@ import { POST as registerProvider } from '@/app/api/auth/register-provider/route
 import { PATCH as updateAvailability } from '@/app/api/provider/availability/route'
 import { setSessionCookie } from '@/server/auth/session'
 import { db } from '@/server/db/prisma'
+import { CURRENT_CONSENT_VERSIONS } from '@/server/consents/consent-versions'
 
 const TEST_MARKER = 'f35-05-public-auth'
 
@@ -49,6 +50,12 @@ async function createProvider(approvalStatus: 'PENDING' | 'REJECTED' | 'SUSPENDE
       name: `F35 Provider ${approvalStatus}`,
       role: 'PROVIDER',
       status: 'ACTIVE',
+      consentRecords: {
+        create: ['TERMS', 'PRIVACY_NOTICE', 'PROVIDER_OPERATIONAL'].map((type) => ({
+          type: type as any,
+          version: CURRENT_CONSENT_VERSIONS[type as keyof typeof CURRENT_CONSENT_VERSIONS],
+        })),
+      },
       providerProfile: {
         create: {
           vehicle: 'Guincho Plataforma',
@@ -77,6 +84,8 @@ describe('F35-05 public registration and provider availability APIs', () => {
       email,
       phone: '11999990000',
       password: 'Senha123!',
+      acceptTerms: true,
+      acceptPrivacy: true,
       role: 'ADMIN',
       status: 'SUSPENDED',
       isDemoProvider: true,
@@ -109,6 +118,9 @@ describe('F35-05 public registration and provider availability APIs', () => {
       vehicle: 'Guincho Plataforma',
       plate: 'F3505',
       city: 'Sao Paulo',
+      acceptTerms: true,
+      acceptPrivacy: true,
+      acceptProviderOperational: true,
       role: 'ADMIN',
       status: 'ACTIVE',
       isAvailable: true,

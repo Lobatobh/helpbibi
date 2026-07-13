@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireCurrentUser } from '@/server/auth/session'
+import { ConsentRequiredError, requireCurrentConsents } from '@/server/consents/consent-service'
 import {
   createServiceRating,
   serviceRatingErrorResponse,
@@ -7,7 +7,7 @@ import {
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-    const user = await requireCurrentUser(req)
+    const user = await requireCurrentConsents(req)
     const { id } = await params
     const body = await req.json().catch(() => ({}))
     const result = await createServiceRating(id, user, {
@@ -16,6 +16,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     })
     return NextResponse.json(result, { status: result.created ? 201 : 200 })
   } catch (error) {
+    if (error instanceof ConsentRequiredError) {
+      return NextResponse.json({ message: 'Aceite os documentos vigentes antes de avaliar.', pending: error.pending }, { status: 428 })
+    }
     const response = serviceRatingErrorResponse(error)
     return NextResponse.json({ message: response.message }, { status: response.status })
   }

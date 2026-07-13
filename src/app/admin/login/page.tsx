@@ -106,6 +106,10 @@ export default function AdminLoginPage() {
             Demo publica
           </Link>
         </div>
+        <div className="mt-4 flex justify-center gap-4 text-xs text-slate-500">
+          <Link href="/termos" className="hover:text-white">Termos</Link>
+          <Link href="/privacidade" className="hover:text-white">Privacidade</Link>
+        </div>
       </section>
     </main>
   )

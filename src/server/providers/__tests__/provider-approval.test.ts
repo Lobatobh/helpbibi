@@ -89,6 +89,9 @@ async function createProviderViaApi() {
     vehicle: 'Guincho Plataforma',
     plate: 'F3503',
     city: 'Sao Paulo',
+    acceptTerms: true,
+    acceptPrivacy: true,
+    acceptProviderOperational: true,
   }))
   const payload = await response.json()
   return { response, payload, email }

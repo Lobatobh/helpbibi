@@ -22,6 +22,7 @@ import {
 import { createServiceChatMessage, listServiceChatMessages } from '../../src/server/services/service-chat'
 import { loadServiceWithParticipants } from '../../src/server/services/service-access'
 import { getSessionUserFromCookieHeader } from '../../src/server/auth/session-token'
+import { hasCurrentConsents } from '../../src/server/consents/consent-service'
 // FASE 26 — Socket.IO hardening helpers (per-socket rate limit + payload validation)
 import {
   socketRateBuckets, socketRateLimit,
@@ -697,6 +698,10 @@ async function bindAuthenticatedProvider(socket: any, auth: AuthenticatedSocket)
     return
   }
   const dbSvc = await findActiveDbServiceForProvider(profile.id)
+  const consentsCurrent = await hasCurrentConsents(auth.userId, auth.role, db as any)
+  if (!consentsCurrent && profile.isAvailable) {
+    await db.providerProfile.update({ where: { id: profile.id }, data: { isAvailable: false } }).catch(() => null)
+  }
   const provider: Provider = {
     id: profile.id,
     socketId: socket.id,
@@ -708,7 +713,7 @@ async function bindAuthenticatedProvider(socket: any, auth: AuthenticatedSocket)
     ratingCount: profile.ratingCount,
     completedCount: profile.completedCount,
     earningsToday: profile.earningsToday,
-    online: profile.isAvailable && !dbSvc,
+    online: consentsCurrent && profile.isAvailable && !dbSvc,
     position: { lat: CITY.center.lat + (Math.random() - 0.5) * CITY.span, lng: CITY.center.lng + (Math.random() - 0.5) * CITY.span },
     currentServiceId: dbSvc?.id || null,
     dbUserId: auth.userId,
@@ -732,7 +737,7 @@ async function bindAuthenticatedProvider(socket: any, auth: AuthenticatedSocket)
       vehicle: provider.vehicle,
       plate: provider.plate,
       online: provider.online,
-      canOperate: getProviderOperationBlockReason(provider) === null,
+      canOperate: consentsCurrent && getProviderOperationBlockReason(provider) === null,
       currentServiceId: provider.currentServiceId || null,
       approvalStatus: provider.approvalStatus,
     },
@@ -863,6 +868,26 @@ io.on('connection', async (socket) => {
     return fresh
   }
 
+  const currentOperationalAuth = async () => {
+    const auth = await currentActiveAuth()
+    if (!auth) return null
+    const current = await hasCurrentConsents(auth.userId, auth.role, db as any).catch(() => false)
+    if (current) return auth
+
+    if (auth.providerProfileId) {
+      const provider = providers.get(auth.providerProfileId)
+      if (provider) {
+        provider.online = false
+        emitAuthenticatedProviderState(provider)
+      }
+    }
+    socket.emit('auth:operation-error', {
+      code: 'consent_required',
+      message: 'Aceite os documentos vigentes antes de continuar.',
+    })
+    return null
+  }
+
   socket.on('auth:snapshot', async () => {
     const auth = await currentActiveAuth()
     if (!auth) {
@@ -877,7 +902,7 @@ io.on('connection', async (socket) => {
   })
 
   socket.on('auth:provider:toggle-online', async (data: { online: boolean }) => {
-    const auth = await currentActiveAuth()
+    const auth = await currentOperationalAuth()
     if (!auth || auth.role !== 'PROVIDER' || !auth.providerProfileId) return
     const p = providers.get(auth.providerProfileId)
     const profile = await db.providerProfile.findUnique({
@@ -924,7 +949,7 @@ io.on('connection', async (socket) => {
     pickup: LatLng; pickupLabel: string; destination: LatLng; destinationLabel: string;
     paymentMethod: PaymentMethod
   }) => {
-    const auth = await currentActiveAuth()
+    const auth = await currentOperationalAuth()
     if (!auth || auth.role !== 'CLIENT') return
     if (!socketRateLimit(socket.id, 'auth:client:request', 5, 60000)) {
       socket.emit('auth:operation-error', { message: 'Muitas solicitacoes. Aguarde alguns segundos.' })
@@ -993,7 +1018,7 @@ io.on('connection', async (socket) => {
   })
 
   socket.on('auth:service:accept', async (data: { serviceId: string }) => {
-    const auth = await currentActiveAuth()
+    const auth = await currentOperationalAuth()
     if (!auth || auth.role !== 'PROVIDER' || !auth.providerProfileId) return
     const p = providers.get(auth.providerProfileId)
     if (!p) return
@@ -1034,7 +1059,7 @@ io.on('connection', async (socket) => {
   })
 
   socket.on('auth:service:reject', async (data: { serviceId: string; reason?: string }) => {
-    const auth = await currentActiveAuth()
+    const auth = await currentOperationalAuth()
     if (!auth || auth.role !== 'PROVIDER' || !auth.providerProfileId) return
     const p = providers.get(auth.providerProfileId)
     if (!p) return
@@ -1056,7 +1081,7 @@ io.on('connection', async (socket) => {
     status: 'ARRIVED' | 'IN_PROGRESS' | 'COMPLETED',
     label: string,
   ) => {
-    const auth = await currentActiveAuth()
+    const auth = await currentOperationalAuth()
     if (!auth || auth.role !== 'PROVIDER' || !auth.providerProfileId) return
     const p = providers.get(auth.providerProfileId)
     if (!p) return
@@ -1122,7 +1147,7 @@ io.on('connection', async (socket) => {
   })
 
   socket.on('auth:chat:history', async (data: { serviceId: string }) => {
-    const auth = await currentActiveAuth()
+    const auth = await currentOperationalAuth()
     if (!auth) return
     try {
       const messages = await listServiceChatMessages(data.serviceId, currentUserFromAuth(auth))
@@ -1133,7 +1158,7 @@ io.on('connection', async (socket) => {
   })
 
   socket.on('auth:chat:send', async (data: { serviceId: string; text: string }) => {
-    const auth = await currentActiveAuth()
+    const auth = await currentOperationalAuth()
     if (!auth) return
     if (!socketRateLimit(socket.id, 'auth:chat:send', 10, 10000)) return
     try {

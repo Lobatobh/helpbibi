@@ -9,6 +9,8 @@ import type { ServiceData } from '@/lib/rescue-types'
 import { STATUS_LABELS } from '@/lib/rescue-types'
 import { useAuthenticatedProviderSocket } from '@/hooks/use-authenticated-rescue-socket'
 import { useProviderHistory, type ServiceHistoryDetail } from '@/hooks/use-service-history'
+import { ConsentRequiredPanel } from '@/components/consents/consent-required-panel'
+import type { ConsentStatus } from '@/server/consents/consent-service'
 
 type ProviderInfo = {
   vehicle: string
@@ -30,6 +32,7 @@ type Props = {
   userName: string
   provider: ProviderInfo | null
   initialService: ServiceData | null
+  initialConsents: ConsentStatus[]
 }
 
 const approvalLabel: Record<string, string> = {
@@ -41,7 +44,7 @@ const approvalLabel: Record<string, string> = {
 
 const activePublicStatuses = ['accepted', 'arriving', 'arrived', 'in_progress']
 
-export function AuthenticatedProviderPanel({ userName, provider, initialService }: Props) {
+export function AuthenticatedProviderPanel({ userName, provider, initialService, initialConsents }: Props) {
   const socket = useAuthenticatedProviderSocket(initialService)
   const history = useProviderHistory(!!provider)
   const service = socket.service
@@ -58,9 +61,10 @@ export function AuthenticatedProviderPanel({ userName, provider, initialService 
   const [ratingComment, setRatingComment] = useState('')
   const [ratingMessage, setRatingMessage] = useState<string | null>(null)
 
-  const canChat = !!service && activePublicStatuses.includes(service.status)
+  const consentsCurrent = initialConsents.every((item) => item.accepted)
+  const canChat = consentsCurrent && !!service && activePublicStatuses.includes(service.status)
   const selectedDetail = history.detail
-  const selectedCanRate = selectedDetail?.status === 'COMPLETED' && !selectedDetail.providerRatingStars
+  const selectedCanRate = consentsCurrent && selectedDetail?.status === 'COMPLETED' && !selectedDetail.providerRatingStars
   const historySummary = useMemo(() => {
     const completed = history.history.filter((item) => item.status === 'COMPLETED').length
     const active = history.history.filter((item) => !['COMPLETED', 'CANCELED', 'EXPIRED', 'FAILED'].includes(item.status)).length
@@ -130,6 +134,7 @@ export function AuthenticatedProviderPanel({ userName, provider, initialService 
   if (!provider) {
     return (
       <Shell userName={userName} connected={socket.connected} refresh={socket.refreshSnapshot}>
+        <ConsentRequiredPanel initialConsents={initialConsents} />
         <Blocked title="Cadastro incompleto" message="Seu perfil de prestador ainda nao foi criado." />
       </Shell>
     )
@@ -138,6 +143,7 @@ export function AuthenticatedProviderPanel({ userName, provider, initialService 
   if (!provider.canOperate) {
     return (
       <Shell userName={userName} connected={socket.connected} refresh={socket.refreshSnapshot}>
+        <ConsentRequiredPanel initialConsents={initialConsents} />
         <Blocked
           title={`Operacao bloqueada - ${approvalLabel[provider.approvalStatus] || provider.approvalStatus}`}
           message={provider.approvalReason || 'Aguarde a analise do ADM antes de ficar disponivel.'}
@@ -165,6 +171,7 @@ export function AuthenticatedProviderPanel({ userName, provider, initialService 
     <Shell userName={profile?.name || userName} connected={socket.connected} refresh={() => { void socket.refreshSnapshot(); void history.fetchHistory() }}>
       {socket.connectionError ? <Alert message={socket.connectionError} /> : null}
       {socket.operationError ? <Alert message={socket.operationError} danger /> : null}
+      <ConsentRequiredPanel initialConsents={initialConsents} />
 
       <section className="grid gap-4 md:grid-cols-3">
         <StatusCard icon={<Car className="size-5" />} label="Veiculo" value={profileVehicle || provider.vehicle} />
@@ -181,7 +188,7 @@ export function AuthenticatedProviderPanel({ userName, provider, initialService 
           <Button
             className={online ? 'bg-slate-700 text-white hover:bg-slate-600' : 'bg-orange-400 text-slate-950 hover:bg-orange-300'}
             onClick={() => socket.toggleOnline(!online)}
-            disabled={!!service}
+            disabled={!consentsCurrent || !!service}
           >
             {online ? 'Ficar offline' : 'Ficar disponivel'}
           </Button>
@@ -191,11 +198,11 @@ export function AuthenticatedProviderPanel({ userName, provider, initialService 
       {offer ? (
         <ServiceCard title="Nova chamada" service={offer}>
           <div className="mt-4 flex flex-wrap gap-2">
-            <Button className="bg-emerald-400 text-slate-950 hover:bg-emerald-300" onClick={() => socket.accept(offer.id)}>
+            <Button disabled={!consentsCurrent} className="bg-emerald-400 text-slate-950 hover:bg-emerald-300" onClick={() => socket.accept(offer.id)}>
               <Check className="mr-2 size-4" />
               Aceitar
             </Button>
-            <Button variant="outline" className="border-red-900 bg-red-950/30 text-red-200 hover:bg-red-950/50" onClick={() => socket.reject(offer.id)}>
+            <Button disabled={!consentsCurrent} variant="outline" className="border-red-900 bg-red-950/30 text-red-200 hover:bg-red-950/50" onClick={() => socket.reject(offer.id)}>
               <X className="mr-2 size-4" />
               Recusar
             </Button>
@@ -207,9 +214,9 @@ export function AuthenticatedProviderPanel({ userName, provider, initialService 
         <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
           <ServiceCard title="Atendimento ativo" service={service}>
             <div className="mt-4 flex flex-wrap gap-2">
-              {service.status === 'accepted' ? <Button onClick={() => socket.updateStatus('arrived', service.id)}>Cheguei ao local</Button> : null}
-              {service.status === 'arrived' ? <Button onClick={() => socket.updateStatus('start', service.id)}>Iniciar atendimento</Button> : null}
-              {service.status === 'in_progress' ? <Button onClick={() => socket.updateStatus('complete', service.id)}>Finalizar</Button> : null}
+              {service.status === 'accepted' ? <Button disabled={!consentsCurrent} onClick={() => socket.updateStatus('arrived', service.id)}>Cheguei ao local</Button> : null}
+              {service.status === 'arrived' ? <Button disabled={!consentsCurrent} onClick={() => socket.updateStatus('start', service.id)}>Iniciar atendimento</Button> : null}
+              {service.status === 'in_progress' ? <Button disabled={!consentsCurrent} onClick={() => socket.updateStatus('complete', service.id)}>Finalizar</Button> : null}
             </div>
           </ServiceCard>
           {canChat ? (

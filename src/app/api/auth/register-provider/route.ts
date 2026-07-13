@@ -1,30 +1,53 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { setSessionCookie } from '@/server/auth/session'
 import { hashPassword } from '@/server/auth'
-import { db } from '../../../../server/db/prisma'
+import { applyRateLimit, RATE_LIMITS, getClientIp } from '@/server/rate-limit'
+import { audit } from '@/server/audit'
+import {
+  createUserWithCurrentConsents,
+  RegistrationConflictError,
+} from '@/server/consents/consent-registration'
 
 export async function POST(req: NextRequest) {
+  const rateLimited = await applyRateLimit(req, 'auth/register-provider', RATE_LIMITS.login)
+  if (rateLimited) {
+    audit('rate_limit_exceeded', { ip: getClientIp(req), route: 'auth/register-provider' })
+    return rateLimited
+  }
+
   try {
-    const body = await req.json()
-    const { name, email, phone, password, vehicle, plate, city } = body
+    const body = await req.json().catch(() => ({}))
+    const {
+      name,
+      email,
+      phone,
+      password,
+      vehicle,
+      plate,
+      city,
+      acceptTerms,
+      acceptPrivacy,
+      acceptProviderOperational,
+    } = body
     const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : ''
 
     if (!name || !normalizedEmail || !password || !vehicle || !plate) {
       return NextResponse.json({ error: 'Nome, email, senha, veículo e placa são obrigatórios' }, { status: 400 })
     }
+    if (acceptTerms !== true || acceptPrivacy !== true || acceptProviderOperational !== true) {
+      return NextResponse.json({
+        error: 'Aceite os documentos obrigatórios para criar a conta de prestador.',
+        code: 'consent_required',
+      }, { status: 422 })
+    }
     if (password.length < 6) {
       return NextResponse.json({ error: 'Senha deve ter no mínimo 6 caracteres' }, { status: 400 })
     }
 
-    const existing = await db.user.findUnique({ where: { email: normalizedEmail } })
-    if (existing) {
-      return NextResponse.json({ error: 'Email já cadastrado' }, { status: 409 })
-    }
-
     const passwordHash = await hashPassword(password)
-    const user = await db.user.create({
-      data: {
-        name,
+    const user = await createUserWithCurrentConsents(
+      {
+        name: String(name).trim(),
         email: normalizedEmail,
         phone: phone || null,
         passwordHash,
@@ -45,8 +68,8 @@ export async function POST(req: NextRequest) {
         },
         loyaltyAccount: { create: { points: 0, tier: 'Bronze' } },
       },
-      include: { providerProfile: true, loyaltyAccount: true },
-    })
+      ['TERMS', 'PRIVACY_NOTICE', 'PROVIDER_OPERATIONAL'],
+    )
 
     const headers = new Headers()
     headers.append('Set-Cookie', setSessionCookie(user.id, user.role))
@@ -71,6 +94,9 @@ export async function POST(req: NextRequest) {
       loyaltyAccount: user.loyaltyAccount,
     }, { headers })
   } catch (error) {
+    if (error instanceof RegistrationConflictError || (error as any)?.code === 'P2002') {
+      return NextResponse.json({ error: 'Não foi possível criar a conta com os dados informados.' }, { status: 409 })
+    }
     console.error('[auth/register-provider] Error:', error)
     return NextResponse.json({ error: 'Erro interno do servidor' }, { status: 500 })
   }

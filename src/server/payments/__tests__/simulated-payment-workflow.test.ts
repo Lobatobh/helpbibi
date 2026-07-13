@@ -10,6 +10,7 @@ import { POST as postSimulatedWebhook } from '@/app/api/payments/webhook/simulat
 import { setSessionCookie } from '@/server/auth/session'
 import { db } from '@/server/db/prisma'
 import { clearRateLimits } from '@/server/rate-limit'
+import { CURRENT_CONSENT_VERSIONS } from '@/server/consents/consent-versions'
 import {
   getSimulatedPaymentCanonicalIds,
   isSimulatedPaymentEnabled,
@@ -58,6 +59,16 @@ async function createUser(role: 'CLIENT' | 'PROVIDER' | 'ADMIN', kind: string) {
       passwordHash: `hash-${kind}`,
       role,
       status: 'ACTIVE',
+      ...(role !== 'ADMIN'
+        ? {
+            consentRecords: {
+              create: (role === 'CLIENT'
+                ? ['TERMS', 'PRIVACY_NOTICE'] as const
+                : ['TERMS', 'PRIVACY_NOTICE', 'PROVIDER_OPERATIONAL'] as const
+              ).map((type) => ({ type, version: CURRENT_CONSENT_VERSIONS[type] })),
+            },
+          }
+        : {}),
       ...(role === 'CLIENT' ? { clientProfile: { create: {} } } : {}),
       ...(role === 'PROVIDER'
         ? {

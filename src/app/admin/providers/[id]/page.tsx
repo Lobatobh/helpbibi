@@ -80,6 +80,8 @@ export default function AdminProviderDetailPage() {
   }, [params.id])
 
   async function update(action: 'approve' | 'reject' | 'suspend') {
+    if ((action === 'reject' || action === 'suspend') &&
+      !window.confirm(`${action === 'reject' ? 'Rejeitar' : 'Suspender'} este prestador?`)) return
     setSaving(action)
     setError('')
     setWarnings([])

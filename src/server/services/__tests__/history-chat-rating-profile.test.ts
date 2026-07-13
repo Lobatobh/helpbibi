@@ -10,6 +10,7 @@ import { GET as getClientProfile, PATCH as patchClientProfile } from '@/app/api/
 import { GET as getProviderProfile, PATCH as patchProviderProfile } from '@/app/api/provider/profile/route'
 import { setSessionCookie } from '@/server/auth/session'
 import { db } from '@/server/db/prisma'
+import { CURRENT_CONSENT_VERSIONS } from '@/server/consents/consent-versions'
 
 const TEST_MARKER = 'f35-06'
 const PICKUP = JSON.stringify({ lat: -23.5505, lng: -46.6333 })
@@ -52,6 +53,16 @@ async function createUser(role: 'CLIENT' | 'PROVIDER' | 'ADMIN', kind: string) {
       passwordHash: `hash-${kind}`,
       role,
       status: 'ACTIVE',
+      ...(role !== 'ADMIN'
+        ? {
+            consentRecords: {
+              create: (role === 'CLIENT'
+                ? ['TERMS', 'PRIVACY_NOTICE'] as const
+                : ['TERMS', 'PRIVACY_NOTICE', 'PROVIDER_OPERATIONAL'] as const
+              ).map((type) => ({ type, version: CURRENT_CONSENT_VERSIONS[type] })),
+            },
+          }
+        : {}),
       ...(role === 'CLIENT' ? { clientProfile: { create: {} } } : {}),
       ...(role === 'PROVIDER'
         ? {

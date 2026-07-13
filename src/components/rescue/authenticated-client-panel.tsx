@@ -8,10 +8,13 @@ import { ChatPanel } from '@/components/rescue/chat-panel'
 import { SERVICE_TYPES, PAYMENT_METHODS, STATUS_LABELS, type PaymentMethod, type ServiceData, type ServiceType } from '@/lib/rescue-types'
 import { useAuthenticatedClientSocket } from '@/hooks/use-authenticated-rescue-socket'
 import { useClientHistory, type ServiceHistoryDetail } from '@/hooks/use-service-history'
+import { ConsentRequiredPanel } from '@/components/consents/consent-required-panel'
+import type { ConsentStatus } from '@/server/consents/consent-service'
 
 type Props = {
   userName: string
   initialService: ServiceData | null
+  initialConsents: ConsentStatus[]
 }
 
 type ClientProfile = {
@@ -24,7 +27,7 @@ const defaultPickup = { lat: -23.5505, lng: -46.6333 }
 const defaultDestination = { lat: -23.5614, lng: -46.6559 }
 const activePublicStatuses = ['searching', 'offered', 'accepted', 'arriving', 'arrived', 'in_progress']
 
-export function AuthenticatedClientPanel({ userName, initialService }: Props) {
+export function AuthenticatedClientPanel({ userName, initialService, initialConsents }: Props) {
   const socket = useAuthenticatedClientSocket(initialService)
   const history = useClientHistory()
   const [type, setType] = useState<ServiceType>('reboque')
@@ -46,12 +49,13 @@ export function AuthenticatedClientPanel({ userName, initialService }: Props) {
   const status = service ? STATUS_LABELS[service.status] : null
   const trackingUrl = service ? `/?track=${service.id}` : null
   const canCancel = !!service && activePublicStatuses.includes(service.status)
-  const canChat = !!service?.provider && activePublicStatuses.includes(service.status)
+  const consentsCurrent = initialConsents.every((item) => item.accepted)
+  const canChat = consentsCurrent && !!service?.provider && activePublicStatuses.includes(service.status)
 
   const selectedDetail = history.detail
-  const selectedCanRate = selectedDetail?.status === 'COMPLETED' && !selectedDetail.clientRatingStars
+  const selectedCanRate = consentsCurrent && selectedDetail?.status === 'COMPLETED' && !selectedDetail.clientRatingStars
   const selectedPaymentStatus = selectedDetail?.latestPayment?.status || selectedDetail?.paymentStatus || 'PENDING'
-  const selectedCanPay = selectedDetail?.status === 'COMPLETED' && !['PAID', 'REFUNDED'].includes(selectedPaymentStatus)
+  const selectedCanPay = consentsCurrent && selectedDetail?.status === 'COMPLETED' && !['PAID', 'REFUNDED'].includes(selectedPaymentStatus)
 
   const historySummary = useMemo(() => {
     const completed = history.history.filter((item) => item.status === 'COMPLETED').length
@@ -167,6 +171,7 @@ export function AuthenticatedClientPanel({ userName, initialService }: Props) {
 
         {socket.connectionError ? <Alert tone="amber" message={socket.connectionError} /> : null}
         {socket.operationError ? <Alert tone="red" message={socket.operationError} /> : null}
+        <ConsentRequiredPanel initialConsents={initialConsents} />
 
         {service ? (
           <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
@@ -278,7 +283,7 @@ export function AuthenticatedClientPanel({ userName, initialService }: Props) {
               </label>
             </div>
 
-            <Button type="submit" disabled={!socket.connected || socket.submitting} className="mt-5 bg-sky-500 text-slate-950 hover:bg-sky-400">
+            <Button type="submit" disabled={!consentsCurrent || !socket.connected || socket.submitting} className="mt-5 bg-sky-500 text-slate-950 hover:bg-sky-400">
               <Send className="mr-2 size-4" />
               {socket.submitting ? 'Criando...' : 'Confirmar solicitacao'}
             </Button>

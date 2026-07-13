@@ -2285,3 +2285,28 @@ Stage Summary:
 - `.env`, Docker, Supabase, Mercado Pago real, SMTP, VPS, deploy e banco real nao foram alterados.
 - A demo publica permanece separada dos fluxos autenticados.
 - Nenhum arquivo de banco local deve entrar no Git.
+
+---
+
+Task ID: 35.9A
+Agent: main
+Task: Termos, privacidade, consentimentos versionados e cadastro seguro.
+
+Work Log:
+- Data do registro: 2026-07-12.
+- Adicionados `ConsentType` e `ConsentRecord` nos dois schemas, somente de forma aditiva e sem backfill artificial.
+- Definidas no servidor as versoes `2026-07-12-v1` para termos, privacidade, termo operacional do prestador e LOCATION futuro.
+- Cadastros agora normalizam e-mail, exigem flags explicitas, aplicam o rate limit existente e persistem usuario/perfil/consentimentos atomicamente.
+- Cliente recebe `TERMS` e `PRIVACY_NOTICE`; prestador recebe tambem `PROVIDER_OPERATIONAL` e permanece `PENDING`.
+- LOCATION nao e criado no cadastro e fica reservado para F35-09B.
+- Criadas APIs autenticadas de consulta e aceite idempotente, com versao/data/identidade derivadas no servidor.
+- Usuarios antigos podem entrar, consultar perfil/historico/documentos e sair, mas operacoes reais ficam bloqueadas ate o reconsentimento.
+- Criadas paginas publicas `/termos` e `/privacidade`, com pendencias institucionais e revisao de Produto/Legal explicitamente marcadas.
+- Rejeicao e suspensao de prestador no ADMIN passaram a exigir confirmacao explicita.
+- F35-09B permanece responsavel por geolocalizacao, tracking por token e isolamento completo da demo; notificacoes foram movidas para depois do fechamento tecnico.
+
+Stage Summary:
+- Status do MVP permanece NO-GO.
+- Schema PostgreSQL real nao foi aplicado e usuarios existentes nao receberam aceite artificial.
+- Nenhuma VPS, deploy, bootstrap, gateway real, `.env`, Docker, Supabase, SMTP ou Mercado Pago real foi acessado/alterado.
+- SQLite descartavel e artefatos SQL usados em teste devem ser removidos antes do relatorio pre-stage.

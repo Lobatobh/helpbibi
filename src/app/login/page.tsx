@@ -34,6 +34,9 @@ export default function LoginPage() {
   const [vehicle, setVehicle] = useState('')
   const [plate, setPlate] = useState('')
   const [city, setCity] = useState('')
+  const [acceptTerms, setAcceptTerms] = useState(false)
+  const [acceptPrivacy, setAcceptPrivacy] = useState(false)
+  const [acceptProviderOperational, setAcceptProviderOperational] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -50,8 +53,8 @@ export default function LoginPage() {
     const payload = mode === 'login'
       ? { email, password }
       : mode === 'register-client'
-        ? { name, email, phone, password }
-        : { name, email, phone, password, vehicle, plate, city }
+        ? { name, email, phone, password, acceptTerms, acceptPrivacy }
+        : { name, email, phone, password, vehicle, plate, city, acceptTerms, acceptPrivacy, acceptProviderOperational }
 
     try {
       const response = await fetch(endpoint, {
@@ -78,6 +81,8 @@ export default function LoginPage() {
     : mode === 'register-client'
       ? 'Criar conta de cliente'
       : 'Criar conta de prestador'
+  const registrationReady = mode === 'login' ||
+    (acceptTerms && acceptPrivacy && (mode !== 'register-provider' || acceptProviderOperational))
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-950 px-4 py-10 text-white">
@@ -121,6 +126,9 @@ export default function LoginPage() {
 
           {mode === 'register-provider' ? (
             <>
+              <div className="border border-amber-800 bg-amber-950/30 p-3 text-xs leading-5 text-amber-100">
+                O cadastro depende de aprovação. Disponibilidade não garante ofertas; chamados podem ser aceitos ou recusados; localização será necessária quando a operação for ativada; violações podem gerar suspensão. O piloto não realiza repasse financeiro real.
+              </div>
               <Field icon={<Car className="size-4" />} label="Veiculo">
                 <Input value={vehicle} onChange={(event) => setVehicle(event.target.value)} className="border-slate-700 bg-slate-950 pl-9 text-white" required />
               </Field>
@@ -135,13 +143,29 @@ export default function LoginPage() {
             </>
           ) : null}
 
+          {mode !== 'login' ? (
+            <div className="space-y-3 border-t border-slate-800 pt-4 text-sm text-slate-300">
+              <ConsentCheckbox checked={acceptTerms} onChange={setAcceptTerms}>
+                Li e aceito os <Link href="/termos" target="_blank" className="text-sky-300 underline">Termos de Uso</Link>.
+              </ConsentCheckbox>
+              <ConsentCheckbox checked={acceptPrivacy} onChange={setAcceptPrivacy}>
+                Li a <Link href="/privacidade" target="_blank" className="text-sky-300 underline">Política de Privacidade</Link>.
+              </ConsentCheckbox>
+              {mode === 'register-provider' ? (
+                <ConsentCheckbox checked={acceptProviderOperational} onChange={setAcceptProviderOperational}>
+                  Aceito as regras operacionais do prestador descritas nos Termos.
+                </ConsentCheckbox>
+              ) : null}
+            </div>
+          ) : null}
+
           {error ? (
             <p className="rounded-md border border-red-900 bg-red-950/40 px-3 py-2 text-sm text-red-200">
               {error}
             </p>
           ) : null}
 
-          <Button type="submit" className="w-full gap-2" disabled={loading}>
+          <Button type="submit" className="w-full gap-2" disabled={loading || !registrationReady}>
             {loading ? 'Processando...' : mode === 'login' ? 'Entrar' : 'Criar conta'}
             <ArrowRight className="size-4" />
           </Button>
@@ -155,8 +179,21 @@ export default function LoginPage() {
             Admin
           </Link>
         </div>
+        <div className="mt-4 flex justify-center gap-4 text-xs text-slate-500">
+          <Link href="/termos" className="hover:text-white">Termos</Link>
+          <Link href="/privacidade" className="hover:text-white">Privacidade</Link>
+        </div>
       </section>
     </main>
+  )
+}
+
+function ConsentCheckbox({ checked, onChange, children }: { checked: boolean; onChange: (checked: boolean) => void; children: React.ReactNode }) {
+  return (
+    <label className="flex items-start gap-3">
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="mt-0.5 size-4" />
+      <span>{children}</span>
+    </label>
   )
 }
 
