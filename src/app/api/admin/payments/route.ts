@@ -15,14 +15,11 @@ export async function GET(req: NextRequest) {
     return rateLimited
   }
 
-  // FASE 26: admin role protection
-  if (process.env.NODE_ENV === 'production') {
-    try {
-      await requireRole(req, 'ADMIN')
-    } catch (e: any) {
-      audit('unauthorized_access', { route: 'admin/payments', ip: getClientIp(req), actorRole: 'unknown' })
-      return NextResponse.json({ message: e.message }, { status: 401 })
-    }
+  try {
+    await requireRole(req, 'ADMIN')
+  } catch (e: any) {
+    audit('unauthorized_access', { route: 'admin/payments', ip: getClientIp(req), actorRole: 'unknown' })
+    return NextResponse.json({ message: e.message }, { status: e.message?.startsWith('Forbidden') ? 403 : 401 })
   }
 
   const url = new URL(req.url)

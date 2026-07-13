@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { MapPin, Navigation, RefreshCcw, Save, Send, Shield, Star, UserRound, XCircle } from 'lucide-react'
+import { CreditCard, MapPin, Navigation, RefreshCcw, Save, Send, Shield, Star, UserRound, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ChatPanel } from '@/components/rescue/chat-panel'
@@ -39,6 +39,8 @@ export function AuthenticatedClientPanel({ userName, initialService }: Props) {
   const [ratingStars, setRatingStars] = useState(5)
   const [ratingComment, setRatingComment] = useState('')
   const [ratingMessage, setRatingMessage] = useState<string | null>(null)
+  const [paymentMessage, setPaymentMessage] = useState<string | null>(null)
+  const [payingServiceId, setPayingServiceId] = useState<string | null>(null)
 
   const service = socket.service
   const status = service ? STATUS_LABELS[service.status] : null
@@ -48,6 +50,8 @@ export function AuthenticatedClientPanel({ userName, initialService }: Props) {
 
   const selectedDetail = history.detail
   const selectedCanRate = selectedDetail?.status === 'COMPLETED' && !selectedDetail.clientRatingStars
+  const selectedPaymentStatus = selectedDetail?.latestPayment?.status || selectedDetail?.paymentStatus || 'PENDING'
+  const selectedCanPay = selectedDetail?.status === 'COMPLETED' && !['PAID', 'REFUNDED'].includes(selectedPaymentStatus)
 
   const historySummary = useMemo(() => {
     const completed = history.history.filter((item) => item.status === 'COMPLETED').length
@@ -103,6 +107,29 @@ export function AuthenticatedClientPanel({ userName, initialService }: Props) {
     setRatingMessage('Avaliacao registrada.')
     await history.fetchDetail(detail.id)
     await history.fetchHistory()
+  }
+
+  async function simulatePayment(detail: ServiceHistoryDetail) {
+    setPaymentMessage(null)
+    setPayingServiceId(detail.id)
+    try {
+      const response = await fetch('/api/payments/simulate', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ serviceRequestId: detail.id, outcome: 'success' }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        setPaymentMessage(data?.message || 'Nao foi possivel confirmar o pagamento simulado.')
+        return
+      }
+      setPaymentMessage('Pagamento simulado confirmado.')
+      await history.fetchDetail(detail.id)
+      await history.fetchHistory()
+    } finally {
+      setPayingServiceId(null)
+    }
   }
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
@@ -300,7 +327,7 @@ export function AuthenticatedClientPanel({ userName, initialService }: Props) {
                   <button
                     key={item.id}
                     type="button"
-                    onClick={() => { void history.fetchDetail(item.id); setRatingMessage(null) }}
+                    onClick={() => { void history.fetchDetail(item.id); setRatingMessage(null); setPaymentMessage(null) }}
                     className={`w-full rounded-md border p-3 text-left text-sm transition ${selectedDetail?.id === item.id ? 'border-sky-700 bg-sky-950/30' : 'border-slate-800 bg-slate-950 hover:border-slate-700'}`}
                   >
                     <p className="font-medium text-white">{item.typeLabel}</p>
@@ -326,8 +353,30 @@ export function AuthenticatedClientPanel({ userName, initialService }: Props) {
 
                     <div className="grid gap-3 sm:grid-cols-2">
                       <Info label="Prestador" value={selectedDetail.providerName || 'Nao vinculado'} />
-                      <Info label="Pagamento" value={selectedDetail.latestPayment?.status || selectedDetail.paymentStatus} />
+                      <Info label="Pagamento" value={selectedPaymentStatus} />
                     </div>
+
+                    {selectedCanPay ? (
+                      <div className="rounded-md border border-sky-900 bg-sky-950/30 p-3">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-white">Pagamento simulado do piloto</p>
+                            <p className="mt-1 text-xs text-slate-400">Valor canonico: {money(selectedDetail.price)}</p>
+                          </div>
+                          <Button
+                            className="bg-sky-500 text-slate-950 hover:bg-sky-400"
+                            onClick={() => void simulatePayment(selectedDetail)}
+                            disabled={payingServiceId === selectedDetail.id}
+                          >
+                            <CreditCard className="mr-2 size-4" />
+                            {payingServiceId === selectedDetail.id ? 'Confirmando...' : 'Confirmar pagamento'}
+                          </Button>
+                        </div>
+                        {paymentMessage ? <p className="mt-2 text-xs text-sky-300">{paymentMessage}</p> : null}
+                      </div>
+                    ) : paymentMessage ? (
+                      <p className="rounded-md border border-slate-800 bg-slate-900 p-3 text-sm text-slate-300">{paymentMessage}</p>
+                    ) : null}
 
                     <ol className="space-y-2">
                       {selectedDetail.timeline.map((event, index) => (

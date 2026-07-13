@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireAdmin } from '@/server/auth'
+import { requireRole } from '@/server/auth/session'
 import { db } from '@/server/db/prisma'
 
 /**
@@ -8,11 +8,17 @@ import { db } from '@/server/db/prisma'
  * Admin-only — used in the financial detail view.
  */
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const admin = await requireAdmin()
-  if (!admin) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  try {
+    await requireRole(req, 'ADMIN')
+  } catch (error: any) {
+    return NextResponse.json(
+      { error: error.message || 'Unauthorized' },
+      { status: error.message?.startsWith('Forbidden') ? 403 : 401 },
+    )
+  }
 
   try {
     const { id } = await params
@@ -27,7 +33,6 @@ export async function GET(
       fromStatus: e.fromStatus,
       toStatus: e.toStatus,
       message: e.message,
-      rawPayload: e.rawPayload,
       createdAt: e.createdAt.getTime(),
     })))
   } catch (error) {

@@ -1,34 +1,67 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { simulatePaymentOutcome } from '@/server/repositories/payment.repository'
+import { requireCurrentUser } from '@/server/auth/session'
 import { applyRateLimit, RATE_LIMITS, getClientIp } from '@/server/rate-limit'
 import { audit } from '@/server/audit'
 import { logger } from '@/server/logger'
+import {
+  handleSimulatedPaymentError,
+  simulateClientServicePayment,
+  type SimulatedPaymentOutcome,
+} from '@/server/payments/simulated-payment-workflow'
+
+const FORBIDDEN_PAYLOAD_FIELDS = [
+  'amount',
+  'originalAmount',
+  'discountAmount',
+  'platformFee',
+  'providerPayout',
+  'couponCode',
+  'promoCode',
+  'paymentMethod',
+  'gatewayProvider',
+  'simulatedTransactionId',
+  'status',
+  'clientId',
+  'userId',
+  'role',
+  'providerId',
+]
 
 export async function POST(req: NextRequest) {
-  // FASE 26: rate limiting
   const rateLimited = await applyRateLimit(req, 'payments/simulate', RATE_LIMITS.simulate)
   if (rateLimited) {
     audit('rate_limit_exceeded', { ip: getClientIp(req), route: 'payments/simulate' })
     return rateLimited
   }
 
-  if (process.env.NODE_ENV === 'production') {
-    return NextResponse.json({ message: 'Simulated payments are disabled in production' }, { status: 403 })
-  }
   try {
-    const body = await req.json()
-    const { serviceRequestId, outcome, method, amount, platformFee, providerPayout, discountAmount, couponCode } = body
-    if (!serviceRequestId || !outcome || !method || typeof amount !== 'number') {
-      return NextResponse.json({ message: 'Missing required fields' }, { status: 400 })
+    const user = await requireCurrentUser(req)
+    const body = await req.json().catch(() => ({}))
+    const forbidden = FORBIDDEN_PAYLOAD_FIELDS.filter((field) => Object.prototype.hasOwnProperty.call(body, field))
+    if (forbidden.length > 0) {
+      return NextResponse.json(
+        { ok: false, code: 'forbidden_payment_payload', message: `Campos nao aceitos: ${forbidden.join(', ')}` },
+        { status: 400 },
+      )
+    }
+
+    const { serviceRequestId, outcome } = body
+    if (!serviceRequestId || !outcome) {
+      return NextResponse.json({ ok: false, message: 'Missing required fields' }, { status: 400 })
     }
     if (outcome !== 'success' && outcome !== 'failure') {
-      return NextResponse.json({ message: 'outcome must be success or failure' }, { status: 400 })
+      return NextResponse.json({ ok: false, message: 'outcome must be success or failure' }, { status: 400 })
     }
-    const record = await simulatePaymentOutcome(serviceRequestId, outcome, method, Number(amount), Number(platformFee || 0), Number(providerPayout || 0), Number(discountAmount || 0), couponCode || null)
-    // FASE 26: secure logging — do NOT log amount/platformFee
+
+    const payment = await simulateClientServicePayment({
+      user,
+      serviceRequestId,
+      outcome: outcome as SimulatedPaymentOutcome,
+    })
     logger.info('payment', 'simulate', { serviceRequestId, outcome, ip: getClientIp(req) })
-    return NextResponse.json({ ok: true, payment: record })
-  } catch (error: any) {
-    return NextResponse.json({ ok: false, message: error.message || 'Simulate error' }, { status: 500 })
+    return NextResponse.json({ ok: true, payment })
+  } catch (error) {
+    const mapped = handleSimulatedPaymentError(error)
+    return NextResponse.json(mapped.body, { status: mapped.status })
   }
 }

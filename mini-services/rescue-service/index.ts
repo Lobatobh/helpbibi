@@ -1574,37 +1574,21 @@ io.on('connection', async (socket) => {
     console.log(`[service] completed ${svc.id} — provider ${p.name} earned R$ ${svc.price}, client +${earned}pts`)
   })
 
-  // FASE 25.3/25.4 — Payment persistence (PaymentRecord + PaymentEvent)
+  // Legacy public demo payment simulation. It is intentionally in-memory only:
+  // authenticated/canonical pilot payments go through /api/payments/simulate.
   socket.on('payment:simulate', async (data: { serviceId: string; outcome: 'success' | 'failure' }) => {
     const role = socketToRole.get(socket.id)
     if (!role) return
-    if (IS_PROD) { socket.emit('payment:result', { ok: false, message: 'Simulated payments disabled in production' }); return }
     const svc = services.get(data.serviceId)
-    if (!svc || !svc.dbServiceId) { socket.emit('payment:result', { ok: false, message: 'Service not found' }); return }
-    if (role.role === 'client' && svc.clientId !== role.id) { socket.emit('payment:result', { ok: false, message: 'Not authorized' }); return }
+    if (!svc) { socket.emit('payment:result', { ok: false, message: 'Service not found' }); return }
+    if (role.role !== 'client' || svc.clientId !== role.id) { socket.emit('payment:result', { ok: false, message: 'Not authorized' }); return }
     const method = svc.paymentMethod.toUpperCase()
     const amount = svc.price
-    const platformFee = svc.breakdown ? Math.round(svc.breakdown.platformFee) : Math.round(amount * 0.2)
-    const providerPayout = svc.breakdown ? Math.round(svc.breakdown.providerPayout) : Math.round(amount * 0.8)
-    try {
-      let record = await db.paymentRecord.findFirst({ where: { serviceRequestId: svc.dbServiceId } })
-      if (!record) {
-        record = await db.paymentRecord.create({ data: { serviceRequestId: svc.dbServiceId, method, status: 'PENDING', amount, platformFee, providerPayout, discountAmount: svc.discount || 0, couponCode: svc.promoCode, provider: 'simulated', providerPaymentId: `pay_${Date.now().toString(36)}`, externalReference: `HB-${svc.dbServiceId.slice(-12).toUpperCase()}-${Date.now().toString(36).toUpperCase()}`, idempotencyKey: `pay_${svc.dbServiceId.slice(-12)}_${Date.now().toString(36)}`, simulatedTransactionId: `SIM_${svc.dbServiceId.slice(-12).toUpperCase()}_${Date.now().toString(36)}`, events: { create: { eventType: 'CREATED', fromStatus: null, toStatus: 'PENDING', message: 'Payment intent created (simulated)' } } } })
-        await db.serviceRequest.update({ where: { id: svc.dbServiceId }, data: { paymentStatus: 'PENDING' } }).catch(() => {})
-      }
-      const toStatus = data.outcome === 'success' ? 'PAID' : 'FAILED'
-      const fromStatus = record.status as any
-      const VALID: Record<string, string[]> = { PENDING: ['AUTHORIZED', 'PAID', 'FAILED', 'CANCELED'], AUTHORIZED: ['PAID', 'FAILED', 'CANCELED'], FAILED: ['PENDING', 'AUTHORIZED', 'CANCELED'], PAID: ['REFUNDED'] }
-      if (!(VALID[fromStatus] || []).includes(toStatus)) { socket.emit('payment:result', { ok: false, message: `Transition not allowed: ${fromStatus} → ${toStatus}` }); return }
-      const eventType = toStatus === 'PAID' ? 'PAID' : 'FAILED'
-      const now = new Date()
-      const updated = await db.paymentRecord.update({ where: { id: record.id }, data: { status: toStatus, ...(toStatus === 'PAID' && { paidAt: now }), ...(toStatus === 'FAILED' && { failedAt: now, failureReason: 'Simulated failure' }), events: { create: { eventType, fromStatus, toStatus, message: `Simulated ${toStatus.toLowerCase()} (${method})` } } } })
-      await db.serviceRequest.update({ where: { id: svc.dbServiceId }, data: { paymentStatus: toStatus } }).catch(() => {})
-      const label = data.outcome === 'success' ? `Pagamento aprovado (${method}) — R$ ${amount}` : `Pagamento recusado (${method}) — tente novamente`
-      pushTimeline(svc, svc.status, label); persistServiceStatus(svc); emitService(svc)
-      socket.emit('payment:result', { ok: true, outcome: data.outcome, status: toStatus, paymentId: updated.id, amount, method })
-      console.log(`[payment] ${svc.id} simulated ${toStatus} (${method}) record=${updated.id}`)
-    } catch (e: any) { console.error('[payment:simulate] error:', e); socket.emit('payment:result', { ok: false, message: e.message || 'Payment error' }) }
+    const toStatus = data.outcome === 'success' ? 'PAID' : 'FAILED'
+    const label = data.outcome === 'success' ? `Pagamento aprovado (${method}) - R$ ${amount}` : `Pagamento recusado (${method}) - tente novamente`
+    pushTimeline(svc, svc.status, label); emitService(svc)
+    socket.emit('payment:result', { ok: true, outcome: data.outcome, status: toStatus, amount, method })
+    console.log(`[payment:demo] ${svc.id} simulated ${toStatus} (${method}) without persistence`)
   })
 
   socket.on('service:rate', (data: { serviceId: string; stars: number; comment: string }) => {

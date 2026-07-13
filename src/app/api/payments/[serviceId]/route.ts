@@ -1,42 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/server/db/prisma'
+import { requireCurrentUser } from '@/server/auth/session'
+import {
+  getPaymentViewForService,
+  handleSimulatedPaymentError,
+} from '@/server/payments/simulated-payment-workflow'
 
-/**
- * GET /api/payments/[serviceId]
- * Returns the latest PaymentRecord for a service. Used by client/admin to check payment status.
- * Note: this endpoint is NOT public-tracking safe — only the client/provider/admin should call it.
- */
 export async function GET(
-  _req: NextRequest,
-  { params }: { params: Promise<{ serviceId: string }> }
+  req: NextRequest,
+  { params }: { params: Promise<{ serviceId: string }> },
 ) {
   try {
+    const user = await requireCurrentUser(req)
     const { serviceId } = await params
-    const payment = await db.paymentRecord.findFirst({
-      where: { serviceRequestId: serviceId },
-      orderBy: { createdAt: 'desc' },
-    })
-    if (!payment) {
-      return NextResponse.json({ available: false, message: 'Nenhum registro de pagamento.' })
-    }
-    return NextResponse.json({
-      available: true,
-      id: payment.id,
-      method: payment.method,
-      status: payment.status,
-      amount: payment.amount,
-      platformFee: payment.platformFee,
-      providerPayout: payment.providerPayout,
-      discountAmount: payment.discountAmount,
-      couponCode: payment.couponCode,
-      simulatedTransactionId: payment.simulatedTransactionId,
-      paidAt: payment.paidAt?.getTime() || null,
-      failedAt: payment.failedAt?.getTime() || null,
-      failureReason: payment.failureReason,
-      createdAt: payment.createdAt.getTime(),
-    })
+    const payment = await getPaymentViewForService(user, serviceId)
+    return NextResponse.json(payment)
   } catch (error) {
-    console.error('[api/payments] Error:', error)
-    return NextResponse.json({ available: false, message: 'Erro ao buscar pagamento.' }, { status: 500 })
+    const mapped = handleSimulatedPaymentError(error)
+    return NextResponse.json(mapped.body, { status: mapped.status })
   }
 }
