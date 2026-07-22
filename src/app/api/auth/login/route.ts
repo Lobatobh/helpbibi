@@ -5,6 +5,7 @@ import { db } from '@/server/db/prisma'
 import { applyRateLimit, RATE_LIMITS, getClientIp } from '@/server/rate-limit'
 import { audit } from '@/server/audit'
 import { logger } from '@/server/logger'
+import { normalizeEmail } from '@/server/auth/credentials'
 
 export async function POST(req: NextRequest) {
   // FASE 26: rate limiting
@@ -19,7 +20,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}))
     const { email, password } = body as { email?: string; password?: string }
-    const normalizedEmail = email?.trim().toLowerCase()
+    const normalizedEmail = normalizeEmail(email)
 
     if (!normalizedEmail || !password) {
       return NextResponse.json({ message: 'Email and password required' }, { status: 400 })

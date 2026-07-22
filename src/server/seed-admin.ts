@@ -1,35 +1,18 @@
-// Seed script to create the admin user for Help Bibi.
-// Run with: bun run src/server/seed-admin.ts
-import { db } from './db/prisma'
-import { hashPassword } from './auth'
-
-async function main() {
-  const email = 'admin@helpbibi.local'
-  const password = 'Admin123!'
-  const name = 'Administrador Help Bibi'
-
-  const existing = await db.user.findUnique({ where: { email } })
-  if (existing) {
-    // Update password in case it changed
-    await db.user.update({
-      where: { id: existing.id },
-      data: { passwordHash: hashPassword(password), role: 'ADMIN', name },
-    })
-    console.log(`[seed-admin] Updated existing admin: ${email} (id=${existing.id})`)
-    return
-  }
-
-  const user = await db.user.create({
-    data: {
-      email,
-      name,
-      passwordHash: hashPassword(password),
-      role: 'ADMIN',
-    },
-  })
-  console.log(`[seed-admin] Created admin: ${email} (id=${user.id})`)
+// Compatibility tombstone. Initial ADMIN creation is intentionally restricted
+// to scripts/bootstrap-admin.ts, which requires explicit environment input.
+export function legacyAdminSeedDisabled(): never {
+  throw new Error('LEGACY_ADMIN_SEED_DISABLED_USE_SCRIPTS_BOOTSTRAP_ADMIN')
 }
 
-main()
-  .catch((e) => { console.error('[seed-admin] error:', e); process.exit(1) })
-  .finally(async () => { await db.$disconnect() })
+if (import.meta.main) {
+  try {
+    legacyAdminSeedDisabled()
+  } catch {
+    console.error(JSON.stringify({
+      ok: false,
+      code: 'LEGACY_ADMIN_SEED_DISABLED_USE_SCRIPTS_BOOTSTRAP_ADMIN',
+      changed: false,
+    }))
+    process.exitCode = 1
+  }
+}

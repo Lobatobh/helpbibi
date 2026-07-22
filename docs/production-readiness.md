@@ -76,11 +76,11 @@ model AuditLog {
 - Logout button.
 - Proteção: `requireRole(ADMIN)` em produção nas rotas `/api/admin/*`.
 
-### Seed Admin (dev only)
-- `admin@helpbibi.local` / `Admin123!`
-- `ADMIN_SEED_ENABLED=true` em dev.
-- **BLOCKED** em produção (403).
-- Produção: criar admin user via script/SQL.
+### Bootstrap ADMIN
+- O seed legado esta desativado em todos os ambientes e nao cria nem atualiza usuarios.
+- Nao existe credencial administrativa hardcoded ou bypass por `NODE_ENV`.
+- O primeiro ADMIN deve ser criado exclusivamente por `scripts/bootstrap-admin.ts`, com credenciais por ambiente, confirmacao explicita para eventual promocao e lock transacional.
+- O bootstrap real permanece proibido ate a aplicacao e validacao controladas do schema no clone PostgreSQL.
 
 ## Cobertura de Testes
 
@@ -610,3 +610,25 @@ Limitacoes e pre-deploy:
 4. Validar tracking por token, revogacao e expiracao apos deploy controlado.
 5. Nao existe geocodificacao: destino textual fica sem coordenada e o preco usa a regra canonica sem distancia de destino.
 6. Produto/Legal ainda precisa aprovar textos e dados institucionais; producao comercial continua bloqueada.
+
+---
+
+## F36-01 - Remediacao tecnica anterior a pre-producao
+
+### Status: IMPLEMENTADA LOCALMENTE, PRODUTO PERMANECE NO-GO
+
+- Seed e login ADMIN legados foram neutralizados. O tombstone aponta somente para `scripts/bootstrap-admin.ts` e nao possui acesso a banco.
+- A rota generica `/api/payments/webhook` retorna `410 Gone`, sem ler payload ou alterar pagamento; o piloto usa apenas `/api/payments/webhook/simulated`, com provider e secret explicitos, assinatura e workflow canonico.
+- Configuracao ausente ou desconhecida de `PAYMENT_GATEWAY_PROVIDER` agora falha; nao existe fallback automatico para `simulated`.
+- `PaymentRecord.serviceRequestId` recebeu `@@unique` nos dois schemas. A constraint ainda nao foi aplicada em banco real.
+- Criacao de solicitacao ativa usa transacao `Serializable`, retry limitado e releitura do registro canonico; a timeline inicial pertence a mesma transacao.
+- Novas contas usam e-mail `trim().toLowerCase()` e senha entre 10 e 128 caracteres. Hashes existentes continuam validos e nao sofrem troca automatica.
+- `scripts/preflight-data-audit.ts` realiza somente leituras agregadas, mascara e-mails e identifica colisoes de e-mail, usuarios sem hash, pagamentos duplicados, aprovacao de prestadores, consentimentos ausentes e tracking legado.
+
+### Gate obrigatorio antes de SQL ou deploy
+
+1. Restaurar backup recente em clone PostgreSQL isolado e usar credencial somente leitura para o preflight.
+2. Executar o preflight e resolver todos os bloqueadores, especialmente duplicidades de e-mail e `PaymentRecord.serviceRequestId`.
+3. Revisar o SQL aditivo acumulado e o comportamento de enums, defaults, indices e constraints com evidencias do clone.
+4. Aplicar o SQL somente no clone, repetir preflight/testes e preparar rollback antes de qualquer janela real.
+5. Manter o produto NO-GO ate aprovacao juridica/institucional, homologacao manual HTTPS/GPS e autorizacao operacional.

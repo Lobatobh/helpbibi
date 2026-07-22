@@ -45,7 +45,7 @@ export class MercadoPagoGateway implements PaymentGateway {
    *
    * Production flow:
    *   1. Webhook received → parseWebhookEvent returns WEBHOOK_RECEIVED (no state change)
-   *   2. processWebhook calls getPaymentStatus(providerPaymentId) to fetch real status
+   *   2. A future provider-specific handler calls getPaymentStatus(providerPaymentId)
    *   3. If status found, transition PaymentRecord accordingly
    *   4. If status not available (no credentials), mark as needs_reconciliation
    *

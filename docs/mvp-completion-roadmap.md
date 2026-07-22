@@ -439,3 +439,22 @@ Entregas futuras:
 5. Consolidar matching real persistido em F35-05.
 6. Manter commits pequenos por modulo.
 7. Rodar checklist manual da demo a cada mudanca de fluxo socket ou painel.
+
+## F36-01 - Fechamento dos bloqueadores tecnicos
+
+Status: implementada localmente; MVP e producao comercial permanecem NO-GO.
+
+- Administracao inicial depende exclusivamente do bootstrap seguro; seed legado e bypass por ambiente foram removidos.
+- Webhook generico foi aposentado com `410`; pagamento simulado exige configuracao explicita e usa um unico workflow canonico.
+- Os schemas declaram um `PaymentRecord` por `ServiceRequest`, mas a constraint depende de auditoria e aplicacao futura no clone.
+- A criacao concorrente de solicitacao ativa passou a usar transacao serializavel, retry limitado e retorno canonico.
+- Politica de e-mail/senha foi centralizada para novos cadastros e bootstrap, sem invalidar hashes existentes.
+- O preflight somente leitura fornece o gate de dados legados anterior a qualquer SQL.
+
+Proxima etapa minima:
+
+1. preparar clone PostgreSQL a partir de backup restauravel;
+2. executar o preflight com credencial somente leitura;
+3. resolver bloqueadores de dados no clone;
+4. gerar e revisar SQL acumulado sem aplicar na base real;
+5. validar schema, bootstrap, fluxos autenticados e rollback no clone.

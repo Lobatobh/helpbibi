@@ -7,6 +7,7 @@ import {
   createUserWithCurrentConsents,
   RegistrationConflictError,
 } from '@/server/consents/consent-registration'
+import { normalizeEmail, validateNewPassword } from '@/server/auth/credentials'
 
 export async function POST(req: NextRequest) {
   const rateLimited = await applyRateLimit(req, 'auth/register-client', RATE_LIMITS.login)
@@ -18,7 +19,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}))
     const { name, email, phone, password, acceptTerms, acceptPrivacy } = body
-    const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : ''
+    const normalizedEmail = normalizeEmail(email)
 
     if (!name || !normalizedEmail || !password) {
       return NextResponse.json({ error: 'Nome, email e senha são obrigatórios' }, { status: 400 })
@@ -29,8 +30,9 @@ export async function POST(req: NextRequest) {
         code: 'consent_required',
       }, { status: 422 })
     }
-    if (password.length < 6) {
-      return NextResponse.json({ error: 'Senha deve ter no mínimo 6 caracteres' }, { status: 400 })
+    const passwordPolicy = validateNewPassword(password)
+    if (!passwordPolicy.ok) {
+      return NextResponse.json({ error: passwordPolicy.message, code: passwordPolicy.code }, { status: 400 })
     }
 
     const passwordHash = await hashPassword(password)

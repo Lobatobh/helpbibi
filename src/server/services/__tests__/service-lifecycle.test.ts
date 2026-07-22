@@ -2,11 +2,30 @@ import { describe, expect, test } from 'bun:test'
 import {
   acceptServiceOffer,
   canTransitionServiceStatus,
+  CREATE_SERVICE_MAX_ATTEMPTS,
   createOperationalService,
   declineServiceOffer,
   registerServiceOffers,
   transitionServiceStatus,
 } from '../service-lifecycle'
+import { db as prismaDb } from '@/server/db/prisma'
+
+const serviceInput = (clientId: string) => ({
+  clientId,
+  type: 'REBOQUE' as const,
+  description: 'Pane no acostamento',
+  pickup: { lat: -23.55, lng: -46.63 },
+  pickupLabel: 'Origem',
+  destination: null,
+  destinationLabel: 'Sem destino',
+  distanceKm: 0,
+  etaMin: 8,
+  price: 180,
+  originalPrice: 180,
+  discount: 0,
+  promoCode: null,
+  paymentMethod: 'PIX' as const,
+})
 
 function createFakeDb() {
   const services: any[] = []
@@ -212,6 +231,54 @@ describe('service lifecycle persistence', () => {
     expect(db._state.services).toHaveLength(1)
     expect(db._state.timeline[0].eventType).toBe('request_created')
     expect(auditEvents).toEqual(['request_created'])
+  })
+
+  test('concurrent requests return one active service with one initial timeline', async () => {
+    const user = await prismaDb.user.create({
+      data: {
+        email: `service-race-${crypto.randomUUID()}@example.test`,
+        name: 'Service Race Client',
+        role: 'CLIENT',
+      },
+    })
+
+    try {
+      const results = await Promise.all([
+        createOperationalService(prismaDb, serviceInput(user.id), { dedupeActive: true }),
+        createOperationalService(prismaDb, serviceInput(user.id), { dedupeActive: true }),
+        createOperationalService(prismaDb, serviceInput(user.id), { dedupeActive: true }),
+      ])
+
+      const services = await prismaDb.serviceRequest.findMany({ where: { clientId: user.id } })
+      const timeline = await prismaDb.serviceTimelineEvent.findMany({
+        where: { serviceId: { in: services.map((service) => service.id) }, eventType: 'request_created' },
+      })
+
+      expect(new Set(results.map((service) => service.id)).size).toBe(1)
+      expect(services).toHaveLength(1)
+      expect(timeline).toHaveLength(1)
+      expect(results.filter((service) => !service.deduped)).toHaveLength(1)
+    } finally {
+      await prismaDb.serviceRequest.deleteMany({ where: { clientId: user.id } })
+      await prismaDb.user.delete({ where: { id: user.id } })
+    }
+  })
+
+  test('serialization retry is limited and returns a controlled conflict', async () => {
+    let attempts = 0
+    const conflict = Object.assign(new Error('serialization write conflict'), { code: 'P2034' })
+    const conflictingDb = {
+      $transaction: async () => {
+        attempts += 1
+        throw conflict
+      },
+      serviceRequest: { findFirst: async () => null },
+    }
+
+    await expect(
+      createOperationalService(conflictingDb as any, serviceInput('client_conflict'), { dedupeActive: true }),
+    ).rejects.toThrow('SERVICE_CREATE_CONFLICT_RETRY_EXHAUSTED')
+    expect(attempts).toBe(CREATE_SERVICE_MAX_ATTEMPTS)
   })
 
   test('registers offers only for approved providers', async () => {

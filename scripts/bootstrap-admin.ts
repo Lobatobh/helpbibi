@@ -1,4 +1,5 @@
 import { hashPassword } from '../src/server/auth'
+import { normalizeEmail, validateNewPassword } from '../src/server/auth/credentials'
 
 const POSTGRES_BOOTSTRAP_LOCK_ID = 3502
 const DEFAULT_ADMIN_NAME = 'Administrador Help Bibi'
@@ -42,12 +43,9 @@ export type BootstrapAdminResult =
   | { ok: true; code: 'ADMIN_CREATED' | 'ADMIN_ALREADY_BOOTSTRAPPED' | 'USER_PROMOTED_TO_ADMIN'; changed: boolean }
   | { ok: false; code: 'EXISTING_USER_CONFIRMATION_REQUIRED'; changed: false }
 
-function normalizeEmail(value: string): string {
-  return value.trim().toLowerCase()
-}
-
 function hasStrongPassword(password: string): boolean {
-  return password.length >= 16
+  return validateNewPassword(password).ok
+    && password.length >= 16
     && /[a-z]/.test(password)
     && /[A-Z]/.test(password)
     && /[0-9]/.test(password)

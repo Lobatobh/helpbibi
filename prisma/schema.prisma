@@ -403,6 +403,7 @@ model PaymentRecord {
   events              PaymentEvent[]
 
   @@index([serviceRequestId])
+  @@unique([serviceRequestId])
   @@index([providerPaymentId])
   @@index([status])
 }

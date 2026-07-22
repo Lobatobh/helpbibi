@@ -76,6 +76,7 @@ describe('env — validateEnv', () => {
     process.env.DATABASE_URL = PROD_DB
     process.env.SESSION_SECRET = PROD_SESSION
     process.env.PAYMENT_WEBHOOK_SECRET = PROD_WEBHOOK
+    process.env.PAYMENT_GATEWAY_PROVIDER = 'simulated'
     process.env.RATE_LIMIT_BACKEND = 'redis'
     process.env.REDIS_URL = 'redis://localhost:6379'
     const result = validateEnv()
@@ -130,6 +131,7 @@ describe('env — validateEnv', () => {
     process.env.DATABASE_URL = 'file:./dev.db'
     process.env.SESSION_SECRET = 'dev_secret'
     process.env.PAYMENT_WEBHOOK_SECRET = 'dev_webhook_secret'
+    process.env.PAYMENT_GATEWAY_PROVIDER = 'simulated'
     const result = validateEnv()
     expect(result.ok).toBe(true)
   })

@@ -1,9 +1,8 @@
 // Help Bibi — Admin Auth tests (FASE 27)
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
-import { existsSync } from 'fs'
+import { existsSync, readFileSync, readdirSync } from 'fs'
+import { join } from 'path'
 import { db } from '@/server/db/prisma'
-
-const ADMIN_SEED_EMAIL = 'admin@helpbibi.local'
 
 async function createAdminUser(): Promise<string> {
   const user = await db.user.create({
@@ -74,26 +73,46 @@ describe('Admin Auth — Role Protection (FASE 27)', () => {
     await cleanupUser(adminId)
   })
 
-  test('7. admin seed email is not accepted in production (env guard)', () => {
-    const isProd = process.env.NODE_ENV === 'production'
-    // In production, the admin login route blocks seed credentials entirely
-    // This test verifies the logic: if production, seed is blocked
-    const seedBlockedInProd = isProd === true
-    expect(typeof seedBlockedInProd).toBe('boolean')
-    // The actual blocking happens in /api/admin/login route via NODE_ENV check
+  test('7. admin login has no environment bypass and legacy seed is a safe tombstone', () => {
+    const loginSource = readFileSync('src/app/api/admin/login/route.ts', 'utf8')
+    const seedSource = readFileSync('src/server/seed-admin.ts', 'utf8')
+
+    expect(loginSource).toContain('verifyPassword')
+    expect(loginSource).toContain('setSessionCookie')
+    expect(loginSource).not.toContain('NODE_ENV')
+    expect(loginSource).not.toMatch(/user\.(create|update|upsert)/)
+    expect(seedSource).toContain('LEGACY_ADMIN_SEED_DISABLED_USE_SCRIPTS_BOOTSTRAP_ADMIN')
+    expect(seedSource).not.toMatch(/user\.(create|update|upsert)/)
+    expect(seedSource).not.toContain('hashPassword')
   })
 
-  test('8. admin page exists at src/app/admin/page.tsx', () => {
+  test('8. executable source contains no legacy hardcoded ADMIN credential', () => {
+    const forbidden = ['Admin', '123!'].join('')
+    const sourceFiles: string[] = []
+    const walk = (directory: string) => {
+      for (const entry of readdirSync(directory, { withFileTypes: true })) {
+        const path = join(directory, entry.name)
+        if (entry.isDirectory()) walk(path)
+        else if (/\.(?:ts|tsx|mjs)$/.test(entry.name)) sourceFiles.push(path)
+      }
+    }
+    walk('src')
+    walk('scripts')
+
+    expect(sourceFiles.some((path) => readFileSync(path, 'utf8').includes(forbidden))).toBe(false)
+  })
+
+  test('9. admin page exists at src/app/admin/page.tsx', () => {
     // uses top-level existsSync import
     expect(existsSync('src/app/admin/page.tsx')).toBe(true)
   })
 
-  test('9. admin login route exists', () => {
+  test('10. admin login route exists', () => {
     // uses top-level existsSync import
     expect(existsSync('src/app/api/admin/login/route.ts')).toBe(true)
   })
 
-  test('10. admin audit route exists', () => {
+  test('11. admin audit route exists', () => {
     // uses top-level existsSync import
     expect(existsSync('src/app/api/admin/audit/route.ts')).toBe(true)
   })

@@ -8,34 +8,21 @@ Admin access is protected by session-based authentication with role `ADMIN`. The
 
 ## Login
 
-### Dev/Demo (ADMIN_SEED_ENABLED=true)
+### Dev/Demo (legacy seed discontinued)
 - URL: `/admin`
 - Email: `admin@helpbibi.local`
-- Password: `Admin123!`
-- The seed admin user is created on first login if it doesn't exist.
+- Password: `[credencial de desenvolvimento removida]`
+- The legacy seed no longer creates an admin on first login. `scripts/bootstrap-admin.ts` is the only permitted bootstrap flow.
 
 ### Production
 - Seed credentials are **BLOCKED** (403 Forbidden).
 - Production requires a real admin user in the database with `role: 'ADMIN'`.
-- Create admin user via script (documented below) or direct DB insert.
+- Create admin users exclusively through `scripts/bootstrap-admin.ts` with credentials supplied at runtime.
 - Set `ADMIN_SEED_ENABLED=false` in production.
 
 ## Creating Admin Users (Production)
 
-```bash
-# Option 1: Prisma script
-bun -e "
-const { PrismaClient } = require('@prisma/client');
-const db = new PrismaClient();
-db.user.create({
-  data: { email: process.env.ADMIN_EMAIL, name: 'Admin', role: 'ADMIN' }
-}).then(u => { console.log('Admin created:', u.id); db.\$disconnect(); });
-"
-
-# Option 2: SQL
-INSERT INTO "User" (id, email, name, role, "createdAt", "updatedAt")
-VALUES (gen_random_uuid(), 'admin@yourdomain.com', 'Admin', 'ADMIN', NOW(), NOW());
-```
+The only permitted flow is `scripts/bootstrap-admin.ts`. The legacy seed and direct database inserts are discontinued.
 
 ## Session
 
@@ -54,7 +41,7 @@ VALUES (gen_random_uuid(), 'admin@yourdomain.com', 'Admin', 'ADMIN', NOW(), NOW(
 
 ### API Routes (Dev)
 - Admin routes use `NODE_ENV` guard (accessible without session in dev for demo)
-- `admin/login` with seed credentials works only if `ADMIN_SEED_ENABLED=true`
+- The legacy seed credentials and `ADMIN_SEED_ENABLED` login flow are discontinued; provision test admins only through `scripts/bootstrap-admin.ts`.
 
 ## Audit Trail
 

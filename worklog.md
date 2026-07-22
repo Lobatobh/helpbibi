@@ -1514,7 +1514,7 @@ Work Log:
 - Created `src/app/api/admin/login/route.ts` (POST):
   - Accepts `{ email, password }`; rate limited with `RATE_LIMITS.login`.
   - Production: ALWAYS blocks seed credentials (403 + `login_failure` audit).
-  - Dev with `ADMIN_SEED_ENABLED=true`: accepts `admin@helpbibi.local` / `Admin123!`, finds-or-creates admin User (role ADMIN), sets session cookie, audits `admin_login`.
+  - Historico: o antigo modo `ADMIN_SEED_ENABLED` aceitava uma credencial fixa, agora removida, e criava o ADMIN em desenvolvimento.
   - Dev without flag: 401 with hint message + `login_failure` audit.
 - Created `src/app/api/admin/audit/route.ts` (GET):
   - Rate limited with `RATE_LIMITS.admin`.
@@ -1535,7 +1535,7 @@ Work Log:
 
 Stage Summary:
 - Audit logs now persist to the AuditLog Prisma model when `AUDIT_LOG_BACKEND=database` (fire-and-forget, non-blocking, secrets sanitized, IPs hashed). Default stays 'memory' (unchanged dev behavior).
-- Admin auth UI fully functional at `/admin`: dev seed login (admin@helpbibi.local / Admin123!) works with `ADMIN_SEED_ENABLED=true`; production blocks seed credentials entirely.
+- Historico: a UI administrativa usava seed de desenvolvimento; esse mecanismo e sua credencial fixa foram removidos na F36-01.
 - Admin dashboard shows live financial summary (payments, fees, payouts, by-status) and the most recent 50 audit events with severity badges.
 - Two new API routes: `POST /api/admin/login`, `GET /api/admin/audit` — both rate limited and audit-logged.
 - Lint clean; build clean; dev server running with no errors after `.env` reload.
@@ -1563,7 +1563,7 @@ Work Log:
 - check:full PASSOU: lint ✓, prisma ✓, 345 testes ✓ (0 fail, 939 expect calls, 26 arquivos), build ✓ (20 rotas).
 - REGRESSÃO BROWSER:
   - /admin carrega com login form ✓
-  - Login admin com seed credentials (admin@helpbibi.local / Admin123!) funciona ✓
+  - Historico: login admin com a antiga credencial de seed foi validado naquela fase; o mecanismo foi removido na F36-01.
   - Dashboard admin mostra "Bem-vindo, Admin" + resumo financeiro + audit trail ✓
   - /api/health: status=ok, version=25.4.0 ✓
   - /api/health/db: database=connected ✓
@@ -2334,4 +2334,29 @@ Stage Summary:
 - Status do MVP permanece NO-GO ate schema controlado, homologacao GPS/tracking e aprovacao juridica/institucional.
 - Nenhuma VPS, PostgreSQL real, deploy, bootstrap, gateway real, `.env`, Docker, Supabase, SMTP ou Mercado Pago real foi acessado/alterado.
 - Nenhum `db push` ou `migrate deploy` foi executado.
+- Nenhum arquivo foi stageado ou commitado nesta fase.
+
+---
+
+Task ID: 36.1
+Agent: main
+Task: Remediacao dos bloqueadores tecnicos anteriores a pre-producao.
+
+Work Log:
+- Data do registro: 2026-07-22.
+- Seed ADMIN legado foi substituido por tombstone sem acesso a banco; login ADMIN usa apenas usuario existente, verificacao de senha e sessao oficial.
+- `scripts/bootstrap-admin.ts` permanece como unico mecanismo de criacao inicial, com e-mail normalizado e politica forte sobre a regra central de 10 a 128 caracteres.
+- `/api/payments/webhook` passou a retornar `410 Gone`; nenhuma leitura de payload, alteracao de `PaymentRecord` ou criacao de `PaymentEvent` ocorre nessa rota.
+- Factory de gateway deixou de assumir `simulated` quando `PAYMENT_GATEWAY_PROVIDER` esta ausente ou invalido.
+- Os dois schemas receberam `@@unique([serviceRequestId])` em `PaymentRecord`; a constraint nao foi aplicada em PostgreSQL real e depende de auditoria previa de duplicidades.
+- O construtor de pagamento legado foi removido do runtime; somente o workflow simulado canonico cria registros. Fixtures diretas ficaram restritas a testes.
+- Criacao de solicitacao ativa passou a usar transacao `Serializable`, tres tentativas no maximo e releitura canonica apos conflito, mantendo uma unica timeline inicial.
+- Criado `scripts/preflight-data-audit.ts`, import-safe e somente leitura, com saida JSON agregada, e-mail mascarado, bloqueadores/avisos e exit code seguro.
+- Cadastro CLIENT/PROVIDER, login geral, login ADMIN e bootstrap compartilham normalizacao de e-mail; novas senhas usam minimo 10 e maximo 128, sem invalidar hashes existentes.
+
+Stage Summary:
+- Produto permanece NO-GO.
+- Nenhuma VPS, PostgreSQL real, gateway real, deploy, bootstrap, `db push` ou `migrate deploy` foi executado.
+- A proxima etapa e preparar clone PostgreSQL, executar o preflight somente leitura e revisar SQL antes de qualquer alteracao real.
+- `.env`, Docker, Supabase, SMTP, Mercado Pago real, `package.json` e locks nao foram alterados.
 - Nenhum arquivo foi stageado ou commitado nesta fase.

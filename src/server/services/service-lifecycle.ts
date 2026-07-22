@@ -77,6 +77,7 @@ export type TransitionOptions = TimelineInput & {
 
 const ACTIVE_STATUSES = ACTIVE_SERVICE_STATUSES
 const TERMINAL_STATUSES = TERMINAL_SERVICE_STATUSES
+export const CREATE_SERVICE_MAX_ATTEMPTS = 3
 const OPERATIONAL_AUDIT_EVENTS = new Set<string>([
   'request_created',
   'offer_sent',
@@ -189,56 +190,123 @@ export async function createOperationalService(
   input: CreateOperationalServiceInput,
   options: { audit?: LifecycleAudit; dedupeActive?: boolean } = {},
 ) {
-  if (options.dedupeActive && 'findFirst' in db.serviceRequest) {
-    const existing = await (db.serviceRequest as any).findFirst({
-      where: {
-        clientId: input.clientId,
-        status: { in: ACTIVE_STATUSES },
-      },
-      orderBy: { createdAt: 'desc' },
-    })
-    if (existing) return { ...existing, deduped: true }
-  }
+  const createOrReuse = async (transaction: DbClient) => {
+    if (options.dedupeActive && 'findFirst' in transaction.serviceRequest) {
+      const existing = await (transaction.serviceRequest as any).findFirst({
+        where: {
+          clientId: input.clientId,
+          status: { in: ACTIVE_STATUSES },
+        },
+        orderBy: { createdAt: 'desc' },
+      })
+      if (existing) return { ...existing, deduped: true }
+    }
 
-  const label = input.label || 'Solicitacao enviada - procurando prestador proximo'
-  const service = await db.serviceRequest.create({
-    data: {
-      clientId: input.clientId,
-      type: input.type,
-      description: input.description || '',
-      status: 'REQUESTED',
-      pickup: JSON.stringify(input.pickup),
-      pickupLabel: input.pickupLabel,
-      destination: JSON.stringify(input.destination),
-      destinationLabel: input.destinationLabel,
-      distanceKm: input.distanceKm,
-      etaMin: input.etaMin,
-      price: input.price,
-      originalPrice: input.originalPrice,
-      discount: input.discount,
-      promoCode: input.promoCode || null,
-      paymentMethod: input.paymentMethod,
-      loyaltyPoints: input.loyaltyPoints || 0,
-      timeline: {
-        create: {
-          status: 'REQUESTED',
-          label,
-          eventType: 'request_created',
-          actorRole: 'CLIENT',
-          actorUserId: input.clientId,
+    const label = input.label || 'Solicitacao enviada - procurando prestador proximo'
+    const service = await transaction.serviceRequest.create({
+      data: {
+        clientId: input.clientId,
+        type: input.type,
+        description: input.description || '',
+        status: 'REQUESTED',
+        pickup: JSON.stringify(input.pickup),
+        pickupLabel: input.pickupLabel,
+        destination: JSON.stringify(input.destination),
+        destinationLabel: input.destinationLabel,
+        distanceKm: input.distanceKm,
+        etaMin: input.etaMin,
+        price: input.price,
+        originalPrice: input.originalPrice,
+        discount: input.discount,
+        promoCode: input.promoCode || null,
+        paymentMethod: input.paymentMethod,
+        loyaltyPoints: input.loyaltyPoints || 0,
+        timeline: {
+          create: {
+            status: 'REQUESTED',
+            label,
+            eventType: 'request_created',
+            actorRole: 'CLIENT',
+            actorUserId: input.clientId,
+          },
         },
       },
+    })
+    return { ...service, deduped: false }
+  }
+
+  const rereadCanonical = () => (db.serviceRequest as any).findFirst({
+    where: {
+      clientId: input.clientId,
+      status: { in: ACTIVE_STATUSES },
     },
+    orderBy: { createdAt: 'desc' },
   })
 
-  options.audit?.('request_created', {
-    actor: input.clientId,
-    actorRole: 'CLIENT',
-    target: service.id,
-    metadata: { type: input.type, paymentMethod: input.paymentMethod },
-  })
+  let result: any
+  if (!options.dedupeActive || typeof (db as PrismaClient).$transaction !== 'function') {
+    result = await createOrReuse(db)
+  } else {
+    let lastError: unknown
+    for (let attempt = 1; attempt <= CREATE_SERVICE_MAX_ATTEMPTS; attempt += 1) {
+      try {
+        result = await (db as PrismaClient).$transaction(
+          (transaction) => createOrReuse(transaction),
+          {
+            isolationLevel: 'Serializable',
+            maxWait: 5_000,
+            timeout: 10_000,
+          },
+        )
+        break
+      } catch (error) {
+        if (!isRetryableServiceCreationConflict(error)) throw error
+        lastError = error
 
-  return service
+        const canonical = await rereadCanonical().catch(() => null)
+        if (canonical) {
+          result = { ...canonical, deduped: true }
+          break
+        }
+
+        if (attempt < CREATE_SERVICE_MAX_ATTEMPTS) {
+          await new Promise((resolve) => setTimeout(resolve, attempt * 25))
+        }
+      }
+    }
+
+    if (!result) {
+      const canonical = await rereadCanonical().catch(() => null)
+      if (canonical) result = { ...canonical, deduped: true }
+      else {
+        throw new Error('SERVICE_CREATE_CONFLICT_RETRY_EXHAUSTED', { cause: lastError })
+      }
+    }
+  }
+
+  if (!result.deduped) {
+    options.audit?.('request_created', {
+      actor: input.clientId,
+      actorRole: 'CLIENT',
+      target: result.id,
+      metadata: { type: input.type, paymentMethod: input.paymentMethod },
+    })
+  }
+
+  return result
+}
+
+export function isRetryableServiceCreationConflict(error: unknown): boolean {
+  const code = typeof error === 'object' && error !== null && 'code' in error
+    ? String((error as { code?: unknown }).code || '')
+    : ''
+  const message = error instanceof Error ? error.message.toLowerCase() : ''
+
+  return code === 'P2034' || code === 'P2028' || code === 'P1008' ||
+    message.includes('serialization') ||
+    message.includes('write conflict') ||
+    message.includes('database is locked') ||
+    message.includes('transaction already closed')
 }
 
 export async function transitionServiceStatus(

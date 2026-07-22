@@ -85,7 +85,7 @@ async function createProviderViaApi() {
     name: 'F35 Provider API',
     email,
     phone: '11999990000',
-    password: 'Senha123!',
+    password: 'Senha1234!',
     vehicle: 'Guincho Plataforma',
     plate: 'F3503',
     city: 'Sao Paulo',

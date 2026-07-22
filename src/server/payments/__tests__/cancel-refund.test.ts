@@ -4,13 +4,12 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { db } from '@/server/db/prisma'
 import {
-  createPaymentRecord,
   transitionPayment,
   getPaymentById,
   cancelPayment,
   refundPayment,
-  type CreatePaymentInput,
 } from '@/server/repositories/payment.repository'
+import { createPaymentRecord, type CreatePaymentInput } from './payment-test-fixture'
 
 const PICKUP_JSON = JSON.stringify({ lat: -23.5505, lng: -46.6333 })
 const DEST_JSON = JSON.stringify({ lat: -23.56, lng: -46.64 })

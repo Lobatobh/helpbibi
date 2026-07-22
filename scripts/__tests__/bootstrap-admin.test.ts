@@ -155,6 +155,6 @@ describe('F35-02 secure first ADMIN bootstrap', () => {
     expect(source).toContain('pg_advisory_xact_lock')
     expect(source).toContain("isolationLevel: 'Serializable'")
     expect(source).not.toContain('$executeRawUnsafe')
-    expect(source).not.toContain('Admin123!')
+    expect(source).not.toContain(['Admin', '123!'].join(''))
   })
 })

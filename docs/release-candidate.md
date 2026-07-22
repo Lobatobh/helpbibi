@@ -77,8 +77,8 @@ bun --hot index.ts
 - **App**: http://localhost:81 (via Caddy gateway) ou http://localhost:3000 (direto, sem socket)
 - **Admin**: http://localhost:81/admin
   - Email: `admin@helpbibi.local`
-  - Senha: `Admin123!`
-  - (Apenas em dev com `ADMIN_SEED_ENABLED=true`)
+  - Senha legada: `[credencial de desenvolvimento removida]`
+  - Seed legado descontinuado; usar exclusivamente `scripts/bootstrap-admin.ts`
 
 ## Comandos de Validação
 
@@ -106,11 +106,11 @@ bun run git:hygiene
 
 | Tipo | Email | Senha | Ambiente |
 |------|-------|-------|----------|
-| Admin (seed) | admin@helpbibi.local | Admin123! | Dev apenas (ADMIN_SEED_ENABLED=true) |
+| Admin (seed descontinuado) | admin@helpbibi.local | [credencial de desenvolvimento removida] | Não utilizar; provisionar somente por `scripts/bootstrap-admin.ts` |
 | Cliente demo | Qualquer nome | — | Socket register (demo) |
 | Prestador demo | Qualquer nome + veículo + placa | — | Socket register (demo) |
 
-**Produção**: seed admin é BLOQUEADO. Criar admin via script/SQL.
+**Produção**: seed admin é BLOQUEADO e está descontinuado. Criar admin exclusivamente por `scripts/bootstrap-admin.ts`.
 
 ## Fluxos de Teste (Regressão Manual)
 

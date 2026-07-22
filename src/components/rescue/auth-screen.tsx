@@ -111,7 +111,7 @@ export function AuthScreen({
             <Label className="mb-1 block text-xs text-slate-400">Senha</Label>
             <div className="relative">
               <Lock className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Mínimo 6 caracteres" className="border-slate-700 bg-slate-950 pl-9 text-white" required />
+              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Minimo 10 caracteres" minLength={10} maxLength={128} className="border-slate-700 bg-slate-950 pl-9 text-white" required />
             </div>
           </div>
 

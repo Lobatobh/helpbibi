@@ -76,7 +76,7 @@ async function createLegacyUser(role: 'CLIENT' | 'PROVIDER') {
     data: {
       email: email(`legacy-${role.toLowerCase()}`),
       name: `Legacy ${role}`,
-      passwordHash: hashPassword('Senha123!'),
+      passwordHash: hashPassword('Senha1234!'),
       role,
       status: 'ACTIVE',
       ...(role === 'CLIENT' ? { clientProfile: { create: {} } } : {
@@ -101,7 +101,7 @@ async function createLegacyUser(role: 'CLIENT' | 'PROVIDER') {
 
 describe('F35-09A versioned registration consent', () => {
   test('client requires terms and privacy', async () => {
-    const base = { name: 'Cliente', email: email('missing'), password: 'Senha123!' }
+    const base = { name: 'Cliente', email: email('missing'), password: 'Senha1234!' }
     const missingTerms = await registerClient(request('http://localhost/api/auth/register-client', { ...base, acceptPrivacy: true }))
     const missingPrivacy = await registerClient(request('http://localhost/api/auth/register-client', { ...base, acceptTerms: true }))
     expect(missingTerms.status).toBe(422)
@@ -113,7 +113,7 @@ describe('F35-09A versioned registration consent', () => {
     const response = await registerClient(request('http://localhost/api/auth/register-client', {
       name: 'Cliente Consentido',
       email: rawEmail,
-      password: 'Senha123!',
+      password: 'Senha1234!',
       acceptTerms: true,
       acceptPrivacy: true,
       consentVersion: 'attacker-version',
@@ -139,7 +139,7 @@ describe('F35-09A versioned registration consent', () => {
 
     const mixedCaseLogin = await login(request('http://localhost/api/auth/login', {
       email: rawEmail.toLowerCase(),
-      password: 'Senha123!',
+      password: 'Senha1234!',
     }))
     expect(mixedCaseLogin.status).toBe(200)
   })
@@ -149,7 +149,7 @@ describe('F35-09A versioned registration consent', () => {
     await expect(createUserWithCurrentConsents({
       email: rollbackEmail,
       name: 'Rollback',
-      passwordHash: hashPassword('Senha123!'),
+      passwordHash: hashPassword('Senha1234!'),
       role: 'CLIENT',
       clientProfile: { create: {} },
     }, ['TERMS', 'TERMS'])).rejects.toBeTruthy()
@@ -159,7 +159,7 @@ describe('F35-09A versioned registration consent', () => {
   test('provider requires operational terms and starts PENDING with three current consents', async () => {
     const providerEmail = email('provider')
     const base = {
-      name: 'Prestador', email: providerEmail, password: 'Senha123!', vehicle: 'Guincho', plate: 'F3509A',
+      name: 'Prestador', email: providerEmail, password: 'Senha1234!', vehicle: 'Guincho', plate: 'F3509A',
       acceptTerms: true, acceptPrivacy: true,
     }
     const missing = await registerProvider(request('http://localhost/api/auth/register-provider', base))
@@ -189,14 +189,14 @@ describe('F35-09A versioned registration consent', () => {
   test('case-insensitive duplicate registration is rejected', async () => {
     const normalized = email('duplicate')
     const first = await registerClient(request('http://localhost/api/auth/register-client', {
-      name: 'Primeiro', email: normalized, password: 'Senha123!', acceptTerms: true, acceptPrivacy: true,
+      name: 'Primeiro', email: normalized, password: 'Senha1234!', acceptTerms: true, acceptPrivacy: true,
     }))
     expect(first.status).toBe(200)
     const user = await db.user.findUniqueOrThrow({ where: { email: normalized } })
     createdUserIds.push(user.id)
 
     const duplicate = await registerClient(request('http://localhost/api/auth/register-client', {
-      name: 'Segundo', email: normalized.toUpperCase(), password: 'Senha123!', acceptTerms: true, acceptPrivacy: true,
+      name: 'Segundo', email: normalized.toUpperCase(), password: 'Senha1234!', acceptTerms: true, acceptPrivacy: true,
     }))
     expect(duplicate.status).toBe(409)
   })
@@ -246,7 +246,7 @@ describe('F35-09A reconsent and operational guards', () => {
     const clientCookie = cookie(client.id, 'CLIENT')
     const loginResponse = await login(request('http://localhost/api/auth/login', {
       email: client.email,
-      password: 'Senha123!',
+      password: 'Senha1234!',
     }))
     const consentResponse = await getConsents(request('http://localhost/api/consents', undefined, clientCookie))
     const serviceResponse = await createClientService(request('http://localhost/api/client/services', {

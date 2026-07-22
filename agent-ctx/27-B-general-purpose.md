@@ -51,7 +51,7 @@ Added `severity?: 'info' | 'warning' | 'error'` and `userAgent?: string` to `Aud
 ### Admin login flow
 - `POST /api/admin/login` accepts `{ email, password }`.
 - **Production:** ALWAYS returns 403 for any seed credential attempt (logs `login_failure` with `reason: 'seed_blocked_in_prod'`).
-- **Dev with `ADMIN_SEED_ENABLED=true`:** accepts `admin@helpbibi.local` / `Admin123!`. Finds or creates the admin User row (role ADMIN), sets the session cookie, returns `{ ok, user }`. Audits `admin_login`.
+- **Discontinued legacy dev seed:** formerly accepted `admin@helpbibi.local` / `<REMOVED_LEGACY_DEV_PASSWORD>`. This flow is retained only as historical context; `scripts/bootstrap-admin.ts` is the only permitted admin bootstrap.
 - **Dev with `ADMIN_SEED_ENABLED` not set / false:** returns 401 with a hint message. Audits `login_failure` with `reason: 'seed_disabled'`.
 - Rate limited: `RATE_LIMITS.login` (10/min per IP).
 
@@ -81,5 +81,5 @@ Added `severity?: 'info' | 'warning' | 'error'` and `userAgent?: string` to `Aud
 
 ## What Other Agents May Need to Know
 - **Test agent:** update `src/server/__tests__/audit.test.ts` to `await getRecentAuditEvents()` everywhere. Consider adding a test for DB persistence (set `AUDIT_LOG_BACKEND=database` env in test, verify `db.auditLog` row is created) and for IP hashing (verify `ipHash` is a 16-char hex string, not the raw IP).
-- **Test agent:** if testing the admin login route, note it requires `ADMIN_SEED_ENABLED=true` in dev. In production tests, the seed is blocked (403).
+- **Test agent:** the legacy `ADMIN_SEED_ENABLED` flow is discontinued. Use admins provisioned exclusively through `scripts/bootstrap-admin.ts` in controlled test setup.
 - **Frontend agent:** the `/admin` page is fully self-contained — no new shared components were extracted. If you want to reuse the `MetricCard` / `QuickLinkCard` / severity badge helpers, they're defined inline in `src/app/admin/page.tsx`.

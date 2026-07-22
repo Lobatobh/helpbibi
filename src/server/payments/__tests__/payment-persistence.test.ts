@@ -3,9 +3,9 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { db } from '@/server/db/prisma'
 import {
-  createPaymentRecord, transitionPayment, listPaymentsByStatus, getPaymentByService,
-  type CreatePaymentInput,
+  transitionPayment, listPaymentsByStatus, getPaymentByService,
 } from '@/server/repositories/payment.repository'
+import { createPaymentRecord, type CreatePaymentInput } from './payment-test-fixture'
 
 const PICKUP_JSON = JSON.stringify({ lat: -23.5505, lng: -46.6333 })
 const DEST_JSON = JSON.stringify({ lat: -23.56, lng: -46.64 })
@@ -106,7 +106,7 @@ describe('payment-persistence — DB integration', () => {
     expect(svc!.paymentStatus).toBe('PENDING')
   })
 
-  test('5. idempotent: same idempotencyKey returns existing record', async () => {
+  test('5. both Prisma providers require one PaymentRecord per service', async () => {
     const input: CreatePaymentInput = {
       serviceRequestId: serviceRequest.id,
       method: 'PIX',
@@ -115,28 +115,14 @@ describe('payment-persistence — DB integration', () => {
       providerPayout: 144,
     }
     const first = await createPaymentRecord(input)
-    // The simulated gateway generates a unique idempotencyKey per call, so to test idempotency
-    // we manually create a record with a fixed idempotencyKey and call createPaymentRecord again
-    // — but since the gateway regenerates keys, we test idempotency at the DB lookup level.
-    // Insert directly with a fixed idempotencyKey to simulate an existing record:
-    const fixedKey = 'fixed_idem_key_for_test_5'
-    await db.paymentRecord.create({
-      data: {
-        serviceRequestId: serviceRequest.id,
-        method: 'PIX', status: 'PENDING',
-        amount: 200, platformFee: 40, providerPayout: 160,
-        discountAmount: 0, couponCode: null,
-        provider: 'simulated', providerPaymentId: 'pay_existing', externalReference: 'HB-EXISTING',
-        idempotencyKey: fixedKey,
-        events: { create: { eventType: 'CREATED', fromStatus: null, toStatus: 'PENDING', message: 'Initial' } },
-      },
-    })
-    // Now try to create again — but since gateway generates new keys, we test the lookup
-    // via a direct findUnique using the fixedKey:
-    const lookup = await db.paymentRecord.findUnique({ where: { idempotencyKey: fixedKey } })
-    expect(lookup).toBeTruthy()
-    expect(lookup!.idempotencyKey).toBe(fixedKey)
-    expect(first.idempotencyKey).toBeTruthy()
+    expect(await db.paymentRecord.count({ where: { serviceRequestId: serviceRequest.id } })).toBe(1)
+    expect(first.serviceRequestId).toBe(serviceRequest.id)
+
+    for (const schemaPath of ['prisma/schema.prisma', 'prisma/schema.postgres.prisma']) {
+      const schema = await Bun.file(schemaPath).text()
+      const paymentModel = schema.match(/model PaymentRecord \{[\s\S]*?\n\}/)?.[0] || ''
+      expect(paymentModel).toContain('@@unique([serviceRequestId])')
+    }
   })
 
   test('6. transitionPayment PENDING→PAID creates PAID event + paidAt', async () => {

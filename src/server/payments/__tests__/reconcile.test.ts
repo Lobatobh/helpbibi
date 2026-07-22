@@ -3,11 +3,11 @@
 import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
 import { db } from '@/server/db/prisma'
 import {
-  createPaymentRecord,
   transitionPayment,
   reconcilePayments,
   type ReconciliationIssue,
 } from '@/server/repositories/payment.repository'
+import { createPaymentRecord } from './payment-test-fixture'
 
 const PICKUP_JSON = JSON.stringify({ lat: -23.5505, lng: -46.6333 })
 const DEST_JSON = JSON.stringify({ lat: -23.56, lng: -46.64 })
@@ -151,9 +151,23 @@ describe('reconcile — repository integration (FASE 29)', () => {
       method: 'PIX', amount: 180, platformFee: 36, providerPayout: 144,
     })
     createdPaymentIds.push(r1.id)
-    // PAID with PAID event (clean)
+    const svc2 = await db.serviceRequest.create({
+      data: {
+        clientId: clientUser.id,
+        type: 'PNEU',
+        pickup: PICKUP_JSON,
+        pickupLabel: 'A',
+        destination: DEST_JSON,
+        destinationLabel: 'B',
+        price: 200,
+        paymentMethod: 'PIX',
+        paymentStatus: 'PENDING',
+      },
+    })
+    createdServiceIds.push(svc2.id)
+    // PAID with PAID event (clean), attached to a distinct service.
     const r2 = await createPaymentRecord({
-      serviceRequestId: serviceRequest.id,
+      serviceRequestId: svc2.id,
       method: 'PIX', amount: 200, platformFee: 40, providerPayout: 160,
     })
     createdPaymentIds.push(r2.id)

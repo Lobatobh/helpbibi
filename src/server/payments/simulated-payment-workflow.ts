@@ -206,10 +206,9 @@ async function findCanonicalRecord(tx: Prisma.TransactionClient, serviceRequestI
   }).catch(() => null)
   if (byKey) return byKey
 
-  return tx.paymentRecord.findFirst({
+  return tx.paymentRecord.findUnique({
     where: { serviceRequestId },
     include: { events: { orderBy: { createdAt: 'asc' } } },
-    orderBy: { createdAt: 'asc' },
   })
 }
 

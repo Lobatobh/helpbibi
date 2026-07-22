@@ -8,7 +8,7 @@
 //        - If ADMIN: load dashboard (fetch payments summary + audit events).
 //        - If not ADMIN: show "Acesso negado" + login form.
 //        - If not authenticated: show login form.
-//   2. Login form posts to /api/admin/login (dev seed: admin@helpbibi.local / Admin123!).
+//   2. Login form posts to /api/admin/login for an existing ADMIN account.
 //   3. On success, re-fetch /api/auth/me and reload dashboard.
 //   4. Logout posts to /api/auth/logout, clears user state.
 
@@ -439,16 +439,7 @@ export default function AdminPage() {
                   </Button>
 
                   <p className="text-center text-xs text-slate-500 dark:text-slate-400">
-                    Em desenvolvimento use{' '}
-                    <code className="rounded bg-slate-100 px-1 py-0.5 text-[11px] dark:bg-slate-800">
-                      admin@helpbibi.local
-                    </code>{' '}
-                    /{' '}
-                    <code className="rounded bg-slate-100 px-1 py-0.5 text-[11px] dark:bg-slate-800">
-                      Admin123!
-                    </code>
-                    <br />
-                    (requer <code className="text-[11px]">ADMIN_SEED_ENABLED=true</code>)
+                    O primeiro administrador deve ser criado pelo bootstrap operacional seguro.
                   </p>
                 </form>
               </CardContent>

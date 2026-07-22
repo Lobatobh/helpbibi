@@ -24,8 +24,8 @@ bun --hot index.ts
 - **Direto (sem socket)**: http://localhost:3000 — apenas landing page
 - **Admin**: http://localhost:81/admin
 
-### Credenciais Dev
-- Admin: `admin@helpbibi.local` / `Admin123!` (requer `ADMIN_SEED_ENABLED=true`)
+### Credenciais Dev (seed legado descontinuado)
+- Admin legado: `admin@helpbibi.local` / `[credencial de desenvolvimento removida]`. Provisionar administradores exclusivamente por `scripts/bootstrap-admin.ts`.
 - Cliente/Prestador: registro livre via demo (qualquer nome)
 
 ## Iniciar o Rescue-Service
@@ -94,8 +94,8 @@ curl -s http://localhost:3000/api/health/db
 
 ### Login
 1. Acesse http://localhost:81/admin
-2. Email: `admin@helpbibi.local`
-3. Senha: `Admin123!`
+2. Use o email do administrador provisionado exclusivamente por `scripts/bootstrap-admin.ts`
+3. O seed legado e sua senha `[credencial de desenvolvimento removida]` estão descontinuados
 4. Clique "Entrar como Admin"
 
 ### Dashboard
@@ -303,7 +303,7 @@ curl -X POST http://localhost:3000/api/admin/payments/$PAYMENT_ID/refund \
 - Rastrear `.env` no Git
 - Rodar `git add .` em ambiente de servidor
 - Commitar `db/custom.db` (banco runtime)
-- Usar `Admin123!` em produção
+- Usar a `[credencial de desenvolvimento removida]` ou qualquer seed legado em produção
 - Usar SQLite em produção
 - Usar `RATE_LIMIT_BACKEND=memory` em produção
 - Expor `MERCADO_PAGO_ACCESS_TOKEN` em logs
@@ -333,8 +333,8 @@ curl -X POST http://localhost:3000/api/admin/payments/$PAYMENT_ID/refund \
 3. Verificar CORS: `SOCKET_CORS_ORIGIN` deve estar vazio em dev (permite *)
 
 ### Admin login falha
-1. Verificar `ADMIN_SEED_ENABLED=true` no `.env`
-2. Verificar `NODE_ENV` não é `production` (seed bloqueado em prod)
+1. Verificar se o admin foi provisionado exclusivamente por `scripts/bootstrap-admin.ts`
+2. Não reativar `ADMIN_SEED_ENABLED`: o seed legado está descontinuado
 3. Verificar se admin user existe no DB
 
 ### Pagamento não persiste

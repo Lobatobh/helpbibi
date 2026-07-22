@@ -88,7 +88,7 @@ curl http://rescue:3003/health
 
 ### 2. Validações Funcionais
 - [ ] Página inicial carrega
-- [ ] Login admin funciona (admin@helpbibi.local / Admin123!)
+- [ ] Login admin funciona com usuário criado exclusivamente por `scripts/bootstrap-admin.ts` (seed legado descontinuado; `[credencial de desenvolvimento removida]`)
 - [ ] Cliente pode se registrar
 - [ ] Prestador pode se registrar
 - [ ] Solicitação de serviço funciona

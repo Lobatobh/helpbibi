@@ -5,14 +5,8 @@ import {
   generateIdempotencyKey, generateSimulatedTransactionId, generateExternalReference,
   type PaymentStatus,
 } from '@/server/payments/payment-state-machine'
-import { getPaymentGateway, getActiveProvider } from '@/server/payments/gateways'
-import { mapToGatewayMethod } from '@/server/payments/gateways/payment-gateway'
+import { getPaymentGateway } from '@/server/payments/gateways'
 import { logger } from '@/server/logger'
-
-export type CreatePaymentInput = {
-  serviceRequestId: string; method: string; amount: number; platformFee: number;
-  providerPayout: number; discountAmount?: number; couponCode?: string | null;
-}
 
 export type PaymentRecordWithEvents = {
   id: string; serviceRequestId: string; method: string; status: PaymentStatus;
@@ -27,38 +21,6 @@ export type PaymentRecordWithEvents = {
 }
 
 const toJson = (v: unknown): string | null => { if (v === null || v === undefined) return null; try { return JSON.stringify(v) } catch { return null } }
-
-export async function createPaymentRecord(input: CreatePaymentInput): Promise<PaymentRecordWithEvents> {
-  const method = mapToGatewayMethod(input.method)
-  const gateway = getPaymentGateway()
-  const provider = getActiveProvider()
-  const intent = await gateway.createPaymentIntent({
-    serviceRequestId: input.serviceRequestId, method, amount: input.amount,
-    platformFee: input.platformFee, providerPayout: input.providerPayout,
-    discountAmount: input.discountAmount || 0, couponCode: input.couponCode || null,
-  })
-  const idempotencyKey = intent.idempotencyKey || generateIdempotencyKey('pay', input.serviceRequestId)
-  const externalReference = intent.externalReference || generateExternalReference(input.serviceRequestId)
-  const providerPaymentId = intent.providerPaymentId
-  const simulatedTxId = provider === 'simulated' ? generateSimulatedTransactionId(input.serviceRequestId) : null
-
-  const existing = await db.paymentRecord.findUnique({ where: { idempotencyKey }, include: { events: { orderBy: { createdAt: 'asc' } } } }).catch(() => null)
-  if (existing) return sanitizeRecord(existing)
-
-  const record = await db.paymentRecord.create({
-    data: {
-      serviceRequestId: input.serviceRequestId, method, status: 'PENDING',
-      amount: input.amount, platformFee: input.platformFee, providerPayout: input.providerPayout,
-      discountAmount: input.discountAmount || 0, couponCode: input.couponCode || null,
-      provider, providerPaymentId, externalReference, idempotencyKey, simulatedTransactionId: simulatedTxId,
-      metadata: toJson(intent.methodData), rawPayload: toJson(intent.rawPayload),
-      events: { create: { eventType: 'CREATED', fromStatus: null, toStatus: 'PENDING', message: `Payment intent created via ${provider}`, rawPayload: toJson(intent.rawPayload) } },
-    },
-    include: { events: { orderBy: { createdAt: 'asc' } } },
-  })
-  await db.serviceRequest.update({ where: { id: input.serviceRequestId }, data: { paymentStatus: 'PENDING' } }).catch(() => {})
-  return sanitizeRecord(record)
-}
 
 export async function transitionPayment(
   paymentRecordId: string, toStatus: PaymentStatus,
@@ -86,70 +48,8 @@ export async function transitionPayment(
   return sanitizeRecord(updated)
 }
 
-export async function simulatePaymentOutcome(
-  serviceRequestId: string, outcome: 'success' | 'failure', method: string,
-  amount: number, platformFee: number, providerPayout: number,
-  discountAmount: number = 0, couponCode: string | null = null
-): Promise<PaymentRecordWithEvents> {
-  let record = await db.paymentRecord.findFirst({ where: { serviceRequestId }, include: { events: { orderBy: { createdAt: 'asc' } } } })
-  if (!record) {
-    const created = await createPaymentRecord({ serviceRequestId, method, amount, platformFee, providerPayout, discountAmount, couponCode })
-    record = await db.paymentRecord.findUnique({ where: { id: created.id }, include: { events: { orderBy: { createdAt: 'asc' } } } })
-  }
-  if (!record) throw new Error('Failed to create/find payment record')
-  if (outcome === 'success') {
-    return transitionPayment(record.id, 'PAID', { message: `Simulated approval (${method})`, rawPayload: { simulated: true, outcome, method } })
-  } else {
-    return transitionPayment(record.id, 'FAILED', { message: `Simulated failure (${method})`, rawPayload: { simulated: true, outcome, method } })
-  }
-}
-
-export async function processWebhook(rawBody: string, signature: string, headers: Record<string, string>): Promise<{ processed: boolean; reason: string; recordId?: string }> {
-  const gateway = getPaymentGateway()
-  const verification = await gateway.verifyWebhookSignature(rawBody, signature, headers as any)
-  if (!verification.valid) return { processed: false, reason: `Signature invalid: ${verification.reason}` }
-  const event = await gateway.parseWebhookEvent(rawBody, headers).catch((e) => { throw new Error(`Webhook parse error: ${e.message}`) })
-  const record = await db.paymentRecord.findFirst({ where: { OR: [{ providerPaymentId: event.providerPaymentId || '' }, { externalReference: event.externalReference || '' }] } })
-  if (!record) return { processed: false, reason: 'No PaymentRecord matches webhook providerPaymentId/externalReference' }
-  if (record.lastWebhookSignature === signature) {
-    await db.paymentEvent.create({ data: { paymentRecordId: record.id, eventType: 'WEBHOOK', fromStatus: record.status as PaymentStatus, toStatus: record.status as PaymentStatus, message: `Duplicate webhook ignored (same signature)`, rawPayload: toJson(event.rawPayload) } }).catch(() => {})
-    return { processed: false, reason: 'Duplicate webhook (idempotent skip)', recordId: record.id }
-  }
-  const statusMap: Record<string, PaymentStatus> = { AUTHORIZED: 'AUTHORIZED', PAID: 'PAID', FAILED: 'FAILED', CANCELED: 'CANCELED', REFUNDED: 'REFUNDED' }
-  const target = statusMap[event.event]
-
-  // FASE 29.1: WEBHOOK_RECEIVED means the webhook was valid but doesn't contain a status.
-  // Log a PaymentEvent but do NOT change the payment status — needs reconciliation.
-  if (event.event === 'WEBHOOK_RECEIVED') {
-    await db.paymentEvent.create({
-      data: {
-        paymentRecordId: record.id,
-        eventType: 'WEBHOOK',
-        fromStatus: record.status as PaymentStatus,
-        toStatus: record.status as PaymentStatus, // no state change
-        message: `Webhook received (no status in payload — needs reconciliation): ${event.message}`,
-        rawPayload: toJson(event.rawPayload),
-      },
-    }).catch(() => {})
-    // Update lastWebhookSignature so duplicate detection works
-    await db.paymentRecord.update({
-      where: { id: record.id },
-      data: { lastWebhookSignature: signature, webhookVerifiedAt: new Date() },
-    }).catch(() => {})
-    return { processed: true, reason: `Webhook received (no state change — needs reconciliation)`, recordId: record.id }
-  }
-
-  if (!target) return { processed: false, reason: `Unknown webhook event: ${event.event}`, recordId: record.id }
-  if (!canTransition(record.status as PaymentStatus, target)) {
-    await db.paymentEvent.create({ data: { paymentRecordId: record.id, eventType: 'WEBHOOK', fromStatus: record.status as PaymentStatus, toStatus: target, message: `Webhook transition not allowed: ${record.status} → ${target}`, rawPayload: toJson(event.rawPayload) } }).catch(() => {})
-    return { processed: false, reason: `Transition not allowed: ${record.status} → ${target}`, recordId: record.id }
-  }
-  await transitionPayment(record.id, target, { message: event.message, rawPayload: event.rawPayload, webhookSignature: signature })
-  return { processed: true, reason: `Webhook processed: ${event.event}`, recordId: record.id }
-}
-
 export async function getPaymentByService(serviceRequestId: string): Promise<PaymentRecordWithEvents | null> {
-  const record = await db.paymentRecord.findFirst({ where: { serviceRequestId }, include: { events: { orderBy: { createdAt: 'asc' } } }, orderBy: { createdAt: 'desc' } })
+  const record = await db.paymentRecord.findUnique({ where: { serviceRequestId }, include: { events: { orderBy: { createdAt: 'asc' } } } })
   return record ? sanitizeRecord(record) : null
 }
 export async function getPaymentById(id: string): Promise<PaymentRecordWithEvents | null> {
