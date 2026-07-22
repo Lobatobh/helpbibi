@@ -1,11 +1,14 @@
 // Help Bibi — Matching logic tests (FASE 25.4)
 import { describe, test, expect } from 'bun:test'
 import {
+  AUTH_POSITION_MAX_AGE_MS,
   createPublicDemoMatchingOptions, getMatchingRejectionReason,
   haversineDistance, isEligibleForMatching, rankProvidersByDistance,
   rankProvidersByDistanceExcluding, getMatchingMode,
   type MatchingProvider, type MatchingOptions,
 } from '../matching'
+
+const NOW = 1_800_000_000_000
 
 const baseProvider = (overrides: Partial<MatchingProvider> = {}): MatchingProvider => ({
   id: 'p1',
@@ -19,12 +22,15 @@ const baseProvider = (overrides: Partial<MatchingProvider> = {}): MatchingProvid
   documentStatus: 'APPROVED',
   vehicleStatus: 'APPROVED',
   userStatus: 'ACTIVE',
-  isGpsPosition: false,
+  isGpsPosition: true,
+  isAvailableIntent: true,
+  locationConsentCurrent: true,
+  lastPositionAt: NOW,
   ...overrides,
 })
 
-const devOptions: MatchingOptions = { isDevMode: true }
-const prodOptions: MatchingOptions = { isDevMode: false }
+const devOptions: MatchingOptions = { isDevMode: true, now: NOW }
+const prodOptions: MatchingOptions = { isDevMode: false, now: NOW }
 
 describe('matching — haversineDistance', () => {
   test('1. same point returns 0', () => {
@@ -101,6 +107,13 @@ describe('matching — isEligibleForMatching', () => {
   test('13. explains why an online demo provider is rejected when demoMode is disabled', () => {
     const p = baseProvider({ isDemoProvider: true })
     expect(getMatchingRejectionReason(p, prodOptions)).toBe('demo_mode_disabled')
+  })
+
+  test('13b. authenticated provider requires current LOCATION consent and a fresh real position', () => {
+    expect(getMatchingRejectionReason(baseProvider({ locationConsentCurrent: false }), prodOptions)).toBe('location_consent_required')
+    expect(getMatchingRejectionReason(baseProvider({ isGpsPosition: false }), prodOptions)).toBe('provider_location_missing')
+    expect(getMatchingRejectionReason(baseProvider({ position: null }), prodOptions)).toBe('provider_location_missing')
+    expect(getMatchingRejectionReason(baseProvider({ lastPositionAt: NOW - AUTH_POSITION_MAX_AGE_MS - 1 }), prodOptions)).toBe('provider_location_stale')
   })
 })
 

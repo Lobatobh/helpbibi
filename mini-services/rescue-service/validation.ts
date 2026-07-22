@@ -37,6 +37,7 @@ export function socketRateLimit(socketId: string, event: string, max: number, wi
  */
 export function isValidLatLng(pos: any): boolean {
   return Boolean(pos && typeof pos.lat === 'number' && typeof pos.lng === 'number'
+    && Number.isFinite(pos.lat) && Number.isFinite(pos.lng)
     && pos.lat >= -90 && pos.lat <= 90 && pos.lng >= -180 && pos.lng <= 180)
 }
 

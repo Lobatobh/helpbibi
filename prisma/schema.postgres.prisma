@@ -355,10 +355,13 @@ model TrackingShare {
   service     ServiceRequest @relation(fields: [serviceId], references: [id], onDelete: Cascade)
   token       String   @unique @default(cuid())
   expiresAt   DateTime?
+  revokedAt   DateTime?
+  activeKey   String?  @unique
   createdAt   DateTime @default(now())
   viewCount   Int      @default(0)
 
   @@index([serviceId])
+  @@index([expiresAt])
 }
 
 // ============================================================

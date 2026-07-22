@@ -4,6 +4,7 @@ import { requireCurrentUser, type AuthRole, type CurrentUser } from '@/server/au
 import { db } from '@/server/db/prisma'
 import {
   CURRENT_CONSENT_VERSIONS,
+  allowedConsentTypesForRole,
   isConsentTypeName,
   requiredConsentTypesForRole,
   type ConsentTypeName,
@@ -77,6 +78,32 @@ export async function hasCurrentConsents(
   return (await pendingConsentTypes(userId, role, client)).length === 0
 }
 
+export async function getConsentTypeStatus(
+  userId: string,
+  type: ConsentTypeName,
+  client: DbClient = db,
+): Promise<ConsentStatus> {
+  const version = CURRENT_CONSENT_VERSIONS[type]
+  const record = await client.consentRecord.findUnique({
+    where: { userId_type_version: { userId, type: type as any, version } },
+    select: { type: true, version: true, acceptedAt: true, revokedAt: true },
+  })
+  return {
+    type,
+    version,
+    accepted: !!record && activeCurrentConsent(record as any),
+    acceptedAt: record?.acceptedAt || null,
+  }
+}
+
+export async function hasCurrentConsentType(
+  userId: string,
+  type: ConsentTypeName,
+  client: DbClient = db,
+): Promise<boolean> {
+  return (await getConsentTypeStatus(userId, type, client)).accepted
+}
+
 export async function acceptCurrentConsents(
   userId: string,
   role: AuthRole | string,
@@ -87,7 +114,7 @@ export async function acceptCurrentConsents(
     throw new Error('At least one consent type is required')
   }
 
-  const allowed = requiredConsentTypesForRole(role)
+  const allowed = allowedConsentTypesForRole(role)
   const types = Array.from(new Set(requestedTypes))
   if (types.some((type) => !isConsentTypeName(type) || !allowed.includes(type))) {
     throw new Error('Consent type is not allowed for this role')
@@ -127,6 +154,17 @@ export async function requireCurrentConsents(
   }
   const pending = await pendingConsentTypes(user.id, user.role)
   if (pending.length) throw new ConsentRequiredError(pending)
+  return user
+}
+
+export async function requireCurrentLocationConsent(
+  request: NextRequest,
+  expectedRole: 'CLIENT' | 'PROVIDER',
+): Promise<CurrentUser> {
+  const user = await requireCurrentConsents(request, expectedRole)
+  if (!(await hasCurrentConsentType(user.id, 'LOCATION'))) {
+    throw new ConsentRequiredError(['LOCATION'])
+  }
   return user
 }
 

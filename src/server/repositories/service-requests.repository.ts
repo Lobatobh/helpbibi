@@ -50,7 +50,7 @@ const paymentToPublic: Record<string, string> = {
   CASH: 'cash',
 }
 
-function parseLocation(value: string): LatLng {
+function parseLocation(value: string): LatLng | null {
   try {
     const parsed = JSON.parse(value)
     if (parsed && typeof parsed.lat === 'number' && typeof parsed.lng === 'number') {
@@ -59,7 +59,13 @@ function parseLocation(value: string): LatLng {
   } catch {
     // fall through
   }
-  return { lat: 0, lng: 0 }
+  return null
+}
+
+function parseRequiredLocation(value: string): LatLng {
+  const location = parseLocation(value)
+  if (!location) throw new Error('ServiceRequest has an invalid pickup location')
+  return location
 }
 
 const activeServiceInclude = {
@@ -103,7 +109,7 @@ export type ServiceRealtimeSnapshot = {
   description: string
   pickup: LatLng
   pickupLabel: string
-  destination: LatLng
+  destination: LatLng | null
   destinationLabel: string
   price: number
   originalPrice: number
@@ -158,7 +164,7 @@ export function serializeRealtimeService(service: any): ServiceRealtimeSnapshot 
     typeLabel: serviceTypeLabel[service.type] || service.type,
     icon: serviceTypeIcon[service.type] || 'wrench',
     description: service.description || '',
-    pickup: parseLocation(service.pickup),
+    pickup: parseRequiredLocation(service.pickup),
     pickupLabel: service.pickupLabel,
     destination: parseLocation(service.destination),
     destinationLabel: service.destinationLabel,
@@ -243,7 +249,7 @@ export async function createServiceRequest(data: {
   description: string
   pickup: LatLng
   pickupLabel: string
-  destination: LatLng
+  destination: LatLng | null
   destinationLabel: string
   distanceKm: number
   etaMin: number

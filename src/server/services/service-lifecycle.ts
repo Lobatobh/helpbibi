@@ -7,6 +7,7 @@ import type {
 } from '@prisma/client'
 import { canProviderOperate } from '../providers/provider-approval'
 import { ACTIVE_SERVICE_STATUSES, TERMINAL_SERVICE_STATUSES } from './service-status'
+import { limitTrackingShareAfterTerminal } from '../tracking/tracking-share'
 export { isActiveServiceStatus } from './service-status'
 
 type DbClient = PrismaClient | Prisma.TransactionClient
@@ -53,7 +54,7 @@ export type CreateOperationalServiceInput = {
   description?: string
   pickup: LatLng
   pickupLabel: string
-  destination: LatLng
+  destination: LatLng | null
   destinationLabel: string
   distanceKm: number
   etaMin: number
@@ -273,6 +274,10 @@ export async function transitionServiceStatus(
     where: { id: serviceId },
     data,
   })
+
+  if (toStatus === 'COMPLETED' || toStatus === 'CANCELED' || toStatus === 'FAILED') {
+    await limitTrackingShareAfterTerminal(db, serviceId, now)
+  }
 
   await createTimelineEvent(db, serviceId, toStatus, options)
   emitAudit(options.audit, options.eventType, serviceId, options)

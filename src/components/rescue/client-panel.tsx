@@ -5,7 +5,7 @@ import {
   Shield, Phone, Star, MapPin, Navigation, X, Truck, Battery, Fuel, Key, Wrench,
   CircleDot, Clock, CheckCircle2, Loader2, AlertTriangle, MessageCircle,
   Zap, CreditCard, Wallet, History, Home, Send, Tag, Eye, ArrowRight, ChevronRight, User,
-  TrendingUp, Trophy, Heart, Volume2, VolumeX, Briefcase, Share2, Check, Settings,
+  TrendingUp, Trophy, Heart, Volume2, VolumeX, Briefcase, Check, Settings,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -951,7 +951,6 @@ export function ClientServiceTracker({
         {/* Actions */}
       {isLive && (
         <>
-          <ShareTrackingButton svcId={svc.id} />
           <Button onClick={onCancel} variant="outline" className="w-full border-rose-500/40 text-rose-400 hover:bg-rose-500/10">
             Cancelar solicitação
           </Button>
@@ -1375,42 +1374,5 @@ function ClientProfileView({ name, loyalty, history }: { name: string; loyalty: 
         </div>
       )}
     </div>
-  )
-}
-
-function ShareTrackingButton({ svcId }: { svcId: string }) {
-  const [copied, setCopied] = useState(false)
-
-  const handleShare = async () => {
-    const url = `${window.location.origin}/?track=${svcId}`
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: 'Help Bibi — Acompanhar serviço', url })
-      } else {
-        await navigator.clipboard.writeText(url)
-        setCopied(true)
-        setTimeout(() => setCopied(false), 2000)
-      }
-    } catch {
-      try {
-        await navigator.clipboard.writeText(url)
-        setCopied(true)
-        setTimeout(() => setCopied(false), 2000)
-      } catch {}
-    }
-  }
-
-  return (
-    <Button onClick={handleShare} variant="outline" className="w-full border-sky-500/40 text-sky-400 hover:bg-sky-500/10">
-      {copied ? (
-        <>
-          <Check className="mr-2 h-4 w-4" /> Link copiado!
-        </>
-      ) : (
-        <>
-          <Share2 className="mr-2 h-4 w-4" /> Compartilhar rastreamento
-        </>
-      )}
-    </Button>
   )
 }

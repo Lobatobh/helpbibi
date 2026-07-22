@@ -27,6 +27,12 @@ export function requiredConsentTypesForRole(role: AuthRole | string): ConsentTyp
   return []
 }
 
+export function allowedConsentTypesForRole(role: AuthRole | string): ConsentTypeName[] {
+  const required = requiredConsentTypesForRole(role)
+  if (role === 'CLIENT' || role === 'PROVIDER') return [...required, 'LOCATION']
+  return required
+}
+
 export function isConsentTypeName(value: unknown): value is ConsentTypeName {
   return typeof value === 'string' && (CONSENT_TYPES as readonly string[]).includes(value)
 }

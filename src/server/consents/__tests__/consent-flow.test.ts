@@ -16,6 +16,7 @@ import {
 } from '@/server/consents/consent-registration'
 import {
   CURRENT_CONSENT_VERSIONS,
+  allowedConsentTypesForRole,
   PRIVACY_NOTICE_VERSION,
   PROVIDER_OPERATIONAL_VERSION,
   TERMS_VERSION,
@@ -232,7 +233,12 @@ describe('F35-09A reconsent and operational guards', () => {
     const locationAttempt = await acceptConsents(request('http://localhost/api/consents/accept', {
       types: ['LOCATION'],
     }, session))
-    expect(locationAttempt.status).toBe(400)
+    expect(locationAttempt.status).toBe(200)
+    const locationRepeated = await acceptConsents(request('http://localhost/api/consents/accept', {
+      types: ['LOCATION'],
+    }, session))
+    expect(locationRepeated.status).toBe(200)
+    expect(await db.consentRecord.count({ where: { userId: client.id } })).toBe(3)
   })
 
   test('legacy user can login and inspect consent status but cannot operate before accepting', async () => {
@@ -247,7 +253,7 @@ describe('F35-09A reconsent and operational guards', () => {
       type: 'reboque',
       pickup: { lat: -23.55, lng: -46.63 },
       pickupLabel: 'Origem piloto',
-      destination: { lat: -23.56, lng: -46.65 },
+      destination: null,
       destinationLabel: 'Destino piloto',
       paymentMethod: 'pix',
     }, clientCookie))
@@ -260,11 +266,23 @@ describe('F35-09A reconsent and operational guards', () => {
       types: ['TERMS', 'PRIVACY_NOTICE'],
     }, clientCookie))
     expect(accepted.status).toBe(200)
+    const stillBlocked = await createClientService(request('http://localhost/api/client/services', {
+      type: 'reboque',
+      pickup: { lat: -23.55, lng: -46.63 },
+      pickupLabel: 'Origem piloto',
+      destination: null,
+      destinationLabel: 'Destino piloto',
+      paymentMethod: 'pix',
+    }, clientCookie))
+    expect(stillBlocked.status).toBe(428)
+    expect(await acceptConsents(request('http://localhost/api/consents/accept', {
+      types: ['LOCATION'],
+    }, clientCookie))).toHaveProperty('status', 200)
     const allowed = await createClientService(request('http://localhost/api/client/services', {
       type: 'reboque',
       pickup: { lat: -23.55, lng: -46.63 },
       pickupLabel: 'Origem piloto',
-      destination: { lat: -23.56, lng: -46.65 },
+      destination: null,
       destinationLabel: 'Destino piloto',
       paymentMethod: 'pix',
     }, clientCookie))
@@ -281,6 +299,11 @@ describe('F35-09A reconsent and operational guards', () => {
       types: ['TERMS', 'PRIVACY_NOTICE', 'PROVIDER_OPERATIONAL'],
     }, providerCookie))
     expect(accepted.status).toBe(200)
+    const locationBlocked = await updateAvailability(patchRequest('http://localhost/api/provider/availability', { online: true }, providerCookie))
+    expect(locationBlocked.status).toBe(428)
+    expect(await acceptConsents(request('http://localhost/api/consents/accept', {
+      types: ['LOCATION'],
+    }, providerCookie))).toHaveProperty('status', 200)
     const allowed = await updateAvailability(patchRequest('http://localhost/api/provider/availability', { online: true }, providerCookie))
     expect(allowed.status).toBe(200)
   })
@@ -335,16 +358,22 @@ describe('F35-09A public legal and static security contract', () => {
     const ratings = readFileSync('src/app/api/services/[id]/ratings/route.ts', 'utf8')
     const payment = readFileSync('src/app/api/payments/simulate/route.ts', 'utf8')
     const providerAdmin = readFileSync('src/app/admin/providers/[id]/page.tsx', 'utf8')
-    for (const source of [serviceCreate, availability, chat, ratings, payment]) {
+    for (const source of [availability, chat, ratings, payment]) {
       expect(source).toContain('requireCurrentConsents')
     }
+    expect(serviceCreate).toContain('requireCurrentLocationConsent')
+    expect(availability).toContain("hasCurrentConsentType(user.id, 'LOCATION')")
     expect(providerAdmin).toContain('window.confirm')
   })
 
-  test('canonical versions are server-defined and LOCATION is reserved for F35-09B', () => {
+  test('canonical LOCATION version is server-defined and separate from registration requirements', () => {
     expect(CURRENT_CONSENT_VERSIONS.TERMS).toBe(TERMS_VERSION)
     expect(CURRENT_CONSENT_VERSIONS.PRIVACY_NOTICE).toBe(PRIVACY_NOTICE_VERSION)
     expect(CURRENT_CONSENT_VERSIONS.PROVIDER_OPERATIONAL).toBe(PROVIDER_OPERATIONAL_VERSION)
     expect(CURRENT_CONSENT_VERSIONS.LOCATION).toBeTruthy()
+    expect(allowedConsentTypesForRole('CLIENT')).toContain('LOCATION')
+    expect(allowedConsentTypesForRole('PROVIDER')).toContain('LOCATION')
+    expect(readFileSync('src/app/api/auth/register-client/route.ts', 'utf8')).not.toContain('LOCATION')
+    expect(readFileSync('src/app/api/auth/register-provider/route.ts', 'utf8')).not.toContain('LOCATION')
   })
 })

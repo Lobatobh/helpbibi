@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { CreditCard, MapPin, Navigation, RefreshCcw, Save, Send, Shield, Star, UserRound, XCircle } from 'lucide-react'
+import { Copy, CreditCard, ExternalLink, Loader2, LocateFixed, MapPin, Navigation, RefreshCcw, Save, Send, Shield, Star, UserRound, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ChatPanel } from '@/components/rescue/chat-panel'
@@ -10,11 +10,13 @@ import { useAuthenticatedClientSocket } from '@/hooks/use-authenticated-rescue-s
 import { useClientHistory, type ServiceHistoryDetail } from '@/hooks/use-service-history'
 import { ConsentRequiredPanel } from '@/components/consents/consent-required-panel'
 import type { ConsentStatus } from '@/server/consents/consent-service'
+import { useGeolocation } from '@/hooks/use-geolocation'
 
 type Props = {
   userName: string
   initialService: ServiceData | null
   initialConsents: ConsentStatus[]
+  initialLocationConsent: ConsentStatus
 }
 
 type ClientProfile = {
@@ -23,17 +25,16 @@ type ClientProfile = {
   phone: string | null
 }
 
-const defaultPickup = { lat: -23.5505, lng: -46.6333 }
-const defaultDestination = { lat: -23.5614, lng: -46.6559 }
 const activePublicStatuses = ['searching', 'offered', 'accepted', 'arriving', 'arrived', 'in_progress']
 
-export function AuthenticatedClientPanel({ userName, initialService, initialConsents }: Props) {
+export function AuthenticatedClientPanel({ userName, initialService, initialConsents, initialLocationConsent }: Props) {
   const socket = useAuthenticatedClientSocket(initialService)
+  const geolocation = useGeolocation()
   const history = useClientHistory()
   const [type, setType] = useState<ServiceType>('reboque')
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix')
-  const [pickupLabel, setPickupLabel] = useState('Av. Paulista, 1000')
-  const [destinationLabel, setDestinationLabel] = useState('Rua Augusta, 500')
+  const [pickupLabel, setPickupLabel] = useState('Minha localizacao atual')
+  const [destinationLabel, setDestinationLabel] = useState('')
   const [description, setDescription] = useState('Preciso de socorro veicular')
   const [profile, setProfile] = useState<ClientProfile | null>(null)
   const [profileName, setProfileName] = useState(userName)
@@ -44,10 +45,15 @@ export function AuthenticatedClientPanel({ userName, initialService, initialCons
   const [ratingMessage, setRatingMessage] = useState<string | null>(null)
   const [paymentMessage, setPaymentMessage] = useState<string | null>(null)
   const [payingServiceId, setPayingServiceId] = useState<string | null>(null)
+  const [locationConsentAccepted, setLocationConsentAccepted] = useState(initialLocationConsent.accepted)
+  const [locationConsentLoading, setLocationConsentLoading] = useState(false)
+  const [locationError, setLocationError] = useState<string | null>(null)
+  const [trackingPath, setTrackingPath] = useState<string | null>(null)
+  const [trackingLoading, setTrackingLoading] = useState(false)
+  const [trackingMessage, setTrackingMessage] = useState<string | null>(null)
 
   const service = socket.service
   const status = service ? STATUS_LABELS[service.status] : null
-  const trackingUrl = service ? `/?track=${service.id}` : null
   const canCancel = !!service && activePublicStatuses.includes(service.status)
   const consentsCurrent = initialConsents.every((item) => item.accepted)
   const canChat = consentsCurrent && !!service?.provider && activePublicStatuses.includes(service.status)
@@ -75,6 +81,73 @@ export function AuthenticatedClientPanel({ userName, initialService, initialCons
     }
     void loadProfile()
   }, [userName])
+
+  useEffect(() => {
+    setTrackingPath(null)
+    setTrackingMessage(null)
+  }, [service?.id])
+
+  async function requestOperationalLocation() {
+    setLocationError(null)
+    if (!locationConsentAccepted) {
+      setLocationConsentLoading(true)
+      const response = await fetch('/api/consents/accept', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ types: ['LOCATION'] }),
+      })
+      setLocationConsentLoading(false)
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}))
+        setLocationError(data?.message || 'Nao foi possivel registrar o consentimento de localizacao.')
+        return
+      }
+      setLocationConsentAccepted(true)
+    }
+    geolocation.requestPosition()
+  }
+
+  async function prepareTrackingLink() {
+    if (!service) return
+    setTrackingLoading(true)
+    setTrackingMessage(null)
+    const response = await fetch(`/api/services/${service.id}/tracking`, {
+      method: 'POST',
+      credentials: 'include',
+    })
+    const data = await response.json().catch(() => ({}))
+    setTrackingLoading(false)
+    if (!response.ok || typeof data?.trackingPath !== 'string') {
+      setTrackingMessage(data?.message || 'Nao foi possivel gerar o link seguro.')
+      return
+    }
+    setTrackingPath(data.trackingPath)
+  }
+
+  async function copyTrackingLink() {
+    if (!trackingPath) return
+    try {
+      await navigator.clipboard.writeText(new URL(trackingPath, window.location.origin).toString())
+      setTrackingMessage('Link seguro copiado.')
+    } catch {
+      setTrackingMessage('Nao foi possivel copiar o link automaticamente.')
+    }
+  }
+
+  async function revokeTrackingLink() {
+    if (!service || !trackingPath) return
+    const response = await fetch(`/api/services/${service.id}/tracking`, {
+      method: 'DELETE',
+      credentials: 'include',
+    })
+    if (!response.ok) {
+      setTrackingMessage('Nao foi possivel revogar o link.')
+      return
+    }
+    setTrackingPath(null)
+    setTrackingMessage('Link revogado.')
+  }
 
   async function saveProfile(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -138,12 +211,16 @@ export function AuthenticatedClientPanel({ userName, initialService, initialCons
 
   function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (!locationConsentAccepted || !geolocation.coords || !geolocation.isReal) {
+      setLocationError('Obtenha sua localizacao real antes de criar a solicitacao.')
+      return
+    }
     socket.requestService({
       type,
       description,
-      pickup: defaultPickup,
+      pickup: { lat: geolocation.coords.lat, lng: geolocation.coords.lng },
       pickupLabel,
-      destination: defaultDestination,
+      destination: null,
       destinationLabel,
       paymentMethod,
     })
@@ -220,11 +297,25 @@ export function AuthenticatedClientPanel({ userName, initialService, initialCons
 
               <section className="rounded-lg border border-slate-800 bg-slate-900 p-5">
                 <h2 className="text-base font-semibold">Tracking</h2>
-                {trackingUrl ? (
-                  <a href={trackingUrl} className="mt-3 inline-flex w-full items-center justify-center rounded-md bg-sky-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400">
-                    Abrir rastreamento
-                  </a>
-                ) : null}
+                {!trackingPath ? (
+                  <Button type="button" className="mt-3 w-full bg-sky-500 text-slate-950 hover:bg-sky-400" onClick={() => void prepareTrackingLink()} disabled={trackingLoading}>
+                    {trackingLoading ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Shield className="mr-2 size-4" />}
+                    Gerar link seguro
+                  </Button>
+                ) : (
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <Button type="button" variant="outline" className="border-slate-700 bg-slate-950 text-white" onClick={() => void copyTrackingLink()}>
+                      <Copy className="mr-2 size-4" /> Copiar
+                    </Button>
+                    <a href={trackingPath} className="inline-flex items-center justify-center rounded-md bg-sky-500 px-3 py-2 text-sm font-semibold text-slate-950 hover:bg-sky-400">
+                      <ExternalLink className="mr-2 size-4" /> Abrir
+                    </a>
+                    <Button type="button" variant="outline" className="col-span-2 border-red-900 bg-red-950/30 text-red-200" onClick={() => void revokeTrackingLink()}>
+                      <XCircle className="mr-2 size-4" /> Revogar link
+                    </Button>
+                  </div>
+                )}
+                {trackingMessage ? <p className="mt-2 text-xs text-slate-400">{trackingMessage}</p> : null}
                 {canCancel ? (
                   <Button variant="outline" className="mt-3 w-full border-red-900 bg-red-950/30 text-red-200 hover:bg-red-950/50" onClick={() => socket.cancelService(service.id)}>
                     <XCircle className="mr-2 size-4" />
@@ -257,6 +348,23 @@ export function AuthenticatedClientPanel({ userName, initialService, initialCons
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
+              <section className="rounded-md border border-slate-700 bg-slate-950 p-4 md:col-span-2">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold text-white">Localizacao do atendimento</p>
+                    <p className="mt-1 text-xs text-slate-400">Usamos o GPS somente para registrar a origem real e encontrar prestadores proximos.</p>
+                  </div>
+                  <Button type="button" variant="outline" className="border-sky-800 bg-sky-950/30 text-sky-200" onClick={() => void requestOperationalLocation()} disabled={!consentsCurrent || locationConsentLoading || geolocation.status === 'locating'}>
+                    {locationConsentLoading || geolocation.status === 'locating'
+                      ? <Loader2 className="mr-2 size-4 animate-spin" />
+                      : <LocateFixed className="mr-2 size-4" />}
+                    {geolocation.status === 'located' ? 'Atualizar localizacao' : 'Permitir localizacao'}
+                  </Button>
+                </div>
+                {geolocation.status === 'located' && geolocation.isReal ? <p className="mt-3 text-xs text-emerald-300">Localizacao real obtida.</p> : null}
+                {geolocation.error || locationError ? <p className="mt-3 text-xs text-red-300">{geolocation.error || locationError}</p> : null}
+                {locationConsentAccepted && geolocation.status !== 'located' ? <p className="mt-2 text-xs text-slate-500">O consentimento foi registrado, mas o GPS ainda nao forneceu uma posicao valida.</p> : null}
+              </section>
               <label className="space-y-2">
                 <span className="text-sm text-slate-300">Tipo</span>
                 <select value={type} onChange={(event) => setType(event.target.value as ServiceType)} className="h-10 w-full rounded-md border border-slate-700 bg-slate-950 px-3 text-sm text-white">
@@ -276,6 +384,7 @@ export function AuthenticatedClientPanel({ userName, initialService, initialCons
               <label className="space-y-2">
                 <span className="text-sm text-slate-300">Destino</span>
                 <Input value={destinationLabel} onChange={(event) => setDestinationLabel(event.target.value)} className="border-slate-700 bg-slate-950 text-white" required />
+                <span className="block text-xs text-slate-500">O destino sera confirmado com o prestador; nenhum ponto geografico e inventado a partir deste texto.</span>
               </label>
               <label className="space-y-2 md:col-span-2">
                 <span className="text-sm text-slate-300">Descricao</span>
@@ -283,7 +392,7 @@ export function AuthenticatedClientPanel({ userName, initialService, initialCons
               </label>
             </div>
 
-            <Button type="submit" disabled={!consentsCurrent || !socket.connected || socket.submitting} className="mt-5 bg-sky-500 text-slate-950 hover:bg-sky-400">
+            <Button type="submit" disabled={!consentsCurrent || !locationConsentAccepted || !geolocation.coords || !geolocation.isReal || !socket.connected || socket.submitting} className="mt-5 bg-sky-500 text-slate-950 hover:bg-sky-400">
               <Send className="mr-2 size-4" />
               {socket.submitting ? 'Criando...' : 'Confirmar solicitacao'}
             </Button>

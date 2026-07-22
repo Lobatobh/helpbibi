@@ -60,7 +60,7 @@ export default function Home() {
 
   // If track ID is present, render public tracking page instead of landing
   if (trackId) {
-    return <PublicTracking serviceId={trackId} />
+    return <PublicTracking token={trackId} />
   }
 
   return (

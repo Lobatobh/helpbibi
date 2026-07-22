@@ -583,3 +583,30 @@ Riscos e pre-deploy:
 3. Aplicar `ConsentRecord` em janela controlada, sem fabricar aceites para contas existentes.
 4. Comunicar e testar o reconsentimento de CLIENT e PROVIDER existentes.
 5. Manter status NO-GO ate F35-09B corrigir localizacao/tracking/demo e Produto/Legal aprovar dados institucionais e textos.
+
+---
+
+## F35-09B - Geolocalizacao real, tracking por token e isolamento da demo
+
+### Status: IMPLEMENTADA LOCALMENTE, MVP PERMANECE NO-GO
+
+- `TrackingShare` recebeu apenas campos aditivos nullable: `revokedAt`, `activeKey @unique` e indice de `expiresAt` nos schemas SQLite/PostgreSQL.
+- Links novos usam token aleatorio de 256 bits, `expiresAt` obrigatorio e `activeKey=serviceId`; links legados sem expiracao/chave ativa sao recusados.
+- Criacao/reuso e revogacao usam transacao; conflito de unicidade retorna o link canonico concorrente.
+- Validade normal e 24 horas. `COMPLETED`, `CANCELED` e `FAILED` ocultam a posicao imediatamente e limitam o link a duas horas.
+- A consulta publica e rate limited, usa somente token e retorna status, tipo, ETA, primeiro nome/veiculo/nota do prestador, posicao reduzida e timeline sem labels.
+- Enderecos, IDs internos, telefone, e-mail, dados financeiros, chat, auditoria e token nao entram na resposta, logs ou timeline.
+- Cliente e prestador precisam registrar `LOCATION` e depois autorizar o navegador; falha do GPS nunca gera posicao ficticia.
+- Presenca e posicao do prestador sao efemeras. `isAvailable` continua sendo intencao persistida e nao e alterado apenas por falha de leitura GPS.
+- Posicao autenticada expira para matching apos dois minutos e a identidade sempre deriva da sessao Socket.IO.
+- Demo permanece funcional em memoria, com colecoes e matching separados, sem acesso operacional a contas ou prestadores reais.
+- A demo nao oferece link publico por `ServiceRequest.id`; compartilhamento seguro existe somente no fluxo autenticado por token.
+
+Limitacoes e pre-deploy:
+
+1. Aplicar os campos aditivos de `TrackingShare` em janela controlada antes de disponibilizar links.
+2. Nao fabricar `activeKey` ou `expiresAt` para links legados; eles devem ser regenerados por participante autenticado.
+3. Homologar permissao, negacao, timeout e precisao de GPS em navegadores Android/iOS e desktop sob HTTPS.
+4. Validar tracking por token, revogacao e expiracao apos deploy controlado.
+5. Nao existe geocodificacao: destino textual fica sem coordenada e o preco usa a regra canonica sem distancia de destino.
+6. Produto/Legal ainda precisa aprovar textos e dados institucionais; producao comercial continua bloqueada.

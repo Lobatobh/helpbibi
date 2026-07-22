@@ -7,9 +7,8 @@ import { createOperationalService } from '@/server/services/service-lifecycle'
 import { findRealtimeServiceById } from '@/server/repositories/service-requests.repository'
 import { calculatePrice } from '@/server/pricing/pricing-engine'
 import { db } from '@/server/db/prisma'
-import { ConsentRequiredError, requireCurrentConsents } from '@/server/consents/consent-service'
-
-type LatLng = { lat: number; lng: number }
+import { ConsentRequiredError, requireCurrentLocationConsent } from '@/server/consents/consent-service'
+import { isValidOperationalLocation } from '@/server/tracking/location-validation'
 
 const TYPE_MAP: Record<string, any> = {
   reboque: 'REBOQUE',
@@ -24,23 +23,6 @@ const PAYMENT_MAP: Record<string, any> = {
   pix: 'PIX',
   card: 'CARD',
   cash: 'CASH',
-}
-
-function isLatLng(value: unknown): value is LatLng {
-  return !!value &&
-    typeof value === 'object' &&
-    typeof (value as LatLng).lat === 'number' &&
-    typeof (value as LatLng).lng === 'number'
-}
-
-function distanceKm(a: LatLng, b: LatLng): number {
-  const r = 6371
-  const dLat = ((b.lat - a.lat) * Math.PI) / 180
-  const dLng = ((b.lng - a.lng) * Math.PI) / 180
-  const la1 = (a.lat * Math.PI) / 180
-  const la2 = (b.lat * Math.PI) / 180
-  const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2
-  return Number((2 * r * Math.asin(Math.sqrt(h))).toFixed(2))
 }
 
 export async function GET(req: NextRequest) {
@@ -70,26 +52,26 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const user = await requireCurrentConsents(req, 'CLIENT')
+    const user = await requireCurrentLocationConsent(req, 'CLIENT')
     const body = await req.json().catch(() => ({}))
     const type = TYPE_MAP[String(body?.type || '').toLowerCase()]
     const paymentMethod = PAYMENT_MAP[String(body?.paymentMethod || 'pix').toLowerCase()] || 'PIX'
 
-    if (!type || !isLatLng(body?.pickup) || !isLatLng(body?.destination)) {
+    if (!type || !isValidOperationalLocation(body?.pickup) || body?.destination !== null) {
       return NextResponse.json({ message: 'Invalid service payload' }, { status: 400 })
     }
     if (typeof body?.pickupLabel !== 'string' || typeof body?.destinationLabel !== 'string') {
       return NextResponse.json({ message: 'Pickup and destination labels are required' }, { status: 400 })
     }
 
-    const km = distanceKm(body.pickup, body.destination)
+    const km = 0
     const breakdown = calculatePrice({
       serviceType: String(body.type).toLowerCase() as any,
       pickup: body.pickup,
-      destination: body.destination,
+      destination: null,
       providerPosition: null,
       pickupDistanceKm: 0,
-      destinationDistanceKm: km,
+      destinationDistanceKm: 0,
     })
     const service = await createOperationalService(db as any, {
       clientId: user.id,
@@ -97,7 +79,7 @@ export async function POST(req: NextRequest) {
       description: String(body?.description || '').slice(0, 500),
       pickup: body.pickup,
       pickupLabel: body.pickupLabel.slice(0, 200),
-      destination: body.destination,
+      destination: null,
       destinationLabel: body.destinationLabel.slice(0, 200),
       distanceKm: km,
       etaMin: Math.max(3, Math.round(km / 0.5)),

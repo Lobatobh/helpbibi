@@ -3,13 +3,16 @@ import { requireRole } from '@/server/auth/session'
 import { db } from '@/server/db/prisma'
 import { canProviderOperate, getProviderOperationBlockReason } from '@/server/providers/provider-approval'
 import { findActiveServiceForProvider } from '@/server/repositories/service-requests.repository'
-import { ConsentRequiredError, requireCurrentConsents } from '@/server/consents/consent-service'
+import { ConsentRequiredError, hasCurrentConsentType, requireCurrentConsents } from '@/server/consents/consent-service'
 
 export async function PATCH(req: NextRequest) {
   try {
     const user = await requireCurrentConsents(req, 'PROVIDER')
     const body = await req.json().catch(() => ({}))
     const online = body?.online === true
+    if (online && !(await hasCurrentConsentType(user.id, 'LOCATION'))) {
+      throw new ConsentRequiredError(['LOCATION'])
+    }
 
     const provider = await db.providerProfile.findUnique({
       where: { userId: user.id },

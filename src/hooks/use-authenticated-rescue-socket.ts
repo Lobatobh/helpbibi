@@ -10,7 +10,7 @@ type RequestPayload = {
   description: string
   pickup: { lat: number; lng: number }
   pickupLabel: string
-  destination: { lat: number; lng: number }
+  destination: { lat: number; lng: number } | null
   destinationLabel: string
   paymentMethod: PaymentMethod
 }
@@ -24,6 +24,8 @@ type ProviderRuntimeState = {
   canOperate: boolean
   currentServiceId?: string | null
   approvalStatus?: string
+  positionFresh?: boolean
+  locationConsentCurrent?: boolean
 }
 
 function createAuthenticatedSocket() {
@@ -196,6 +198,7 @@ export function useAuthenticatedProviderSocket(initialService: ServiceData | nul
     })
     socket.on('auth:error', (payload: { message?: string }) => {
       setOperationError(payload?.message || 'Sessao invalida. Entre novamente.')
+      setState((current) => current ? { ...current, online: false, canOperate: false, positionFresh: false } : current)
     })
     socket.on('auth:provider:state', (payload: ProviderRuntimeState) => setState(payload))
     socket.on('auth:snapshot', (payload: { service?: ServiceData | null; provider?: ProviderRuntimeState | null }) => {
@@ -240,6 +243,18 @@ export function useAuthenticatedProviderSocket(initialService: ServiceData | nul
   const toggleOnline = useCallback((online: boolean) => {
     setOperationError(null)
     socketRef.current?.emit('auth:provider:toggle-online', { online })
+  }, [])
+
+  const sendPosition = useCallback((position: { lat: number; lng: number; accuracy?: number }, onAccepted?: (accepted: boolean) => void) => {
+    socketRef.current?.emit('auth:provider:position', {
+      lat: position.lat,
+      lng: position.lng,
+      accuracy: position.accuracy,
+    }, (result: { ok?: boolean } | undefined) => onAccepted?.(result?.ok === true))
+  }, [])
+
+  const clearPosition = useCallback(() => {
+    socketRef.current?.emit('auth:provider:position-unavailable')
   }, [])
 
   const accept = useCallback((serviceId: string) => {
@@ -298,6 +313,8 @@ export function useAuthenticatedProviderSocket(initialService: ServiceData | nul
     service,
     messages,
     toggleOnline,
+    sendPosition,
+    clearPosition,
     accept,
     reject,
     updateStatus,

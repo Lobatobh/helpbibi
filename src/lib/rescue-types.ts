@@ -112,7 +112,7 @@ export type ServiceData = {
   description: string
   pickup: LatLng
   pickupLabel: string
-  destination: LatLng
+  destination: LatLng | null
   destinationLabel: string
   price: number
   originalPrice: number

@@ -1,7 +1,9 @@
 import { createServer } from 'http'
+import { randomUUID } from 'crypto'
 import { Server } from 'socket.io'
 import { PrismaClient } from '@prisma/client'
 import {
+  AUTH_POSITION_MAX_AGE_MS,
   createPublicDemoMatchingOptions,
   getMatchingRejectionReason,
   rankProvidersByDistanceExcluding,
@@ -13,16 +15,14 @@ import {
   acceptServiceOffer,
   createOperationalService,
   declineServiceOffer,
-  expirePendingServiceOffers,
-  operationalEventForStatus,
   registerServiceOffers,
   transitionServiceStatus,
   updateServiceProviderPosition,
 } from '../../src/server/services/service-lifecycle'
 import { createServiceChatMessage, listServiceChatMessages } from '../../src/server/services/service-chat'
 import { loadServiceWithParticipants } from '../../src/server/services/service-access'
-import { getSessionUserFromCookieHeader } from '../../src/server/auth/session-token'
-import { hasCurrentConsents } from '../../src/server/consents/consent-service'
+import { COOKIE_NAME, getSessionUserFromCookieHeader } from '../../src/server/auth/session-token'
+import { hasCurrentConsents, hasCurrentConsentType } from '../../src/server/consents/consent-service'
 // FASE 26 — Socket.IO hardening helpers (per-socket rate limit + payload validation)
 import {
   socketRateBuckets, socketRateLimit,
@@ -72,16 +72,17 @@ type ChatMessage = {
 type Provider = {
   id: string; socketId: string; name: string; vehicle: string; plate: string;
   rating: number; ratingSum: number; ratingCount: number; completedCount: number; earningsToday: number;
-  online: boolean; position: LatLng; destination?: LatLng | null; currentServiceId?: string | null;
+  online: boolean; position: LatLng | null; destination?: LatLng | null; currentServiceId?: string | null;
   tripStartPos?: LatLng | null; tripTarget?: LatLng | null; tripStartedAt?: number | null; tripTotalKm?: number;
   // DB linkage
   dbUserId?: string; dbProviderProfileId?: string;
   isDemoProvider: boolean; isVerified: boolean; approvalStatus: string; documentStatus: string; vehicleStatus: string; userStatus: string; isGpsPosition: boolean;
+  isAvailableIntent?: boolean; locationConsentCurrent?: boolean; lastPositionAt?: number | null;
 }
 
 type ServiceRequest = {
   id: string; clientId: string; clientName: string; type: ServiceType; description: string;
-  pickup: LatLng; pickupLabel: string; destination: LatLng; destinationLabel: string;
+  pickup: LatLng; pickupLabel: string; destination: LatLng | null; destinationLabel: string;
   price: number; originalPrice: number; discount: number; promoCode: string | null;
   distanceKm: number; etaMin: number; status: ServiceStatus; paymentMethod: PaymentMethod;
   providerId?: string | null; notifiedProviderIds: string[]; rejectedProviderIds: string[];
@@ -172,16 +173,20 @@ const MULTI_NOTIFY_COUNT = 3
 
 // ----------------------- State (in-memory for realtime) -----------------------
 const providers = new Map<string, Provider>()
-const clients = new Map<string, { id: string; socketId: string; name: string; dbUserId?: string }>()
+const clients = new Map<string, { id: string; socketId: string; name: string }>()
 const services = new Map<string, ServiceRequest>()
 const chats = new Map<string, ChatMessage[]>()
 const socketToRole = new Map<string, { role: Role; id: string }>()
+const authenticatedProviders = new Map<string, Provider>()
+const authenticatedClients = new Map<string, { id: string; socketId: string; name: string; dbUserId: string }>()
+const authenticatedServices = new Map<string, ServiceRequest>()
+const authenticatedSocketToRole = new Map<string, { role: Role; id: string }>()
 const authenticatedSockets = new Map<string, AuthenticatedSocket>()
 
 const CITY = { center: { lat: -23.5505, lng: -46.6333 }, span: 0.05 }
 
 // ----------------------- Helpers -----------------------
-const uid = (p = '') => p + Math.random().toString(36).slice(2, 10)
+const uid = (prefix = '') => `${prefix}${randomUUID()}`
 
 const haversineKm = (a: LatLng, b: LatLng) => {
   const R = 6371
@@ -219,44 +224,6 @@ const calcEta = (distanceKm: number) => Math.max(3, Math.round(distanceKm / 0.5)
 const pushTimeline = (svc: ServiceRequest, status: ServiceStatus, label: string) => {
   svc.status = status
   svc.timeline.push({ status, label, at: Date.now() })
-}
-
-// Persist service status update to DB (fire-and-forget, non-blocking)
-const persistServiceStatus = (svc: ServiceRequest, options: {
-  eventType?: any
-  actorRole?: string
-  actorUserId?: string | null
-  providerProfileId?: string | null
-  providerId?: string | null
-  canceledByRole?: string
-  canceledByUserId?: string | null
-  cancellationReason?: string | null
-} = {}) => {
-  if (!svc.dbServiceId) return
-  const status = STATUS_MAP[svc.status] as any
-  const latest = svc.timeline[svc.timeline.length - 1]
-  transitionServiceStatus(db as any, svc.dbServiceId, status, {
-    label: latest?.label || `Status atualizado para ${status}`,
-    eventType: options.eventType || operationalEventForStatus(status),
-    actorRole: options.actorRole,
-    actorUserId: options.actorUserId,
-    providerProfileId: options.providerProfileId,
-    providerId: options.providerId,
-    canceledByRole: options.canceledByRole,
-    canceledByUserId: options.canceledByUserId,
-    cancellationReason: options.cancellationReason,
-    audit: audit as any,
-  }).catch(() => {})
-}
-
-// Throttled position persistence
-let lastPositionSave = 0
-const persistProviderPosition = (svc: ServiceRequest, p: Provider) => {
-  if (!svc.dbServiceId) return
-  const now = Date.now()
-  if (now - lastPositionSave < 3000) return // throttle: max once per 3s
-  lastPositionSave = now
-  updateServiceProviderPosition(db as any, svc.dbServiceId, p.position).catch(() => {})
 }
 
 const stepToward = (from: LatLng, to: LatLng, stepKm: number): { pos: LatLng; arrived: boolean } => {
@@ -307,7 +274,7 @@ const emitProvider = (p: Provider) => {
   io.emit('providers:nearby', availableProviderPublic())
 }
 
-const sanitizeService = (svc: ServiceRequest) => ({
+const sanitizeService = (svc: ServiceRequest, providerMap: Map<string, Provider> = providers) => ({
   id: svc.id, clientId: svc.clientId, clientName: svc.clientName,
   type: svc.type, typeLabel: SERVICE_TYPES[svc.type].label, icon: SERVICE_TYPES[svc.type].icon,
   description: svc.description, pickup: svc.pickup, pickupLabel: svc.pickupLabel,
@@ -316,7 +283,7 @@ const sanitizeService = (svc: ServiceRequest) => ({
   distanceKm: svc.distanceKm, etaMin: svc.etaMin, status: svc.status,
   paymentMethod: svc.paymentMethod, providerId: svc.providerId,
   notifiedProviderIds: svc.notifiedProviderIds, notifiedCount: svc.notifiedProviderIds.length,
-  provider: svc.providerId ? providers.get(svc.providerId) : null,
+  provider: svc.providerId ? providerMap.get(svc.providerId) : null,
   createdAt: svc.createdAt, acceptedAt: svc.acceptedAt, completedAt: svc.completedAt,
   timeline: svc.timeline, rating: svc.rating || null, clientRating: svc.clientRating || null,
   loyaltyPoints: svc.loyaltyPoints,
@@ -352,14 +319,14 @@ const DB_PAYMENT_TO_SOCKET: Record<string, PaymentMethod> = {
   CASH: 'cash',
 }
 
-const parseDbLocation = (value: string): LatLng => {
+const parseDbLocation = (value: string): LatLng | null => {
   try {
     const parsed = JSON.parse(value)
     if (parsed && typeof parsed.lat === 'number' && typeof parsed.lng === 'number') return parsed
   } catch {
     // ignore legacy malformed data
   }
-  return { lat: 0, lng: 0 }
+  return null
 }
 
 const authenticatedServiceInclude = {
@@ -372,6 +339,8 @@ const authenticatedServiceInclude = {
 const serviceFromDb = (dbSvc: any): ServiceRequest => {
   const type = DB_TYPE_TO_SOCKET[dbSvc.type] || 'reboque'
   const status = DB_STATUS_TO_SOCKET[dbSvc.status] || 'expired'
+  const pickup = parseDbLocation(dbSvc.pickup)
+  if (!pickup) throw new Error('ServiceRequest has an invalid pickup location')
   const pendingOffers = (dbSvc.offers || []).filter((offer: any) => offer.status === 'PENDING').map((offer: any) => offer.providerId)
   return {
     id: dbSvc.id,
@@ -379,7 +348,7 @@ const serviceFromDb = (dbSvc: any): ServiceRequest => {
     clientName: dbSvc.client?.name || 'Cliente',
     type,
     description: dbSvc.description || '',
-    pickup: parseDbLocation(dbSvc.pickup),
+    pickup,
     pickupLabel: dbSvc.pickupLabel,
     destination: parseDbLocation(dbSvc.destination),
     destinationLabel: dbSvc.destinationLabel,
@@ -428,7 +397,7 @@ const findActiveDbServiceForProvider = (providerId: string) => db.serviceRequest
 
 function rememberDbService(dbSvc: any): ServiceRequest {
   const svc = serviceFromDb(dbSvc)
-  services.set(svc.id, svc)
+  authenticatedServices.set(svc.id, svc)
   return svc
 }
 
@@ -436,11 +405,11 @@ async function emitAuthenticatedService(serviceId: string) {
   const dbSvc = await loadDbService(serviceId)
   if (!dbSvc) return null
   const svc = rememberDbService(dbSvc)
-  const payload = sanitizeService(svc)
-  const client = clients.get(dbSvc.clientId)
+  const payload = sanitizeService(svc, authenticatedProviders)
+  const client = authenticatedClients.get(dbSvc.clientId)
   if (client) io.to(client.socketId).emit('auth:service:update', payload)
   if (dbSvc.providerId) {
-    const provider = providers.get(dbSvc.providerId)
+    const provider = authenticatedProviders.get(dbSvc.providerId)
     if (provider) io.to(provider.socketId).emit('auth:service:update', payload)
   }
   return svc
@@ -477,6 +446,8 @@ function emitAuthenticatedProviderState(p: Provider) {
     canOperate: getProviderOperationBlockReason(p) === null,
     currentServiceId: p.currentServiceId || null,
     approvalStatus: p.approvalStatus,
+    positionFresh: !!p.position && !!p.lastPositionAt && Date.now() - p.lastPositionAt <= AUTH_POSITION_MAX_AGE_MS,
+    locationConsentCurrent: p.locationConsentCurrent === true,
   })
 }
 
@@ -505,17 +476,6 @@ const emitChatToService = (serviceId: string, msg?: ChatMessage) => {
   if (msg) {
     if (!chats.has(serviceId)) chats.set(serviceId, [])
     chats.get(serviceId)!.push(msg)
-    // Persist chat message to DB (fire-and-forget)
-    if (svc.dbServiceId) {
-      db.serviceChatMessage.create({
-        data: {
-          serviceId: svc.dbServiceId,
-          authorRole: msg.from,
-          authorName: msg.fromName,
-          text: msg.text,
-        }
-      }).catch(() => {})
-    }
   }
   const payload = { serviceId, messages: chats.get(serviceId) || [] }
   const client = clients.get(svc.clientId)
@@ -557,7 +517,6 @@ const clearOfferTimer = (svc: ServiceRequest) => {
 function closeServiceWithoutProviders(svc: ServiceRequest, label: string) {
   clearOfferTimer(svc)
   pushTimeline(svc, 'expired', label)
-  persistServiceStatus(svc)
 
   const providerPayload = sanitizeService(svc)
   svc.notifiedProviderIds.forEach((pid) => {
@@ -587,17 +546,6 @@ function offerServiceToProviders(svc: ServiceRequest, toNotify: Provider[], labe
   svc.providerId = primary.id
   primary.currentServiceId = svc.id
   pushTimeline(svc, 'offered', label)
-  if (svc.dbServiceId) {
-    const dbProviderIds = toNotify
-      .map((p) => p.dbProviderProfileId)
-      .filter((id): id is string => !!id)
-    registerServiceOffers(db as any, svc.dbServiceId, dbProviderIds, {
-      label,
-      actorRole: 'SYSTEM',
-      metadata: { socketProviderIds: toNotify.map((p) => p.id) },
-      audit: audit as any,
-    }).catch(() => {})
-  }
   emitService(svc)
   emitProvider(primary)
   toNotify.forEach((p) => io.to(p.socketId).emit('service:offer', sanitizeService(svc)))
@@ -613,15 +561,6 @@ function scheduleOfferExpiry(svc: ServiceRequest) {
 
     const expiryLabel = `Prestador(es) não respondeu(ram) a tempo — reofertando...`
     pushTimeline(s, 'expired', expiryLabel)
-    if (s.dbServiceId) {
-      const dbProviderIds = s.notifiedProviderIds
-        .map((pid) => providers.get(pid)?.dbProviderProfileId)
-        .filter((id): id is string => !!id)
-      expirePendingServiceOffers(db as any, s.dbServiceId, dbProviderIds, {
-        label: expiryLabel,
-        actorRole: 'SYSTEM',
-      }).catch(() => {})
-    }
     s.notifiedProviderIds.forEach((pid) => {
       const provider = providers.get(pid)
       if (!provider) return
@@ -675,8 +614,8 @@ async function resolveAuthenticatedSocket(cookieHeader: string | undefined): Pro
 }
 
 async function bindAuthenticatedClient(socket: any, auth: AuthenticatedSocket) {
-  clients.set(auth.userId, { id: auth.userId, socketId: socket.id, name: auth.name, dbUserId: auth.userId })
-  socketToRole.set(socket.id, { role: 'client', id: auth.userId })
+  authenticatedClients.set(auth.userId, { id: auth.userId, socketId: socket.id, name: auth.name, dbUserId: auth.userId })
+  authenticatedSocketToRole.set(socket.id, { role: 'client', id: auth.userId })
   const dbSvc = await findActiveDbServiceForClient(auth.userId)
   if (dbSvc) rememberDbService(dbSvc)
   socket.emit('auth:snapshot', {
@@ -699,6 +638,7 @@ async function bindAuthenticatedProvider(socket: any, auth: AuthenticatedSocket)
   }
   const dbSvc = await findActiveDbServiceForProvider(profile.id)
   const consentsCurrent = await hasCurrentConsents(auth.userId, auth.role, db as any)
+  const locationConsentCurrent = await hasCurrentConsentType(auth.userId, 'LOCATION', db as any)
   if (!consentsCurrent && profile.isAvailable) {
     await db.providerProfile.update({ where: { id: profile.id }, data: { isAvailable: false } }).catch(() => null)
   }
@@ -713,8 +653,8 @@ async function bindAuthenticatedProvider(socket: any, auth: AuthenticatedSocket)
     ratingCount: profile.ratingCount,
     completedCount: profile.completedCount,
     earningsToday: profile.earningsToday,
-    online: consentsCurrent && profile.isAvailable && !dbSvc,
-    position: { lat: CITY.center.lat + (Math.random() - 0.5) * CITY.span, lng: CITY.center.lng + (Math.random() - 0.5) * CITY.span },
+    online: false,
+    position: null,
     currentServiceId: dbSvc?.id || null,
     dbUserId: auth.userId,
     dbProviderProfileId: profile.id,
@@ -725,9 +665,12 @@ async function bindAuthenticatedProvider(socket: any, auth: AuthenticatedSocket)
     vehicleStatus: profile.vehicleStatus,
     userStatus: profile.user.status || 'ACTIVE',
     isGpsPosition: false,
+    isAvailableIntent: consentsCurrent && profile.isAvailable,
+    locationConsentCurrent,
+    lastPositionAt: null,
   }
-  providers.set(provider.id, provider)
-  socketToRole.set(socket.id, { role: 'provider', id: provider.id })
+  authenticatedProviders.set(provider.id, provider)
+  authenticatedSocketToRole.set(socket.id, { role: 'provider', id: provider.id })
   if (dbSvc) rememberDbService(dbSvc)
   emitAuthenticatedProviderState(provider)
   socket.emit('auth:snapshot', {
@@ -740,10 +683,11 @@ async function bindAuthenticatedProvider(socket: any, auth: AuthenticatedSocket)
       canOperate: consentsCurrent && getProviderOperationBlockReason(provider) === null,
       currentServiceId: provider.currentServiceId || null,
       approvalStatus: provider.approvalStatus,
+      positionFresh: false,
+      locationConsentCurrent,
     },
     service: dbSvc ? sanitizeService(serviceFromDb(dbSvc)) : null,
   })
-  io.emit('providers:nearby', availableProviderPublic())
 }
 
 async function bindAuthenticatedSocket(socket: any) {
@@ -792,9 +736,9 @@ async function offerAuthenticatedServiceToProviders(svc: ServiceRequest, toNotif
   svc.notifiedProviderIds = offered.map((provider) => provider.id)
   svc.providerId = null
   pushTimeline(svc, 'offered', label)
-  services.set(svc.id, svc)
-  const payload = sanitizeService(svc)
-  const client = clients.get(svc.clientId)
+  authenticatedServices.set(svc.id, svc)
+  const payload = sanitizeService(svc, authenticatedProviders)
+  const client = authenticatedClients.get(svc.clientId)
   if (client) io.to(client.socketId).emit('auth:service:update', payload)
   offered.forEach((provider) => io.to(provider.socketId).emit('auth:service:offer', payload))
   console.log(`[auth-service] offer emitted service=${svc.id} providers=${svc.notifiedProviderIds.join(',')}`)
@@ -802,9 +746,9 @@ async function offerAuthenticatedServiceToProviders(svc: ServiceRequest, toNotif
 
 function authenticatedCandidateProviders(svc: ServiceRequest): Provider[] {
   return rankProvidersByDistanceExcluding(
-    Array.from(providers.values()).filter((provider) => !provider.isDemoProvider && !!provider.dbProviderProfileId) as any,
+    Array.from(authenticatedProviders.values()).filter((provider) => !provider.isDemoProvider && !!provider.dbProviderProfileId) as any,
     svc.pickup,
-    { isDevMode: IS_DEV_MODE, demoMode: false },
+    { isDevMode: IS_DEV_MODE, demoMode: false, now: Date.now(), maxPositionAgeMs: AUTH_POSITION_MAX_AGE_MS },
     excludedProviderIdsFor(svc),
     MULTI_NOTIFY_COUNT,
   ) as unknown as Provider[]
@@ -813,28 +757,29 @@ function authenticatedCandidateProviders(svc: ServiceRequest): Provider[] {
 // ----------------------- Connection -----------------------
 io.on('connection', async (socket) => {
   console.log(`[socket] connected ${socket.id}`)
-  await bindAuthenticatedSocket(socket)
+  const boundAuth = await bindAuthenticatedSocket(socket)
+  const hasSessionCookie = String(socket.handshake.headers.cookie || '').includes(`${COOKIE_NAME}=`)
+  const demoAllowed = !boundAuth && !hasSessionCookie
 
   const currentAuth = () => authenticatedSockets.get(socket.id)
 
   const clearAuthenticatedPresence = (auth: AuthenticatedSocket) => {
     authenticatedSockets.delete(socket.id)
-    const role = socketToRole.get(socket.id)
+    const role = authenticatedSocketToRole.get(socket.id)
     if (role?.role === 'client') {
-      clients.delete(role.id)
+      authenticatedClients.delete(role.id)
     } else if (role?.role === 'provider') {
-      const provider = providers.get(role.id)
+      const provider = authenticatedProviders.get(role.id)
       if (provider) {
         provider.online = false
         provider.currentServiceId = null
         emitAuthenticatedProviderState(provider)
-        providers.delete(role.id)
-        io.emit('providers:nearby', availableProviderPublic())
+        authenticatedProviders.delete(role.id)
       }
     } else if (auth.providerProfileId) {
-      providers.delete(auth.providerProfileId)
+      authenticatedProviders.delete(auth.providerProfileId)
     }
-    socketToRole.delete(socket.id)
+    authenticatedSocketToRole.delete(socket.id)
   }
 
   const currentActiveAuth = async () => {
@@ -875,7 +820,7 @@ io.on('connection', async (socket) => {
     if (current) return auth
 
     if (auth.providerProfileId) {
-      const provider = providers.get(auth.providerProfileId)
+      const provider = authenticatedProviders.get(auth.providerProfileId)
       if (provider) {
         provider.online = false
         emitAuthenticatedProviderState(provider)
@@ -904,7 +849,7 @@ io.on('connection', async (socket) => {
   socket.on('auth:provider:toggle-online', async (data: { online: boolean }) => {
     const auth = await currentOperationalAuth()
     if (!auth || auth.role !== 'PROVIDER' || !auth.providerProfileId) return
-    const p = providers.get(auth.providerProfileId)
+    const p = authenticatedProviders.get(auth.providerProfileId)
     const profile = await db.providerProfile.findUnique({
       where: { id: auth.providerProfileId },
       include: { user: { select: { id: true, status: true } } },
@@ -917,6 +862,7 @@ io.on('connection', async (socket) => {
       vehicleStatus: profile.vehicleStatus,
       userStatus: profile.user.status || 'ACTIVE',
     })
+    p.locationConsentCurrent = await hasCurrentConsentType(auth.userId, 'LOCATION', db as any)
 
     const active = await findActiveDbServiceForProvider(profile.id)
     if (data.online && active) {
@@ -937,32 +883,131 @@ io.on('connection', async (socket) => {
       return
     }
 
+    const positionFresh = !!p.position && !!p.lastPositionAt && Date.now() - p.lastPositionAt <= AUTH_POSITION_MAX_AGE_MS
+    if (data.online && (!p.locationConsentCurrent || !p.isGpsPosition || !positionFresh)) {
+      p.online = false
+      emitAuthenticatedProviderState(p)
+      socket.emit('auth:operation-error', {
+        message: p.locationConsentCurrent
+          ? 'Aguarde uma posicao GPS valida antes de ficar disponivel.'
+          : 'Aceite o uso de localizacao antes de ficar disponivel.',
+      })
+      return
+    }
+
     await db.providerProfile.update({ where: { id: profile.id }, data: { isAvailable: data.online === true } })
+    p.isAvailableIntent = data.online === true
     p.online = data.online === true
     p.currentServiceId = null
+    if (!p.online) {
+      p.position = null
+      p.isGpsPosition = false
+      p.lastPositionAt = null
+    }
     emitAuthenticatedProviderState(p)
-    io.emit('providers:nearby', availableProviderPublic())
+  })
+
+  socket.on('auth:provider:position', async (
+    data: { lat: number; lng: number; accuracy?: number },
+    acknowledge?: (result: { ok: boolean }) => void,
+  ) => {
+    const auth = await currentOperationalAuth()
+    if (!auth || auth.role !== 'PROVIDER' || !auth.providerProfileId) { acknowledge?.({ ok: false }); return }
+    if (!socketRateLimit(socket.id, 'auth:provider:position', 10, 10000)) { acknowledge?.({ ok: false }); return }
+    if (!isValidLatLng(data)) {
+      socket.emit('auth:operation-error', { message: 'Posicao GPS invalida.' })
+      acknowledge?.({ ok: false })
+      return
+    }
+
+    const locationConsentCurrent = await hasCurrentConsentType(auth.userId, 'LOCATION', db as any)
+    const profile = await db.providerProfile.findUnique({
+      where: { id: auth.providerProfileId },
+      include: { user: { select: { status: true } } },
+    })
+    const p = authenticatedProviders.get(auth.providerProfileId)
+    if (!profile || !p || !locationConsentCurrent) {
+      if (p) {
+        p.locationConsentCurrent = false
+        p.online = false
+        p.position = null
+        p.isGpsPosition = false
+        p.lastPositionAt = null
+        emitAuthenticatedProviderState(p)
+      }
+      socket.emit('auth:operation-error', { message: 'Consentimento de localizacao vigente e obrigatorio.' })
+      acknowledge?.({ ok: false })
+      return
+    }
+    Object.assign(p, {
+      isVerified: profile.isVerified,
+      approvalStatus: profile.approvalStatus,
+      documentStatus: profile.documentStatus,
+      vehicleStatus: profile.vehicleStatus,
+      userStatus: profile.user.status || 'ACTIVE',
+      locationConsentCurrent,
+    })
+    if (getProviderOperationBlockReason(p)) {
+      p.online = false
+      p.position = null
+      p.isGpsPosition = false
+      p.lastPositionAt = null
+      emitAuthenticatedProviderState(p)
+      socket.emit('auth:operation-error', { message: 'Prestador sem autorizacao operacional.' })
+      acknowledge?.({ ok: false })
+      return
+    }
+
+    p.position = { lat: data.lat, lng: data.lng }
+    p.isGpsPosition = true
+    p.lastPositionAt = Date.now()
+    emitAuthenticatedProviderState(p)
+
+    if (p.currentServiceId) {
+      const service = await loadDbService(p.currentServiceId)
+      if (service?.providerId === p.id && ['ACCEPTED', 'PROVIDER_EN_ROUTE', 'ARRIVED', 'IN_PROGRESS'].includes(service.status)) {
+        await updateServiceProviderPosition(db as any, service.id, p.position)
+        await emitAuthenticatedService(service.id)
+      }
+    }
+    acknowledge?.({ ok: true })
+  })
+
+  socket.on('auth:provider:position-unavailable', async () => {
+    const auth = await currentActiveAuth()
+    if (!auth || auth.role !== 'PROVIDER' || !auth.providerProfileId) return
+    const p = authenticatedProviders.get(auth.providerProfileId)
+    if (!p) return
+    p.position = null
+    p.isGpsPosition = false
+    p.lastPositionAt = null
+    p.online = false
+    emitAuthenticatedProviderState(p)
   })
 
   socket.on('auth:client:request', async (data: {
     type: ServiceType; description: string;
-    pickup: LatLng; pickupLabel: string; destination: LatLng; destinationLabel: string;
+    pickup: LatLng; pickupLabel: string; destination: null; destinationLabel: string;
     paymentMethod: PaymentMethod
   }) => {
     const auth = await currentOperationalAuth()
     if (!auth || auth.role !== 'CLIENT') return
+    if (!(await hasCurrentConsentType(auth.userId, 'LOCATION', db as any))) {
+      socket.emit('auth:operation-error', { message: 'Aceite e permita a localizacao antes de criar a solicitacao.' })
+      return
+    }
     if (!socketRateLimit(socket.id, 'auth:client:request', 5, 60000)) {
       socket.emit('auth:operation-error', { message: 'Muitas solicitacoes. Aguarde alguns segundos.' })
       return
     }
-    if (!data || !TYPE_MAP[data.type] || !isValidLatLng(data.pickup) || !isValidLatLng(data.destination) ||
+    if (!data || !TYPE_MAP[data.type] || !isValidLatLng(data.pickup) || data.destination !== null ||
       !isNonEmptyString(data.pickupLabel, 200) || !isNonEmptyString(data.destinationLabel, 200)) {
       socket.emit('auth:operation-error', { message: 'Dados da solicitacao invalidos.' })
       return
     }
 
-    const distanceKm = haversineKm(data.pickup, data.destination)
-    const breakdown = calcPriceBreakdown(data.type, data.pickup, data.destination, distanceKm, null)
+    const distanceKm = 0
+    const breakdown = calcPriceBreakdown(data.type, data.pickup, null, distanceKm, null)
     const price = Math.round(breakdown.total)
     const originalPrice = Math.round(breakdown.beforeDiscount)
     const discount = Math.round(breakdown.discountAmount)
@@ -987,14 +1032,10 @@ io.on('connection', async (socket) => {
         loyaltyPoints: 0,
         label: 'Solicitacao enviada - procurando prestador proximo',
       }, { dedupeActive: true, audit: audit as any })
-      if (!(dbSvc as any).deduped) {
-        await db.trackingShare.create({ data: { serviceId: dbSvc.id } }).catch(() => null)
-      }
-
       const loaded = await loadDbService(dbSvc.id)
       if (!loaded) throw new Error('Service not found after create')
       const svc = rememberDbService(loaded)
-      socket.emit('auth:service:update', sanitizeService(svc))
+      socket.emit('auth:service:update', sanitizeService(svc, authenticatedProviders))
 
       if ((dbSvc as any).deduped) {
         console.log(`[auth-service] duplicate request blocked service=${svc.id} client=${auth.userId}`)
@@ -1020,8 +1061,18 @@ io.on('connection', async (socket) => {
   socket.on('auth:service:accept', async (data: { serviceId: string }) => {
     const auth = await currentOperationalAuth()
     if (!auth || auth.role !== 'PROVIDER' || !auth.providerProfileId) return
-    const p = providers.get(auth.providerProfileId)
+    const p = authenticatedProviders.get(auth.providerProfileId)
     if (!p) return
+    const eligibilityReason = getMatchingRejectionReason(p, {
+      isDevMode: IS_DEV_MODE,
+      demoMode: false,
+      now: Date.now(),
+      maxPositionAgeMs: AUTH_POSITION_MAX_AGE_MS,
+    })
+    if (eligibilityReason) {
+      socket.emit('auth:operation-error', { message: `Prestador indisponivel: ${eligibilityReason}.` })
+      return
+    }
     try {
       const result = await acceptServiceOffer(db as any, data.serviceId, auth.providerProfileId, {
         label: `${p.name} aceitou a chamada e esta a caminho`,
@@ -1036,20 +1087,12 @@ io.on('connection', async (socket) => {
       }
       p.currentServiceId = data.serviceId
       p.online = true
-      p.tripStartPos = { ...p.position }
-      const svc = services.get(data.serviceId)
-      if (svc) {
-        p.tripTarget = svc.pickup
-        p.destination = svc.pickup
-        p.tripStartedAt = Date.now()
-        p.tripTotalKm = haversineKm(p.position, svc.pickup)
-      }
       emitAuthenticatedProviderState(p)
       const updated = await emitAuthenticatedService(data.serviceId)
       if (updated) {
         updated.notifiedProviderIds.forEach((providerId) => {
           if (providerId === auth.providerProfileId) return
-          const other = providers.get(providerId)
+          const other = authenticatedProviders.get(providerId)
           if (other) io.to(other.socketId).emit('auth:offer-taken', { serviceId: data.serviceId })
         })
       }
@@ -1061,7 +1104,7 @@ io.on('connection', async (socket) => {
   socket.on('auth:service:reject', async (data: { serviceId: string; reason?: string }) => {
     const auth = await currentOperationalAuth()
     if (!auth || auth.role !== 'PROVIDER' || !auth.providerProfileId) return
-    const p = providers.get(auth.providerProfileId)
+    const p = authenticatedProviders.get(auth.providerProfileId)
     if (!p) return
     await declineServiceOffer(db as any, data.serviceId, auth.providerProfileId, {
       label: `${p.name} recusou a chamada`,
@@ -1083,7 +1126,7 @@ io.on('connection', async (socket) => {
   ) => {
     const auth = await currentOperationalAuth()
     if (!auth || auth.role !== 'PROVIDER' || !auth.providerProfileId) return
-    const p = providers.get(auth.providerProfileId)
+    const p = authenticatedProviders.get(auth.providerProfileId)
     if (!p) return
     const dbSvc = await loadDbService(serviceId)
     if (!dbSvc || dbSvc.providerId !== auth.providerProfileId) return
@@ -1137,7 +1180,7 @@ io.on('connection', async (socket) => {
       audit: audit as any,
     }).catch(() => null)
     if (dbSvc.providerId) {
-      const p = providers.get(dbSvc.providerId)
+      const p = authenticatedProviders.get(dbSvc.providerId)
       if (p) {
         p.currentServiceId = null
         emitAuthenticatedProviderState(p)
@@ -1171,33 +1214,13 @@ io.on('connection', async (socket) => {
     }
   })
 
+  if (demoAllowed) {
   socket.on('client:register', async (data: { name: string }) => {
     if (!socketRateLimit(socket.id, 'client:register', 5, 60000)) return
     if (!data || !isNonEmptyString(data.name, 100)) return
     const id = uid('cli_')
-    // Persist user to DB
-    let dbUserId: string | undefined
-    try {
-      const user = await db.user.upsert({
-        where: { email: `demo_${data.name}@helpbibi.com` },
-        update: { name: data.name },
-        create: {
-          name: data.name,
-          email: `demo_${data.name}@helpbibi.com`,
-          role: 'CLIENT',
-          clientProfile: { create: {} },
-          loyaltyAccount: { create: { points: 0, tier: 'Bronze' } },
-        },
-        include: { loyaltyAccount: true },
-      })
-      dbUserId = user.id
-      const points = user.loyaltyAccount?.points || 0
-      clientLoyalty.set(data.name, points)
-    } catch (e) {
-      console.error('[db] client register error:', e)
-    }
 
-    clients.set(id, { id, socketId: socket.id, name: data.name, dbUserId })
+    clients.set(id, { id, socketId: socket.id, name: data.name })
     socketToRole.set(socket.id, { role: 'client', id })
     const points = clientLoyalty.get(data.name) || 0
     const tier = loyaltyTier(points)
@@ -1205,7 +1228,7 @@ io.on('connection', async (socket) => {
     socket.emit('client:loyalty', { points, tier: { name: tier.name, color: tier.color, perk: tier.perk }, nextTierMin: nextTierMin(points) })
     socket.emit('loyalty:rewards', LOYALTY_REWARDS.map(r => ({ ...r, affordable: points >= r.cost })))
     socket.emit('providers:nearby', availableProviderPublic())
-    console.log(`[client] registered ${id} (${data.name}) — loyalty ${points}pts (${tier.name}) dbUser=${dbUserId}`)
+    console.log(`[client:demo] registered ${id} (${data.name})`)
   })
 
   socket.on('loyalty:redeem', (data: { rewardId: string }) => {
@@ -1225,10 +1248,6 @@ io.on('connection', async (socket) => {
     socket.emit('loyalty:redeem-result', { success: true, code: reward.code, label: reward.label, pointsSpent: reward.cost, pointsRemaining: newPoints, message: `Cupom ${reward.code} resgatado!` })
     socket.emit('client:loyalty', { points: newPoints, tier: { name: tier.name, color: tier.color, perk: tier.perk }, nextTierMin: nextTierMin(newPoints) })
     socket.emit('loyalty:rewards', LOYALTY_REWARDS.map(r => ({ ...r, affordable: newPoints >= r.cost })))
-    // Persist loyalty deduction
-    if (client.dbUserId) {
-      db.loyaltyAccount.update({ where: { userId: client.dbUserId }, data: { points: newPoints } }).catch(() => {})
-    }
     console.log(`[loyalty] ${name} redeemed ${reward.code} for ${reward.cost}pts (remaining ${newPoints})`)
   })
 
@@ -1236,43 +1255,6 @@ io.on('connection', async (socket) => {
     if (!socketRateLimit(socket.id, 'provider:register', 5, 60000)) return
     if (!data || !isNonEmptyString(data.name, 100) || !isNonEmptyString(data.vehicle, 100) || !isNonEmptyString(data.plate, 20)) return
     const id = uid('prv_')
-    // Persist user + provider profile to DB
-    let dbUserId: string | undefined
-    let dbProviderProfileId: string | undefined
-    let isVerified = false; let approvalStatus = 'PENDING'; let documentStatus = 'PENDING'; let vehicleStatus = 'PENDING'
-    try {
-      const user = await db.user.upsert({
-        where: { email: `demo_${data.name}@helpbibi.com` },
-        update: { name: data.name, role: 'PROVIDER' },
-        create: {
-          name: data.name,
-          email: `demo_${data.name}@helpbibi.com`,
-          role: 'PROVIDER',
-          providerProfile: {
-            create: {
-              vehicle: data.vehicle,
-              plate: data.plate,
-              isAvailable: true,
-              isVerified: true,
-              isDemoProvider: true,
-              approvalStatus: 'APPROVED',
-              documentStatus: 'APPROVED',
-              vehicleStatus: 'APPROVED',
-            },
-          },
-          loyaltyAccount: { create: { points: 0, tier: 'Bronze' } },
-        },
-        include: { providerProfile: true },
-      })
-      dbUserId = user.id
-      dbProviderProfileId = user.providerProfile?.id
-      isVerified = user.providerProfile?.isVerified ?? false
-      approvalStatus = user.providerProfile?.approvalStatus ?? 'PENDING'
-      documentStatus = user.providerProfile?.documentStatus ?? 'PENDING'
-      vehicleStatus = user.providerProfile?.vehicleStatus ?? 'PENDING'
-    } catch (e) {
-      console.error('[db] provider register error:', e)
-    }
 
     const provider: Provider = {
       id, socketId: socket.id, name: data.name, vehicle: data.vehicle, plate: data.plate,
@@ -1280,14 +1262,13 @@ io.on('connection', async (socket) => {
       online: true,
       position: { lat: CITY.center.lat + (Math.random() - 0.5) * CITY.span, lng: CITY.center.lng + (Math.random() - 0.5) * CITY.span },
       currentServiceId: null,
-      dbUserId, dbProviderProfileId,
-      isDemoProvider: true, isVerified, approvalStatus, documentStatus, vehicleStatus, userStatus: 'ACTIVE', isGpsPosition: false,
+      isDemoProvider: true, isVerified: true, approvalStatus: 'APPROVED', documentStatus: 'APPROVED', vehicleStatus: 'APPROVED', userStatus: 'ACTIVE', isGpsPosition: false,
     }
     providers.set(id, provider)
     socketToRole.set(socket.id, { role: 'provider', id })
     emitProvider(provider)
     socket.emit('provider:registered', { id })
-    console.log(`[provider] registered id=${id} demo=${provider.isDemoProvider} online=${provider.online} approvalStatus=${provider.approvalStatus} verified=${provider.isVerified} documentStatus=${provider.documentStatus} vehicleStatus=${provider.vehicleStatus} dbUser=${dbUserId ?? 'none'}`)
+    console.log(`[provider:demo] registered id=${id} online=${provider.online}`)
   })
 
   socket.on('provider:toggle-online', (data: { online: boolean }) => {
@@ -1302,18 +1283,12 @@ io.on('connection', async (socket) => {
         emitProvider(p)
         socket.emit('provider:online-denied', { reason })
         console.log(`[provider] online denied id=${p.id} reason=${reason}`)
-        if (p.dbProviderProfileId) {
-          db.providerProfile.update({ where: { id: p.dbProviderProfileId }, data: { isAvailable: false } }).catch(() => {})
-        }
         return
       }
     }
     p.online = data.online
     emitProvider(p)
     console.log(`[provider] ${data.online ? 'online' : 'offline'} id=${p.id}`)
-    if (p.dbProviderProfileId) {
-      db.providerProfile.update({ where: { id: p.dbProviderProfileId }, data: { isAvailable: data.online } }).catch(() => {})
-    }
   })
 
   socket.on('provider:position', (data: { lat: number; lng: number }) => {
@@ -1331,7 +1306,6 @@ io.on('connection', async (socket) => {
     if (p.currentServiceId) {
       const svc = services.get(p.currentServiceId)
       if (svc && svc.providerId === p.id && ['accepted', 'arriving', 'arrived', 'in_progress'].includes(svc.status)) {
-        persistProviderPosition(svc, p)
         emitLiveTrackingUpdate(svc, p)
         console.log(`[tracking] location received service=${svc.id} provider=${p.id}`)
       }
@@ -1397,49 +1371,6 @@ io.on('connection', async (socket) => {
       svc.timeline.push({ status: 'searching', label: `Cupom ${svc.promoCode} aplicado: -R$ ${discount}`, at: Date.now() })
     }
 
-    // Persist ServiceRequest to DB
-    try {
-      if (client.dbUserId) {
-        const dbSvc = await createOperationalService(db as any, {
-            clientId: client.dbUserId,
-            type: TYPE_MAP[data.type] as any,
-            description: data.description,
-            pickup: data.pickup,
-            pickupLabel: data.pickupLabel,
-            destination: data.destination,
-            destinationLabel: data.destinationLabel,
-            distanceKm: svc.distanceKm,
-            etaMin,
-            price,
-            originalPrice,
-            discount,
-            promoCode: svc.promoCode,
-            paymentMethod: PAYMENT_MAP[data.paymentMethod || 'pix'] as any,
-            loyaltyPoints: 0,
-            label: 'Solicitação enviada — procurando prestador próximo',
-        }, { audit: audit as any })
-        svc.dbServiceId = dbSvc.id
-        if (promoValid) {
-          await db.serviceTimelineEvent.create({
-            data: {
-              serviceId: dbSvc.id,
-              status: 'REQUESTED',
-              label: `Cupom ${svc.promoCode} aplicado: -R$ ${discount}`,
-              eventType: 'request_created',
-              actorRole: 'CLIENT',
-              actorUserId: client.dbUserId,
-              metadata: JSON.stringify({ promoCode: svc.promoCode, discount }),
-            }
-          })
-        }
-        // Create tracking share
-        await db.trackingShare.create({ data: { serviceId: dbSvc.id } }).catch(() => {})
-        console.log(`[db] service persisted ${svc.id} → dbId=${dbSvc.id}`)
-      }
-    } catch (e) {
-      console.error('[db] service create error:', e)
-    }
-
     services.set(svc.id, svc)
     emitService(svc)
     console.log(`[service] request created service=${svc.id} client=${role.id} type=${svc.type} payment=${svc.paymentMethod}`)
@@ -1493,17 +1424,7 @@ io.on('connection', async (socket) => {
     svc.providerId = winner.id; winner.currentServiceId = svc.id; winner.online = true
     svc.acceptedAt = Date.now()
     pushTimeline(svc, 'accepted', `${winner.name} aceitou a chamada e está a caminho`)
-    if (svc.dbServiceId && winner.dbProviderProfileId) {
-      acceptServiceOffer(db as any, svc.dbServiceId, winner.dbProviderProfileId, {
-        label: `${winner.name} aceitou a chamada e está a caminho`,
-        actorRole: 'PROVIDER',
-        actorUserId: winner.dbUserId || null,
-        providerProfileId: winner.dbProviderProfileId,
-        audit: audit as any,
-      }).catch(() => {})
-    } else {
-      persistServiceStatus(svc)
-    }
+    if (!winner.position) return
     winner.tripStartPos = { ...winner.position }; winner.tripTarget = svc.pickup; winner.tripStartedAt = Date.now(); winner.tripTotalKm = haversineKm(winner.position, svc.pickup); winner.destination = svc.pickup
     emitProvider(winner); emitService(svc); emitChatToService(svc.id)
     console.log(`[service] offer accepted service=${svc.id} provider=${winner.id}`)
@@ -1533,16 +1454,6 @@ io.on('connection', async (socket) => {
     emitProvider(p)
     console.log(`[service] offer rejected service=${svc.id} provider=${role.id}`)
     console.log(`[provider] released after rejection id=${p.id} online=${p.online}`)
-    if (svc.dbServiceId && p.dbProviderProfileId) {
-      declineServiceOffer(db as any, svc.dbServiceId, p.dbProviderProfileId, {
-        label: `${p.name} recusou a chamada`,
-        actorRole: 'PROVIDER',
-        actorUserId: p.dbUserId || null,
-        providerProfileId: p.dbProviderProfileId,
-        reason: 'provider_declined',
-        audit: audit as any,
-      }).catch(() => {})
-    }
 
     if (svc.notifiedProviderIds.length > 0) {
       const nextPrimary = svc.providerId ? providers.get(svc.providerId) : null
@@ -1557,7 +1468,6 @@ io.on('connection', async (socket) => {
     }
 
     pushTimeline(svc, 'searching', `${p.name} recusou — procurando outro prestador`)
-    persistServiceStatus(svc)
     emitService(svc)
 
     const nextBatch = rankProvidersByDistanceExcluding(
@@ -1581,13 +1491,9 @@ io.on('connection', async (socket) => {
     if (!svc || svc.providerId !== role.id) return
     if (svc.status === 'completed' || svc.status === 'cancelled') return
     const p = providers.get(role.id)!
+    if (!svc.destination) return
     p.position = { ...svc.pickup }
     pushTimeline(svc, 'arrived', `${p.name} chegou ao local do atendimento`)
-    persistServiceStatus(svc, {
-      actorRole: 'PROVIDER',
-      actorUserId: p.dbUserId || null,
-      providerProfileId: p.dbProviderProfileId || null,
-    })
     p.destination = svc.destination; p.tripStartPos = { ...svc.pickup }; p.tripTarget = svc.destination; p.tripStartedAt = Date.now(); p.tripTotalKm = haversineKm(svc.pickup, svc.destination)
     emitProvider(p); emitService(svc)
     console.log(`[tracking] arrival marked service=${svc.id} provider=${p.id}`)
@@ -1599,13 +1505,9 @@ io.on('connection', async (socket) => {
     const svc = services.get(data.serviceId)
     if (!svc || svc.providerId !== role.id) return
     const p = providers.get(role.id)!
+    if (!p.position || !svc.destination) return
     p.destination = svc.destination; p.tripStartPos = { ...p.position }; p.tripTarget = svc.destination; p.tripStartedAt = Date.now(); p.tripTotalKm = haversineKm(p.position, svc.destination)
     pushTimeline(svc, 'in_progress', 'Serviço em andamento — rumo ao destino final')
-    persistServiceStatus(svc, {
-      actorRole: 'PROVIDER',
-      actorUserId: p.dbUserId || null,
-      providerProfileId: p.dbProviderProfileId || null,
-    })
     emitProvider(p); emitService(svc)
     console.log(`[tracking] route updated service=${svc.id} provider=${p.id} status=in_progress`)
   })
@@ -1616,6 +1518,7 @@ io.on('connection', async (socket) => {
     const svc = services.get(data.serviceId)
     if (!svc || svc.providerId !== role.id) return
     const p = providers.get(role.id)!
+    if (!svc.destination) return
     p.position = { ...svc.destination }; p.destination = null; p.currentServiceId = null; p.online = true; p.completedCount += 1; p.earningsToday += svc.price
     p.tripStartPos = null; p.tripTarget = null; p.tripStartedAt = null; p.tripTotalKm = 0
     svc.completedAt = Date.now()
@@ -1629,19 +1532,7 @@ io.on('connection', async (socket) => {
     pushTimeline(svc, 'completed', 'Serviço concluído com sucesso. Avalie o atendimento!')
     if (earned > 0) svc.timeline.push({ status: 'completed', label: `+${earned} pontos de fidelidade (${newTier.name})`, at: Date.now() })
     if (newTier.name !== prevTier.name) svc.timeline.push({ status: 'completed', label: `🎉 Subiu para o tier ${newTier.name}! ${newTier.perk}`, at: Date.now() })
-    persistServiceStatus(svc, {
-      actorRole: 'PROVIDER',
-      actorUserId: p.dbUserId || null,
-      providerProfileId: p.dbProviderProfileId || null,
-    })
-    // Persist loyalty + provider stats to DB
     const client = clients.get(svc.clientId)
-    if (client?.dbUserId) {
-      db.loyaltyAccount.update({ where: { userId: client.dbUserId }, data: { points: newPoints, tier: newTier.name } }).catch(() => {})
-    }
-    if (p.dbProviderProfileId) {
-      db.providerProfile.update({ where: { id: p.dbProviderProfileId }, data: { completedCount: { increment: 1 }, earningsToday: { increment: svc.price }, isAvailable: true } }).catch(() => {})
-    }
     emitProvider(p); emitService(svc)
     console.log(`[tracking] ended service=${svc.id} provider=${p.id}`)
     if (client) {
@@ -1679,17 +1570,6 @@ io.on('connection', async (socket) => {
       const p = providers.get(svc.providerId)
       if (p) { p.ratingSum += stars; p.ratingCount += 1; p.rating = Number((p.ratingSum / p.ratingCount).toFixed(2)); emitProvider(p) }
     }
-    // Persist rating to DB
-    const client = clients.get(svc.clientId)
-    if (svc.dbServiceId && client?.dbUserId) {
-      db.serviceRating.create({ data: { serviceId: svc.dbServiceId, authorId: client.dbUserId, targetRole: 'provider', stars, comment: (data.comment || '').slice(0, 240) } }).catch(() => {})
-      if (svc.providerId) {
-        const p = providers.get(svc.providerId)
-        if (p?.dbProviderProfileId) {
-          db.providerProfile.update({ where: { id: p.dbProviderProfileId }, data: { ratingSum: { increment: stars }, ratingCount: { increment: 1 }, rating: Number(((p.ratingSum + stars) / (p.ratingCount + 1)).toFixed(2)) } }).catch(() => {})
-        }
-      }
-    }
     emitService(svc)
     console.log(`[rating] service ${svc.id} rated ${stars}★ by ${svc.clientName}`)
   })
@@ -1702,10 +1582,6 @@ io.on('connection', async (socket) => {
     const stars = Math.max(1, Math.min(5, Math.round(data.stars)))
     const p = providers.get(role.id)!
     svc.clientRating = { stars, comment: (data.comment || '').slice(0, 240), at: Date.now(), from: p.name }
-    // Persist rating to DB
-    if (svc.dbServiceId && p.dbUserId) {
-      db.serviceRating.create({ data: { serviceId: svc.dbServiceId, authorId: p.dbUserId, targetRole: 'client', stars, comment: (data.comment || '').slice(0, 240) } }).catch(() => {})
-    }
     emitService(svc)
     console.log(`[rating] service ${svc.id} client rated ${stars}★ by ${p.name}`)
   })
@@ -1722,14 +1598,6 @@ io.on('connection', async (socket) => {
     })
     svc.completedAt = Date.now()
     pushTimeline(svc, 'cancelled', 'Solicitação cancelada pelo cliente')
-    const client = clients.get(svc.clientId)
-    persistServiceStatus(svc, {
-      actorRole: 'CLIENT',
-      actorUserId: client?.dbUserId || null,
-      canceledByRole: 'CLIENT',
-      canceledByUserId: client?.dbUserId || null,
-      cancellationReason: (data.reason || 'client_cancelled').slice(0, 500),
-    })
     emitService(svc)
   })
 
@@ -1762,59 +1630,19 @@ io.on('connection', async (socket) => {
     socket.emit('chat:messages', { serviceId: svc.id, messages: chats.get(svc.id) || [] })
   })
 
-  // Public tracking — tries DB first, falls back to in-memory
-  socket.on('public:track', async (data: { serviceId: string }) => {
-    const svc = services.get(data.serviceId)
-    if (svc) {
-      // In-memory service found — return from memory
-      const p = svc.providerId ? providers.get(svc.providerId) : null
-      socket.emit('public:track-result', {
-        available: true, serviceId: svc.id, status: svc.status, type: svc.type,
-        typeLabel: SERVICE_TYPES[svc.type]?.label || svc.type, icon: SERVICE_TYPES[svc.type]?.icon || 'wrench',
-        pickupLabel: svc.pickupLabel, destinationLabel: svc.destinationLabel, distanceKm: svc.distanceKm, etaMin: svc.etaMin,
-        createdAt: svc.createdAt, acceptedAt: svc.acceptedAt || null, completedAt: svc.completedAt || null,
-        timeline: svc.timeline,
-        provider: p ? { name: p.name, vehicle: p.vehicle, rating: p.rating } : null,
-        providerPosition: p ? p.position : null, pickup: svc.pickup, destination: svc.destination,
-        tripProgress: p ? { startPos: p.tripStartPos || null, target: p.tripTarget || null, startedAt: p.tripStartedAt || null, totalKm: p.tripTotalKm || 0 } : null,
-      })
-      return
-    }
-    // Try DB by the socket service ID (could be the DB ID itself)
-    try {
-      const dbSvc = await db.serviceRequest.findUnique({
-        where: { id: data.serviceId },
-        include: { timeline: { orderBy: { createdAt: 'asc' } }, provider: { include: { user: true } } },
-      })
-      if (dbSvc) {
-        const statusMap: Record<string, string> = { REQUESTED: 'searching', OFFERED: 'offered', ACCEPTED: 'accepted', PROVIDER_EN_ROUTE: 'arriving', ARRIVED: 'arrived', IN_PROGRESS: 'in_progress', COMPLETED: 'completed', CANCELED: 'cancelled', EXPIRED: 'expired', FAILED: 'expired' }
-        const typeLabels: Record<string, string> = { REBOQUE: 'Reboque / Guincho', PNEU: 'Troca de Pneu', BATERIA: 'Carga de Bateria', COMBUSTIVEL: 'Combustível', CHAVEIRO: 'Chaveiro', PANE: 'Pane Mecânica' }
-        const typeIcons: Record<string, string> = { REBOQUE: 'tow-truck', PNEU: 'tire', BATERIA: 'battery', COMBUSTIVEL: 'fuel', CHAVEIRO: 'key', PANE: 'wrench' }
-        socket.emit('public:track-result', {
-          available: true, serviceId: data.serviceId,
-          status: statusMap[dbSvc.status] || 'expired',
-          type: dbSvc.type.toLowerCase(), typeLabel: typeLabels[dbSvc.type] || dbSvc.type, icon: typeIcons[dbSvc.type] || 'wrench',
-          pickupLabel: dbSvc.pickupLabel, destinationLabel: dbSvc.destinationLabel,
-          distanceKm: dbSvc.distanceKm, etaMin: dbSvc.etaMin,
-          createdAt: dbSvc.createdAt.getTime(), acceptedAt: dbSvc.acceptedAt?.getTime() || null, completedAt: dbSvc.completedAt?.getTime() || null,
-          timeline: dbSvc.timeline.map((ev: any) => ({ status: statusMap[ev.status] || 'expired', label: ev.label, at: ev.createdAt.getTime() })),
-          provider: dbSvc.provider ? { name: dbSvc.provider.user.name, vehicle: dbSvc.provider.vehicle, rating: dbSvc.provider.rating } : null,
-          providerPosition: dbSvc.providerLat && dbSvc.providerLng ? { lat: dbSvc.providerLat, lng: dbSvc.providerLng } : null,
-          pickup: JSON.parse(dbSvc.pickup), destination: JSON.parse(dbSvc.destination),
-          tripProgress: null,
-        })
-        return
-      }
-    } catch (e) {
-      console.error('[db] public:track error:', e)
-    }
-    socket.emit('public:track-result', { available: false, message: 'Rastreamento indisponível ou encerrado.' })
+  // Legacy event kept only as a controlled tombstone. Public tracking uses an HTTP token.
+  socket.on('public:track', () => {
+    socket.emit('public:track-result', { available: false, message: 'Use um link de rastreamento seguro.' })
   })
 
+  }
+
   socket.on('disconnect', () => {
+    const auth = currentAuth()
+    if (auth) clearAuthenticatedPresence(auth)
     const role = socketToRole.get(socket.id)
     if (!role) {
-      authenticatedSockets.delete(socket.id)
+      socketRateBuckets.delete(socket.id)
       return
     }
     if (role.role === 'client') { clients.delete(role.id) }
@@ -1824,7 +1652,6 @@ io.on('connection', async (socket) => {
     }
     socketRateBuckets.delete(socket.id)
     socketToRole.delete(socket.id)
-    authenticatedSockets.delete(socket.id)
     console.log(`[socket] disconnected ${socket.id}`)
   })
 })
@@ -1832,7 +1659,7 @@ io.on('connection', async (socket) => {
 // ----------------------- Movement simulation loop -----------------------
 setInterval(() => {
   for (const p of providers.values()) {
-    if (!p.destination) continue
+    if (!p.destination || !p.position) continue
     const stepKm = 0.18
     const { pos, arrived } = stepToward(p.position, p.destination, stepKm)
     p.position = pos
@@ -1840,16 +1667,9 @@ setInterval(() => {
     if (p.currentServiceId) {
       const svc = services.get(p.currentServiceId)
       if (svc) {
-        // Persist provider position (throttled)
-        persistProviderPosition(svc, p)
         if (arrived) {
           if (svc.status === 'accepted') {
             pushTimeline(svc, 'arriving', `${p.name} está próximo do local`)
-            persistServiceStatus(svc, {
-              actorRole: 'PROVIDER',
-              actorUserId: p.dbUserId || null,
-              providerProfileId: p.dbProviderProfileId || null,
-            })
           }
         } else if (svc.status === 'accepted') {
           pushTimeline(svc, 'arriving', `${p.name} está a caminho do local`)

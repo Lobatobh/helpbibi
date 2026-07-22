@@ -1,10 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
-
-// ============================================================
-// Geolocation types
-// ============================================================
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 export type GeoCoords = {
   lat: number
@@ -18,232 +14,133 @@ export type GeoState = {
   coords: GeoCoords | null
   status: GeoStatus
   error: string | null
-  isReal: boolean // true if from device GPS, false if fallback/demo
+  isReal: boolean
 }
 
-// ============================================================
-// useGeolocation — one-shot position capture
-// ============================================================
+const initialState: GeoState = {
+  coords: null,
+  status: 'idle',
+  error: null,
+  isReal: false,
+}
+
+function validBrowserCoords(lat: number, lng: number): boolean {
+  return Number.isFinite(lat) && Number.isFinite(lng) &&
+    lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180
+}
+
+function geolocationError(error: GeolocationPositionError, continuous: boolean): GeoState {
+  if (error.code === error.PERMISSION_DENIED) {
+    return {
+      ...initialState,
+      status: 'denied',
+      error: continuous
+        ? 'Permissao de localizacao negada. Sua presenca operacional foi removida.'
+        : 'Permissao de localizacao negada. Autorize o GPS para criar uma solicitacao operacional.',
+    }
+  }
+  if (error.code === error.POSITION_UNAVAILABLE) {
+    return { ...initialState, status: 'unavailable', error: 'GPS indisponivel. Verifique se esta ativado.' }
+  }
+  return {
+    ...initialState,
+    status: 'error',
+    error: error.code === error.TIMEOUT
+      ? 'Tempo esgotado ao obter localizacao. Tente novamente.'
+      : 'Erro ao obter localizacao.',
+  }
+}
 
 export function useGeolocation() {
-  const [state, setState] = useState<GeoState>({
-    coords: null,
-    status: 'idle',
-    error: null,
-    isReal: false,
-  })
+  const [state, setState] = useState<GeoState>(initialState)
 
   const requestPosition = useCallback(() => {
-    // FASE 20.3: Dev-only GPS mock — QA tool, NOT for production
-    // Only active when NODE_ENV !== 'production' AND window.__MOCK_GPS__ is set
-    if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production' && (window as any).__MOCK_GPS__) {
-      const mock = (window as any).__MOCK_GPS__
-      setState({
-        coords: { lat: mock.lat, lng: mock.lng, accuracy: mock.accuracy || 15 },
-        status: 'located',
-        error: null,
-        isReal: true,
-      })
-      return
-    }
-
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      setState({
-        coords: null,
-        status: 'unavailable',
-        error: 'Geolocalização não disponível neste dispositivo.',
-        isReal: false,
-      })
+      setState({ ...initialState, status: 'unavailable', error: 'Geolocalizacao nao disponivel neste dispositivo.' })
       return
     }
 
-    setState((prev) => ({ ...prev, status: 'locating', error: null }))
-
+    setState((current) => ({ ...current, coords: null, status: 'locating', error: null, isReal: false }))
     navigator.geolocation.getCurrentPosition(
       (position) => {
+        const lat = position.coords.latitude
+        const lng = position.coords.longitude
+        if (!validBrowserCoords(lat, lng)) {
+          setState({ ...initialState, status: 'error', error: 'O navegador retornou uma localizacao invalida.' })
+          return
+        }
         setState({
-          coords: {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-            accuracy: position.coords.accuracy,
-          },
+          coords: { lat, lng, accuracy: position.coords.accuracy },
           status: 'located',
           error: null,
           isReal: true,
         })
       },
-      (err) => {
-        let status: GeoStatus = 'error'
-        let message = 'Erro ao obter localização.'
-        if (err.code === err.PERMISSION_DENIED) {
-          status = 'denied'
-          message = 'Permissão de localização negada. Você pode usar locais da demo.'
-        } else if (err.code === err.POSITION_UNAVAILABLE) {
-          status = 'unavailable'
-          message = 'GPS indisponível. Verifique se está ativado.'
-        } else if (err.code === err.TIMEOUT) {
-          status = 'error'
-          message = 'Tempo esgotado ao obter localização. Tente novamente.'
-        }
-        setState({
-          coords: null,
-          status,
-          error: message,
-          isReal: false,
-        })
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 30000,
-      }
+      (error) => setState(geolocationError(error, false)),
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
     )
   }, [])
 
-  const reset = useCallback(() => {
-    setState({
-      coords: null,
-      status: 'idle',
-      error: null,
-      isReal: false,
-    })
-  }, [])
-
+  const reset = useCallback(() => setState(initialState), [])
   return { ...state, requestPosition, reset }
 }
 
-// ============================================================
-// useGeolocationWatch — continuous position tracking
-// Used by the provider panel to send real-time position updates.
-// Updates at most every `throttleMs` milliseconds to avoid spamming.
-// ============================================================
-
 export function useGeolocationWatch(throttleMs: number = 4000) {
-  const [state, setState] = useState<GeoState>({
-    coords: null,
-    status: 'idle',
-    error: null,
-    isReal: false,
-  })
+  const [state, setState] = useState<GeoState>(initialState)
   const watchIdRef = useRef<number | null>(null)
-  const lastEmitRef = useRef<number>(0)
+  const lastEmitRef = useRef(0)
   const onPositionRef = useRef<((coords: GeoCoords) => void) | null>(null)
 
-  // Set callback for position updates
-  const onPosition = useCallback((cb: (coords: GeoCoords) => void) => {
-    onPositionRef.current = cb
+  const onPosition = useCallback((callback: (coords: GeoCoords) => void) => {
+    onPositionRef.current = callback
+  }, [])
+
+  const stopWatch = useCallback(() => {
+    if (watchIdRef.current !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.clearWatch(watchIdRef.current)
+    }
+    watchIdRef.current = null
+    lastEmitRef.current = 0
+    setState(initialState)
   }, [])
 
   const startWatch = useCallback(() => {
-    // FASE 20.3: Dev-only GPS mock — QA tool, NOT for production
-    if (typeof window !== 'undefined' && process.env.NODE_ENV !== 'production' && (window as any).__MOCK_GPS__) {
-      const mock = (window as any).__MOCK_GPS__
-      const coords: GeoCoords = { lat: mock.lat, lng: mock.lng, accuracy: mock.accuracy || 15 }
-      setState({
-        coords,
-        status: 'located',
-        error: null,
-        isReal: true,
-      })
-      // Simulate periodic updates
-      const intervalId = setInterval(() => {
-        const now = Date.now()
-        if (now - lastEmitRef.current >= throttleMs) {
-          lastEmitRef.current = now
-          if (onPositionRef.current) {
-            onPositionRef.current(coords)
-          }
-        }
-      }, throttleMs)
-      watchIdRef.current = intervalId as any
-      return
-    }
-
     if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      setState({
-        coords: null,
-        status: 'unavailable',
-        error: 'Geolocalização não disponível neste dispositivo.',
-        isReal: false,
-      })
+      setState({ ...initialState, status: 'unavailable', error: 'Geolocalizacao nao disponivel neste dispositivo.' })
       return
     }
+    if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current)
 
-    // Stop existing watch
-    if (watchIdRef.current !== null) {
-      navigator.geolocation.clearWatch(watchIdRef.current)
-    }
-
-    setState((prev) => ({ ...prev, status: 'locating', error: null }))
-
+    setState({ ...initialState, status: 'locating' })
     watchIdRef.current = navigator.geolocation.watchPosition(
       (position) => {
-        const now = Date.now()
-        const coords: GeoCoords = {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-          accuracy: position.coords.accuracy,
+        const lat = position.coords.latitude
+        const lng = position.coords.longitude
+        if (!validBrowserCoords(lat, lng)) {
+          setState({ ...initialState, status: 'error', error: 'O navegador retornou uma localizacao invalida.' })
+          return
         }
 
-        // Throttle: only emit if enough time has passed
+        const now = Date.now()
+        const coords = { lat, lng, accuracy: position.coords.accuracy }
+        setState({ coords, status: 'located', error: null, isReal: true })
         if (now - lastEmitRef.current >= throttleMs) {
           lastEmitRef.current = now
-          setState({
-            coords,
-            status: 'located',
-            error: null,
-            isReal: true,
-          })
-          // Call the registered callback
-          if (onPositionRef.current) {
-            onPositionRef.current(coords)
-          }
+          onPositionRef.current?.(coords)
         }
       },
-      (err) => {
-        let status: GeoStatus = 'error'
-        let message = 'Erro ao rastrear localização.'
-        if (err.code === err.PERMISSION_DENIED) {
-          status = 'denied'
-          message = 'Permissão de localização negada. Usando localização demo.'
-        } else if (err.code === err.POSITION_UNAVAILABLE) {
-          status = 'unavailable'
-          message = 'GPS indisponível.'
-        }
-        setState({
-          coords: null,
-          status,
-          error: message,
-          isReal: false,
-        })
+      (error) => {
+        setState(geolocationError(error, true))
       },
-      {
-        enableHighAccuracy: true,
-        timeout: 15000,
-        maximumAge: 5000,
-      }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 },
     )
   }, [throttleMs])
 
-  const stopWatch = useCallback(() => {
-    if (watchIdRef.current !== null) {
-      // Clear either interval (mock) or watchPosition (real)
-      clearInterval(watchIdRef.current as any)
-      if (typeof navigator !== 'undefined' && navigator.geolocation) {
-        navigator.geolocation.clearWatch(watchIdRef.current)
-      }
-      watchIdRef.current = null
+  useEffect(() => () => {
+    if (watchIdRef.current !== null && typeof navigator !== 'undefined' && navigator.geolocation) {
+      navigator.geolocation.clearWatch(watchIdRef.current)
     }
-  }, [])
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (watchIdRef.current !== null && typeof navigator !== 'undefined') {
-        navigator.geolocation.clearWatch(watchIdRef.current)
-        watchIdRef.current = null
-      }
-    }
+    watchIdRef.current = null
   }, [])
 
   return { ...state, startWatch, stopWatch, onPosition }

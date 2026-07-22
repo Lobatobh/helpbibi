@@ -51,7 +51,7 @@ async function createProvider(approvalStatus: 'PENDING' | 'REJECTED' | 'SUSPENDE
       role: 'PROVIDER',
       status: 'ACTIVE',
       consentRecords: {
-        create: ['TERMS', 'PRIVACY_NOTICE', 'PROVIDER_OPERATIONAL'].map((type) => ({
+        create: ['TERMS', 'PRIVACY_NOTICE', 'PROVIDER_OPERATIONAL', 'LOCATION'].map((type) => ({
           type: type as any,
           version: CURRENT_CONSENT_VERSIONS[type as keyof typeof CURRENT_CONSENT_VERSIONS],
         })),
@@ -152,7 +152,7 @@ describe('F35-05 public registration and provider availability APIs', () => {
     expect(provider?.isDemoProvider).toBe(false)
   })
 
-  test('provider availability blocks unapproved providers and allows approved providers', async () => {
+  test('provider availability blocks unapproved providers and allows an approved provider with LOCATION consent', async () => {
     const pending = await createProvider('PENDING')
     const rejected = await createProvider('REJECTED')
     const suspended = await createProvider('SUSPENDED')

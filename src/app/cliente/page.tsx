@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import { AuthenticatedClientPanel } from '@/components/rescue/authenticated-client-panel'
 import { canAccessRole, getCurrentUserFromCookies, getDefaultPathForRole } from '@/server/auth/session'
 import { findActiveServiceForClient } from '@/server/repositories/service-requests.repository'
-import { getConsentStatus } from '@/server/consents/consent-service'
+import { getConsentStatus, getConsentTypeStatus } from '@/server/consents/consent-service'
 
 export default async function ClientePage() {
   const user = await getCurrentUserFromCookies()
@@ -15,9 +15,10 @@ export default async function ClientePage() {
     redirect(getDefaultPathForRole(user.role))
   }
 
-  const [activeService, consentStatus] = await Promise.all([
+  const [activeService, consentStatus, locationConsent] = await Promise.all([
     findActiveServiceForClient(user.id),
     getConsentStatus(user.id, user.role),
+    getConsentTypeStatus(user.id, 'LOCATION'),
   ])
 
   return (
@@ -25,6 +26,7 @@ export default async function ClientePage() {
       userName={user.name}
       initialService={activeService as any}
       initialConsents={consentStatus}
+      initialLocationConsent={locationConsent}
     />
   )
 }

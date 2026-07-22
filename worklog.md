@@ -2310,3 +2310,28 @@ Stage Summary:
 - Schema PostgreSQL real nao foi aplicado e usuarios existentes nao receberam aceite artificial.
 - Nenhuma VPS, deploy, bootstrap, gateway real, `.env`, Docker, Supabase, SMTP ou Mercado Pago real foi acessado/alterado.
 - SQLite descartavel e artefatos SQL usados em teste devem ser removidos antes do relatorio pre-stage.
+
+---
+
+Task ID: 35.9B
+Agent: main
+Task: Geolocalizacao real, tracking por token e isolamento completo da demo.
+
+Work Log:
+- Data do registro: 2026-07-22.
+- `TrackingShare` recebeu `revokedAt`, `activeKey @unique` e indice de `expiresAt` nos dois schemas, sem rename, remocao, backfill ou mudanca da relacao existente.
+- Criado fluxo separado de consentimento `LOCATION`; o servidor define versao/data/identidade antes de o navegador solicitar permissao.
+- Painel do cliente removeu coordenadas fixas e so cria solicitacao com origem real valida. Sem geocodificador, o destino textual nao produz coordenada ficticia.
+- Painel do prestador usa `watchPosition` apos acao explicita, para ao ficar indisponivel/desconectar/desmontar/perder autorizacao e informa falhas sem alterar automaticamente a intencao persistida.
+- Matching real exige prestador autenticado, ativo, aprovado, verificado, disponivel, conectado, desocupado, com consentimento LOCATION e posicao real de no maximo dois minutos.
+- Posicao aleatoria e movimento automatico foram removidos do fluxo autenticado.
+- Demo e operacao real passaram a usar colecoes distintas; sessao invalida nao vira demo, matching demo nao consulta prestador real e IDs efemeros usam UUID.
+- Removida da demo a acao legada que publicava `?track=<serviceId>`; apenas participantes autenticados geram link publico por token.
+- Tracking publico passou a usar token aleatorio de 256 bits, rota rate limited, validade de 24 horas, revogacao e limite de duas horas apos estado terminal.
+- A resposta publica minimiza dados e omite IDs internos, enderecos, contato, financeiro, chat, auditoria e labels privadas.
+
+Stage Summary:
+- Status do MVP permanece NO-GO ate schema controlado, homologacao GPS/tracking e aprovacao juridica/institucional.
+- Nenhuma VPS, PostgreSQL real, deploy, bootstrap, gateway real, `.env`, Docker, Supabase, SMTP ou Mercado Pago real foi acessado/alterado.
+- Nenhum `db push` ou `migrate deploy` foi executado.
+- Nenhum arquivo foi stageado ou commitado nesta fase.

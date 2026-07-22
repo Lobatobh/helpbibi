@@ -366,6 +366,19 @@ Entregas:
 
 Objetivo: remover coordenadas/movimento simulados do fluxo autenticado, exigir consentimento LOCATION no momento correto, proteger tracking por token e impedir mistura entre demo e operacao real.
 
+Status local F35-09B:
+- `LOCATION` e aceito separadamente dos documentos de cadastro; identidade, versao e data continuam definidas no servidor;
+- cliente registra a origem somente depois de consentimento e permissao explicitos do navegador, sem coordenadas fixas ou fallback geografico;
+- como nao existe geocodificador real, o destino textual nao e convertido em coordenadas inventadas e fica sem ponto geografico ate confirmacao operacional;
+- prestador inicia `watchPosition` somente ao pedir disponibilidade ou ativar o GPS do atendimento;
+- matching autenticado exige conta ativa, aprovacao, verificacao, intencao de disponibilidade, socket presente, consentimento LOCATION e posicao real com no maximo dois minutos;
+- movimento automatico foi removido do fluxo autenticado e continua apenas na demo efemera;
+- demo e fluxo real usam colecoes separadas; sessao invalida nao recebe handlers demo e IDs demo usam UUID;
+- tracking publico usa token aleatorio de 256 bits, expira em 24 horas, e limitado a duas horas apos estado terminal e pode ser revogado;
+- `ServiceRequest.id` deixou de funcionar como credencial publica e a resposta nao inclui IDs internos, enderecos, dados financeiros, chat ou labels privadas;
+- `TrackingShare.revokedAt`, `activeKey` e indice de expiracao exigem aplicacao futura controlada do schema;
+- status permanece NO-GO ate aplicacao/validacao do schema, homologacao real de GPS e tracking, e aprovacao juridica/institucional.
+
 ### F35-10 - Notificacoes posteriores ao fechamento tecnico
 
 Objetivo: tornar avisos operacionais confiaveis sem SMTP real, depois que os bloqueadores de consentimento, localizacao e isolamento forem resolvidos.

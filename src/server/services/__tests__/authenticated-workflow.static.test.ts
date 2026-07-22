@@ -53,7 +53,10 @@ describe('F35-05 authenticated operational workflow wiring', () => {
     expect(service).toContain('authenticatedCandidateProviders')
     expect(service).toContain('!provider.isDemoProvider')
     expect(service).toContain('!!provider.dbProviderProfileId')
-    expect(service).toContain('profile.isAvailable && !dbSvc')
+    expect(service).toContain('online: false')
+    expect(service).toContain('isAvailableIntent: consentsCurrent && profile.isAvailable')
+    expect(service).toContain('locationConsentCurrent')
+    expect(service).toContain('positionFresh')
     expect(service).toContain("data: { isAvailable: data.online === true }")
   })
 

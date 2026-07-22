@@ -4,7 +4,7 @@ import { canAccessRole, getCurrentUserFromCookies, getDefaultPathForRole } from 
 import { db } from '@/server/db/prisma'
 import { canProviderOperate, normalizeProviderApprovalStatus } from '@/server/providers/provider-approval'
 import { findActiveServiceForProvider } from '@/server/repositories/service-requests.repository'
-import { getConsentStatus } from '@/server/consents/consent-service'
+import { getConsentStatus, getConsentTypeStatus } from '@/server/consents/consent-service'
 
 export default async function PrestadorPage() {
   const user = await getCurrentUserFromCookies()
@@ -21,9 +21,10 @@ export default async function PrestadorPage() {
     where: { userId: user.id },
     include: { user: { select: { status: true } } },
   })
-  const [activeService, consentStatus] = await Promise.all([
+  const [activeService, consentStatus, locationConsent] = await Promise.all([
     provider ? findActiveServiceForProvider(provider.id) : null,
     getConsentStatus(user.id, user.role),
+    getConsentTypeStatus(user.id, 'LOCATION'),
   ])
 
   return (
@@ -40,6 +41,7 @@ export default async function PrestadorPage() {
       } : null}
       initialService={activeService as any}
       initialConsents={consentStatus}
+      initialLocationConsent={locationConsent}
     />
   )
 }

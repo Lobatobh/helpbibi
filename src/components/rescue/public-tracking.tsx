@@ -1,317 +1,155 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
-import { motion } from 'framer-motion'
-import { io, Socket } from 'socket.io-client'
-import {
-  Truck, MapPin, Flag, Clock, Star, Navigation, CheckCircle2, Loader2,
-  AlertTriangle, Battery, Fuel, Key, Wrench, CircleDot, Shield, ArrowLeft,
-} from 'lucide-react'
-import { RESCUE_SOCKET_PATH, resolveRescueSocketUrl } from '@/lib/rescue-socket-url'
-import { LiveCountdown } from './live-countdown'
+import { useEffect, useRef, useState } from 'react'
+import { AlertTriangle, ArrowLeft, CheckCircle2, Loader2, MapPin, Shield, Star } from 'lucide-react'
 
-const STATUS_INFO: Record<string, { label: string; color: string }> = {
-  searching: { label: 'Procurando prestador', color: 'sky' },
-  offered: { label: 'Chamada enviada', color: 'sky' },
-  accepted: { label: 'Prestador a caminho', color: 'orange' },
-  arriving: { label: 'Chegando no local', color: 'orange' },
-  arrived: { label: 'No local do atendimento', color: 'orange' },
-  in_progress: { label: 'Serviço em andamento', color: 'sky' },
-  completed: { label: 'Serviço concluído', color: 'orange' },
-  cancelled: { label: 'Solicitação cancelada pelo cliente', color: 'rose' },
-  expired: { label: 'Solicitação encerrada', color: 'rose' },
+const STATUS_INFO: Record<string, string> = {
+  searching: 'Procurando prestador',
+  offered: 'Chamada enviada',
+  accepted: 'Prestador a caminho',
+  arriving: 'Chegando no local',
+  arrived: 'No local do atendimento',
+  in_progress: 'Servico em andamento',
+  completed: 'Servico concluido',
+  cancelled: 'Solicitacao cancelada',
+  failed: 'Atendimento encerrado',
+  expired: 'Solicitacao encerrada',
 }
 
 type PublicService = {
   available: boolean
   message?: string
-  serviceId?: string
   status?: string
-  type?: string
   typeLabel?: string
-  icon?: string
-  pickupLabel?: string
-  destinationLabel?: string
-  distanceKm?: number
   etaMin?: number
   createdAt?: number
   acceptedAt?: number | null
   completedAt?: number | null
-  timeline?: Array<{ status: string; label: string; at: number }>
-  provider?: { name: string; vehicle: string; rating: number } | null
+  canceledAt?: number | null
+  timeline?: Array<{ status: string; at: number }>
+  provider?: { name: string | null; vehicle: string; rating: number } | null
   providerPosition?: { lat: number; lng: number } | null
-  pickup?: { lat: number; lng: number }
-  destination?: { lat: number; lng: number }
-  tripProgress?: {
-    startPos: { lat: number; lng: number } | null
-    target: { lat: number; lng: number } | null
-    startedAt: number | null
-    totalKm: number
-  } | null
 }
 
-export function PublicTracking({ serviceId }: { serviceId: string }) {
+const terminalStatuses = new Set(['completed', 'cancelled', 'failed', 'expired'])
+
+export function PublicTracking({ token }: { token: string }) {
   const [data, setData] = useState<PublicService | null>(null)
   const [loading, setLoading] = useState(true)
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     let cancelled = false
+    const stopPolling = () => {
+      if (timerRef.current) clearInterval(timerRef.current)
+      timerRef.current = null
+    }
 
     const fetchTracking = async () => {
-      let found = false
-
-      // Primary: API route (database-persisted)
       try {
-        const res = await fetch(`/api/track/${serviceId}`)
-        if (res.ok) {
-          const d = (await res.json()) as PublicService
-          if (d.available) {
-            if (!cancelled) {
-              setData(d)
-              setLoading(false)
-              found = true
-              if (d.status && ['completed', 'cancelled', 'expired'].includes(d.status)) {
-                if (timerRef.current) clearInterval(timerRef.current)
-              }
-            }
-            return
-          }
-        }
-      } catch {
-        // Fall through to socket fallback
-      }
-
-      if (found) return
-
-      // Fallback: socket.io (in-memory, for services not yet in DB)
-      // Only try socket once per fetch — don't create multiple connections
-      await new Promise<void>((resolve) => {
-        try {
-          const s = io(resolveRescueSocketUrl(), {
-            path: RESCUE_SOCKET_PATH,
-            transports: ['websocket', 'polling'],
-            forceNew: true,
-            reconnection: false,
-            timeout: 4000,
-          })
-          let resolved = false
-
-          s.on('connect', () => s.emit('public:track', { serviceId }))
-          s.on('public:track-result', (result: PublicService) => {
-            if (!resolved && !cancelled) {
-              resolved = true
-              if (result.available) {
-                setData(result)
-                found = true
-              }
-              setLoading(false)
-              s.disconnect()
-              resolve()
-            }
-          })
-          s.on('connect_error', () => {
-            if (!resolved) {
-              resolved = true
-              s.disconnect()
-              resolve()
-            }
-          })
-          // Timeout
-          setTimeout(() => {
-            if (!resolved) {
-              resolved = true
-              s.disconnect()
-              resolve()
-            }
-          }, 4000)
-        } catch {
-          resolve()
-        }
-      })
-
-      // If neither API nor socket found the service, show unavailable
-      if (!found && !cancelled) {
-        setData({ available: false, message: 'Rastreamento indisponível ou encerrado.' })
+        const response = await fetch(`/api/tracking/${encodeURIComponent(token)}`, { cache: 'no-store' })
+        const payload = await response.json().catch(() => ({})) as PublicService
+        if (cancelled) return
+        setData(response.ok ? payload : {
+          available: false,
+          message: payload.message || 'Rastreamento indisponivel ou encerrado.',
+        })
         setLoading(false)
-        if (timerRef.current) clearInterval(timerRef.current)
+        if (!response.ok || (payload.status && terminalStatuses.has(payload.status))) stopPolling()
+      } catch {
+        if (cancelled) return
+        setData({ available: false, message: 'Rastreamento indisponivel ou encerrado.' })
+        setLoading(false)
+        stopPolling()
       }
     }
 
-    fetchTracking()
-    timerRef.current = setInterval(fetchTracking, 3000)
-
+    void fetchTracking()
+    timerRef.current = setInterval(() => void fetchTracking(), 5000)
     return () => {
       cancelled = true
-      if (timerRef.current) clearInterval(timerRef.current)
+      stopPolling()
     }
-  }, [serviceId])
+  }, [token])
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
-      {/* Header with logo */}
-      <header className="sticky top-0 z-40 border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-lg">
+      <header className="sticky top-0 z-40 border-b border-slate-800 bg-slate-950/95">
         <div className="mx-auto flex h-16 max-w-2xl items-center justify-between px-4">
           <div className="flex items-center gap-2">
             <img src="/logo-help-bibi.png" alt="Help Bibi" className="h-9 w-auto rounded-md" />
-            <div className="leading-tight">
-              <p className="text-sm font-extrabold tracking-tight">Help Bibi</p>
-              <p className="text-[10px] text-slate-400">rastreamento público</p>
+            <div>
+              <p className="text-sm font-extrabold">Help Bibi</p>
+              <p className="text-[10px] text-slate-400">rastreamento seguro</p>
             </div>
           </div>
-          <a
-            href="/"
-            className="flex items-center gap-1 rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 transition hover:bg-slate-800"
-          >
-            <ArrowLeft className="h-3 w-3" /> Voltar
+          <a href="/" className="flex items-center gap-1 rounded-md border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:bg-slate-800">
+            <ArrowLeft className="size-3" /> Voltar
           </a>
         </div>
       </header>
 
       <main className="mx-auto max-w-2xl px-4 py-6">
-        {loading && (
-          <div className="flex flex-col items-center justify-center gap-3 py-20">
-            <Loader2 className="h-8 w-8 animate-spin text-sky-400" />
+        {loading ? (
+          <div className="flex flex-col items-center gap-3 py-20">
+            <Loader2 className="size-8 animate-spin text-sky-400" />
             <p className="text-sm text-slate-400">Carregando rastreamento...</p>
           </div>
-        )}
+        ) : null}
 
-        {data && !data.available && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="rounded-2xl border border-slate-800 bg-slate-900/60 p-8 text-center"
-          >
-            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-800">
-              <MapPin className="h-7 w-7 text-slate-500" />
-            </div>
-            <p className="text-base font-bold text-white">Rastreamento indisponível ou encerrado</p>
-            <p className="mt-1 text-sm text-slate-400">
-              {data.message || 'Este link pode ter expirado ou o serviço não existe mais.'}
-            </p>
-            <a
-              href="/"
-              className="mt-4 inline-flex items-center gap-1 rounded-lg bg-sky-500 px-4 py-2 text-sm font-bold text-slate-950 hover:bg-sky-400"
-            >
-              <Shield className="h-4 w-4" /> Conhecer a Help Bibi
+        {data && !data.available ? (
+          <section className="rounded-lg border border-slate-800 bg-slate-900 p-8 text-center">
+            <MapPin className="mx-auto size-8 text-slate-500" />
+            <h1 className="mt-3 font-bold">Rastreamento indisponivel ou encerrado</h1>
+            <p className="mt-2 text-sm text-slate-400">{data.message}</p>
+            <a href="/" className="mt-5 inline-flex items-center gap-2 rounded-md bg-sky-500 px-4 py-2 text-sm font-bold text-slate-950">
+              <Shield className="size-4" /> Conhecer a Help Bibi
             </a>
-          </motion.div>
-        )}
+          </section>
+        ) : null}
 
-        {data && data.available && data.status && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="space-y-4"
-          >
-            {/* Status banner */}
-            {(() => {
-              const info = STATUS_INFO[data.status] || { label: data.status, color: 'slate' }
-              const isLive = !['completed', 'cancelled', 'expired'].includes(data.status)
-              return (
-                <div className={`rounded-2xl border p-4 ${
-                  data.status === 'completed' ? 'border-orange-500/40 bg-orange-500/10'
-                  : data.status === 'cancelled' || data.status === 'expired' ? 'border-rose-500/40 bg-rose-500/10'
-                  : 'border-sky-500/40 bg-sky-500/10'
-                }`}>
-                  <div className="flex items-center gap-2">
-                    {isLive && <Loader2 className="h-5 w-5 animate-spin text-sky-400" />}
-                    {data.status === 'completed' && <CheckCircle2 className="h-5 w-5 text-orange-400" />}
-                    {(data.status === 'cancelled' || data.status === 'expired') && <AlertTriangle className="h-5 w-5 text-rose-400" />}
-                    <p className="text-lg font-bold text-white">{info.label}</p>
-                  </div>
-                  <p className="mt-1 text-xs text-slate-400">
-                    Serviço #{data.serviceId?.slice(-6).toUpperCase()} · {data.typeLabel}
-                  </p>
-                </div>
-              )
-            })()}
+        {data?.available && data.status ? (
+          <div className="space-y-4">
+            <section className="rounded-lg border border-sky-800 bg-sky-950/30 p-5">
+              <div className="flex items-center gap-2">
+                {terminalStatuses.has(data.status)
+                  ? data.status === 'completed'
+                    ? <CheckCircle2 className="size-5 text-emerald-300" />
+                    : <AlertTriangle className="size-5 text-amber-300" />
+                  : <Loader2 className="size-5 animate-spin text-sky-300" />}
+                <h1 className="text-lg font-bold">{STATUS_INFO[data.status] || data.status}</h1>
+              </div>
+              <p className="mt-2 text-sm text-slate-400">{data.typeLabel}</p>
+            </section>
 
-            {/* Provider card (if assigned) */}
-            {data.provider && (
-              <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-orange-500 to-orange-700 text-sm font-extrabold text-white">
-                    {data.provider.name.slice(0, 2).toUpperCase()}
-                  </div>
-                  <div className="flex-1">
-                    <p className="text-sm font-bold text-white">{data.provider.name}</p>
-                    <p className="text-xs text-slate-400">{data.provider.vehicle}</p>
-                  </div>
-                  <div className="flex items-center gap-1 text-orange-400">
-                    <Star className="h-4 w-4" fill="currentColor" />
-                    <span className="text-sm font-bold">{data.provider.rating.toFixed(1)}</span>
-                  </div>
-                </div>
-
-                {/* ETA countdown */}
-                {(data.status === 'accepted' || data.status === 'arriving' || data.status === 'in_progress') && data.etaMin && (
-                  <div className="mt-3 flex items-center justify-center gap-4 rounded-xl bg-slate-800/60 p-3">
-                    <div className="text-center">
-                      <p className="text-[10px] uppercase text-slate-500">ETA</p>
-                      <LiveCountdown seconds={data.etaMin * 60} variant="inline" />
-                    </div>
-                    <div className="h-8 w-px bg-slate-700" />
-                    <div className="text-center">
-                      <p className="text-[10px] uppercase text-slate-500">Distância</p>
-                      <p className="text-sm font-bold text-white">{data.distanceKm} km</p>
-                    </div>
-                  </div>
+            {data.provider ? (
+              <section className="rounded-lg border border-slate-800 bg-slate-900 p-5">
+                <p className="text-sm font-semibold">{data.provider.name || 'Prestador'}</p>
+                <p className="mt-1 text-sm text-slate-400">{data.provider.vehicle}</p>
+                <p className="mt-2 flex items-center gap-1 text-sm text-amber-300"><Star className="size-4" /> {data.provider.rating.toFixed(1)}</p>
+                {data.providerPosition ? (
+                  <p className="mt-3 text-xs text-emerald-300">Posicao atual recebida recentemente.</p>
+                ) : (
+                  <p className="mt-3 text-xs text-slate-500">Posicao nao disponivel neste estado.</p>
                 )}
-              </div>
-            )}
+              </section>
+            ) : null}
 
-            {/* Route */}
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
-              <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Trajeto</p>
-              <div className="flex gap-3">
-                <div className="flex flex-col items-center pt-1">
-                  <div className="h-3 w-3 rounded-full bg-sky-500" />
-                  <div className="my-1 w-0.5 flex-1 bg-slate-700" />
-                  <div className="h-3 w-3 rounded-full bg-orange-500" />
-                </div>
-                <div className="flex-1 space-y-4">
-                  <div>
-                    <p className="text-[10px] uppercase text-slate-500">Local de atendimento</p>
-                    <p className="text-sm font-medium text-white">{data.pickupLabel}</p>
-                  </div>
-                  <div>
-                    <p className="text-[10px] uppercase text-slate-500">Destino final</p>
-                    <p className="text-sm font-medium text-white">{data.destinationLabel}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Timeline */}
-            {data.timeline && data.timeline.length > 0 && (
-              <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
-                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Acompanhamento</p>
-                <div className="space-y-3">
-                  {data.timeline.slice().reverse().map((ev, i) => (
-                    <div key={i} className="flex gap-2 text-xs">
-                      <div className={`mt-1 h-2 w-2 shrink-0 rounded-full ${i === 0 ? 'bg-sky-400' : 'bg-slate-600'}`} />
-                      <div className="flex-1">
-                        <p className={i === 0 ? 'font-semibold text-white' : 'text-slate-300'}>{ev.label}</p>
-                        <p className="text-[10px] text-slate-600">
-                          {new Date(ev.at).toLocaleString('pt-BR')}
-                        </p>
-                      </div>
-                    </div>
+            {data.timeline?.length ? (
+              <section className="rounded-lg border border-slate-800 bg-slate-900 p-5">
+                <h2 className="text-sm font-semibold">Andamento</h2>
+                <ol className="mt-4 space-y-3">
+                  {data.timeline.slice().reverse().map((event, index) => (
+                    <li key={`${event.at}-${index}`} className="flex items-start justify-between gap-4 border-b border-slate-800 pb-3 text-sm last:border-0 last:pb-0">
+                      <span>{STATUS_INFO[event.status] || event.status}</span>
+                      <time className="shrink-0 text-xs text-slate-500">{new Date(event.at).toLocaleString('pt-BR')}</time>
+                    </li>
                   ))}
-                </div>
-              </div>
-            )}
-
-            {/* Help Bibi branding */}
-            <div className="rounded-2xl border border-slate-800 bg-gradient-to-br from-sky-500/5 to-orange-500/5 p-4 text-center">
-              <img src="/logo-help-bibi.png" alt="Help Bibi" className="mx-auto h-8 w-auto rounded-md" />
-              <p className="mt-2 text-[10px] text-slate-500">
-                Help Bibi — Socorro veicular em minutos, seguro, rastreável e sem burocracia.
-              </p>
-            </div>
-          </motion.div>
-        )}
+                </ol>
+              </section>
+            ) : null}
+          </div>
+        ) : null}
       </main>
     </div>
   )

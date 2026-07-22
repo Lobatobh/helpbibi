@@ -1,7 +1,7 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { BadgeCheck, Ban, Car, Check, Clock3, RefreshCcw, Radio, Save, Star, UserRound, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { BadgeCheck, Ban, Car, Check, Clock3, Loader2, LocateFixed, RefreshCcw, Radio, Save, Star, UserRound, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { ChatPanel } from '@/components/rescue/chat-panel'
@@ -11,6 +11,7 @@ import { useAuthenticatedProviderSocket } from '@/hooks/use-authenticated-rescue
 import { useProviderHistory, type ServiceHistoryDetail } from '@/hooks/use-service-history'
 import { ConsentRequiredPanel } from '@/components/consents/consent-required-panel'
 import type { ConsentStatus } from '@/server/consents/consent-service'
+import { useGeolocationWatch } from '@/hooks/use-geolocation'
 
 type ProviderInfo = {
   vehicle: string
@@ -33,6 +34,7 @@ type Props = {
   provider: ProviderInfo | null
   initialService: ServiceData | null
   initialConsents: ConsentStatus[]
+  initialLocationConsent: ConsentStatus
 }
 
 const approvalLabel: Record<string, string> = {
@@ -44,8 +46,10 @@ const approvalLabel: Record<string, string> = {
 
 const activePublicStatuses = ['accepted', 'arriving', 'arrived', 'in_progress']
 
-export function AuthenticatedProviderPanel({ userName, provider, initialService, initialConsents }: Props) {
+export function AuthenticatedProviderPanel({ userName, provider, initialService, initialConsents, initialLocationConsent }: Props) {
   const socket = useAuthenticatedProviderSocket(initialService)
+  const geolocation = useGeolocationWatch(4000)
+  const pendingOnlineRef = useRef(false)
   const history = useProviderHistory(!!provider)
   const service = socket.service
   const offer = socket.offer
@@ -60,6 +64,9 @@ export function AuthenticatedProviderPanel({ userName, provider, initialService,
   const [ratingStars, setRatingStars] = useState(5)
   const [ratingComment, setRatingComment] = useState('')
   const [ratingMessage, setRatingMessage] = useState<string | null>(null)
+  const [locationConsentAccepted, setLocationConsentAccepted] = useState(initialLocationConsent.accepted)
+  const [locationConsentLoading, setLocationConsentLoading] = useState(false)
+  const [locationError, setLocationError] = useState<string | null>(null)
 
   const consentsCurrent = initialConsents.every((item) => item.accepted)
   const canChat = consentsCurrent && !!service && activePublicStatuses.includes(service.status)
@@ -87,6 +94,69 @@ export function AuthenticatedProviderPanel({ userName, provider, initialService,
     }
     void loadProfile()
   }, [provider, userName])
+
+  useEffect(() => {
+    geolocation.onPosition((coords) => {
+      socket.sendPosition(coords, (accepted) => {
+        if (!accepted || !pendingOnlineRef.current) return
+        pendingOnlineRef.current = false
+        socket.toggleOnline(true)
+      })
+    })
+  }, [geolocation.onPosition, socket.sendPosition, socket.toggleOnline])
+
+  useEffect(() => {
+    if (socket.connected) return
+    pendingOnlineRef.current = false
+    geolocation.stopWatch()
+  }, [socket.connected, geolocation.stopWatch])
+
+  useEffect(() => {
+    if (!['denied', 'unavailable', 'error'].includes(geolocation.status)) return
+    pendingOnlineRef.current = false
+    geolocation.stopWatch()
+    socket.clearPosition()
+  }, [geolocation.status, geolocation.stopWatch, socket.clearPosition])
+
+  useEffect(() => {
+    if (socket.state?.canOperate !== false && socket.state?.locationConsentCurrent !== false) return
+    pendingOnlineRef.current = false
+    geolocation.stopWatch()
+  }, [socket.state?.canOperate, socket.state?.locationConsentCurrent, geolocation.stopWatch])
+
+  async function ensureLocationConsent(): Promise<boolean> {
+    if (locationConsentAccepted) return true
+    setLocationConsentLoading(true)
+    setLocationError(null)
+    const response = await fetch('/api/consents/accept', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ types: ['LOCATION'] }),
+    })
+    const data = await response.json().catch(() => ({}))
+    setLocationConsentLoading(false)
+    if (!response.ok) {
+      setLocationError(data?.message || 'Nao foi possivel registrar o consentimento de localizacao.')
+      return false
+    }
+    setLocationConsentAccepted(true)
+    return true
+  }
+
+  async function startOperationalLocation(enableAvailability: boolean) {
+    setLocationError(null)
+    if (!(await ensureLocationConsent())) return
+    pendingOnlineRef.current = enableAvailability
+    geolocation.startWatch()
+  }
+
+  function stopOperationalLocation() {
+    pendingOnlineRef.current = false
+    geolocation.stopWatch()
+    socket.clearPosition()
+    socket.toggleOnline(false)
+  }
 
   async function saveProfile(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -183,15 +253,34 @@ export function AuthenticatedProviderPanel({ userName, provider, initialService,
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="text-lg font-semibold">Disponibilidade operacional</h2>
-            <p className="mt-1 text-sm text-slate-400">O banco guarda sua intencao; o socket confirma presenca online.</p>
+            <p className="mt-1 text-sm text-slate-400">Ao ficar disponivel, o navegador compartilha sua posicao durante a disponibilidade e o atendimento.</p>
+            {geolocation.status === 'located' && geolocation.isReal ? (
+              <p className="mt-2 text-xs text-emerald-300">GPS ativo e enviando posicao real.</p>
+            ) : (
+              <p className="mt-2 text-xs text-slate-500">Sem posicao valida, voce nao entra no matching.</p>
+            )}
+            {geolocation.error || locationError ? <p className="mt-2 text-xs text-red-300">{geolocation.error || locationError}</p> : null}
+            {locationConsentAccepted && geolocation.status !== 'located' ? <p className="mt-1 text-xs text-slate-500">Consentimento registrado; permissao do navegador ainda necessaria.</p> : null}
           </div>
-          <Button
-            className={online ? 'bg-slate-700 text-white hover:bg-slate-600' : 'bg-orange-400 text-slate-950 hover:bg-orange-300'}
-            onClick={() => socket.toggleOnline(!online)}
-            disabled={!consentsCurrent || !!service}
-          >
-            {online ? 'Ficar offline' : 'Ficar disponivel'}
-          </Button>
+          {service ? (
+            <Button
+              className="bg-orange-400 text-slate-950 hover:bg-orange-300"
+              onClick={() => void startOperationalLocation(false)}
+              disabled={!consentsCurrent || locationConsentLoading || geolocation.status === 'locating' || geolocation.status === 'located'}
+            >
+              {locationConsentLoading || geolocation.status === 'locating' ? <Loader2 className="mr-2 size-4 animate-spin" /> : <LocateFixed className="mr-2 size-4" />}
+              Ativar GPS do atendimento
+            </Button>
+          ) : (
+            <Button
+              className={online ? 'bg-slate-700 text-white hover:bg-slate-600' : 'bg-orange-400 text-slate-950 hover:bg-orange-300'}
+              onClick={() => online ? stopOperationalLocation() : void startOperationalLocation(true)}
+              disabled={!consentsCurrent || locationConsentLoading || geolocation.status === 'locating'}
+            >
+              {locationConsentLoading || geolocation.status === 'locating' ? <Loader2 className="mr-2 size-4 animate-spin" /> : <LocateFixed className="mr-2 size-4" />}
+              {online ? 'Ficar indisponivel' : 'Ficar disponivel'}
+            </Button>
+          )}
         </div>
       </section>
 
