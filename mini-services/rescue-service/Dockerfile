@@ -9,6 +9,7 @@ WORKDIR /app
 # Copy root package.json for shared deps (prisma, etc.)
 COPY package.json bun.lock ./
 COPY prisma ./prisma
+COPY tsconfig.json ./tsconfig.json
 
 # Install all dependencies (rescue-service imports from src/)
 RUN bun install --frozen-lockfile
