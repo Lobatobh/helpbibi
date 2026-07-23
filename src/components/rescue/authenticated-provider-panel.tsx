@@ -12,6 +12,8 @@ import { useProviderHistory, type ServiceHistoryDetail } from '@/hooks/use-servi
 import { ConsentRequiredPanel } from '@/components/consents/consent-required-panel'
 import type { ConsentStatus } from '@/server/consents/consent-service'
 import { useGeolocationWatch } from '@/hooks/use-geolocation'
+import { OperationalMap } from '@/components/rescue/operational-map'
+import { RescueAppShell } from '@/components/rescue/rescue-app-shell'
 
 type ProviderInfo = {
   vehicle: string
@@ -243,13 +245,45 @@ export function AuthenticatedProviderPanel({ userName, provider, initialService,
       {socket.operationError ? <Alert message={socket.operationError} danger /> : null}
       <ConsentRequiredPanel initialConsents={initialConsents} />
 
+      <section id="inicio" className="scroll-mt-24 space-y-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-xs font-extrabold uppercase text-help-orange">Operacao em campo</p>
+            <h1 className="mt-1 text-2xl font-extrabold text-foreground">
+              {offer
+                ? 'Nova chamada recebida'
+                : service
+                  ? STATUS_LABELS[service.status]?.label || service.status
+                  : online
+                    ? 'Voce esta disponivel'
+                    : 'Voce esta offline'}
+            </h1>
+          </div>
+          <p className="max-w-md text-sm text-muted-foreground">
+            {offer || service
+              ? 'A rota usa somente as posicoes recebidas durante o atendimento.'
+              : 'Ative o GPS para aparecer no matching de prestadores aprovados.'}
+          </p>
+        </div>
+        <OperationalMap
+          pickup={offer?.pickup || service?.pickup}
+          destination={offer?.destination || service?.destination}
+          providerPosition={geolocation.coords}
+          pickupLabel={offer?.pickupLabel || service?.pickupLabel}
+          providerLabel={profile?.name || userName}
+          distanceKm={offer?.distanceKm ?? service?.distanceKm}
+          etaMin={offer?.etaMin ?? service?.etaMin}
+          className="min-h-[20rem] sm:min-h-[24rem]"
+        />
+      </section>
+
       <section className="grid gap-4 md:grid-cols-3">
         <StatusCard icon={<Car className="size-5" />} label="Veiculo" value={profileVehicle || provider.vehicle} />
         <StatusCard icon={<BadgeCheck className="size-5" />} label="Aprovacao" value={approvalLabel[provider.approvalStatus] || provider.approvalStatus} />
         <StatusCard icon={<Radio className="size-5" />} label="Disponibilidade" value={online ? 'Disponivel' : 'Offline'} />
       </section>
 
-      <section className="rounded-lg border border-slate-800 bg-slate-900 p-5">
+      <section id="atendimento" className="scroll-mt-24 rounded-lg border border-slate-800 bg-slate-900 p-5">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="text-lg font-semibold">Disponibilidade operacional</h2>
@@ -341,7 +375,7 @@ export function AuthenticatedProviderPanel({ userName, provider, initialService,
           onSubmit={saveProfile}
         />
 
-        <section className="rounded-lg border border-slate-800 bg-slate-900 p-5">
+        <section id="historico" className="scroll-mt-24 rounded-lg border border-slate-800 bg-slate-900 p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <h2 className="text-lg font-semibold">Historico operacional</h2>
@@ -433,27 +467,15 @@ export function AuthenticatedProviderPanel({ userName, provider, initialService,
 
 function Shell({ userName, connected, refresh, children }: { userName: string; connected: boolean; refresh: () => void; children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-slate-950 px-4 py-8 text-white">
-      <main className="mx-auto flex max-w-5xl flex-col gap-6">
-        <header className="flex flex-col gap-4 border-b border-slate-800 pb-5 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-sm font-medium text-orange-300">Area do prestador</p>
-            <h1 className="mt-1 text-2xl font-semibold">Ola, {userName}</h1>
-            <p className="mt-1 text-sm text-slate-400">Painel operacional autenticado.</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className={`rounded-md border px-3 py-1.5 text-xs font-semibold ${connected ? 'border-emerald-800 bg-emerald-950/40 text-emerald-200' : 'border-amber-800 bg-amber-950/40 text-amber-200'}`}>
-              {connected ? 'Presenca conectada' : 'Reconectando'}
-            </span>
-            <Button variant="outline" className="border-slate-700 bg-slate-900 text-slate-100" onClick={refresh}>
-              <RefreshCcw className="mr-2 size-4" />
-              Atualizar
-            </Button>
-          </div>
-        </header>
-        {children}
-      </main>
-    </div>
+    <RescueAppShell
+      roleLabel="Area do prestador"
+      userName={userName}
+      connected={connected}
+      onRefresh={refresh}
+      accent="orange"
+    >
+      {children}
+    </RescueAppShell>
   )
 }
 
@@ -487,7 +509,7 @@ function ProviderProfileCard({
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void
 }) {
   return (
-    <form onSubmit={onSubmit} className="rounded-lg border border-slate-800 bg-slate-900 p-5">
+    <form id="perfil" onSubmit={onSubmit} className="scroll-mt-24 rounded-lg border border-slate-800 bg-slate-900 p-5">
       <div className="mb-4 flex items-center gap-2 text-orange-300">
         <UserRound className="size-4" />
         <h2 className="text-base font-semibold text-white">Perfil</h2>

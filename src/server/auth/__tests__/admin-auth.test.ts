@@ -102,9 +102,9 @@ describe('Admin Auth — Role Protection (FASE 27)', () => {
     expect(sourceFiles.some((path) => readFileSync(path, 'utf8').includes(forbidden))).toBe(false)
   })
 
-  test('9. admin page exists at src/app/admin/page.tsx', () => {
+  test('9. protected admin page exists in its route group', () => {
     // uses top-level existsSync import
-    expect(existsSync('src/app/admin/page.tsx')).toBe(true)
+    expect(existsSync('src/app/admin/(protected)/page.tsx')).toBe(true)
   })
 
   test('10. admin login route exists', () => {

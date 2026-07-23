@@ -11,6 +11,8 @@ import { useClientHistory, type ServiceHistoryDetail } from '@/hooks/use-service
 import { ConsentRequiredPanel } from '@/components/consents/consent-required-panel'
 import type { ConsentStatus } from '@/server/consents/consent-service'
 import { useGeolocation } from '@/hooks/use-geolocation'
+import { OperationalMap } from '@/components/rescue/operational-map'
+import { RescueAppShell } from '@/components/rescue/rescue-app-shell'
 
 type Props = {
   userName: string
@@ -227,31 +229,45 @@ export function AuthenticatedClientPanel({ userName, initialService, initialCons
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 px-4 py-8 text-white">
-      <main className="mx-auto flex max-w-5xl flex-col gap-6">
-        <header className="flex flex-col gap-4 border-b border-slate-800 pb-5 md:flex-row md:items-center md:justify-between">
+    <RescueAppShell
+      roleLabel="Area do cliente"
+      userName={profile?.name || userName}
+      connected={socket.connected}
+      onRefresh={() => { void socket.refreshSnapshot(); void history.fetchHistory() }}
+    >
+      <section id="inicio" className="scroll-mt-24 space-y-4">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-sm font-medium text-sky-300">Area do cliente</p>
-            <h1 className="mt-1 text-2xl font-semibold">Ola, {profile?.name || userName}</h1>
-            <p className="mt-1 text-sm text-slate-400">Solicite e acompanhe atendimentos reais do MVP.</p>
+            <p className="hb-kicker">Seu atendimento</p>
+            <h1 className="mt-1 text-2xl font-extrabold text-foreground">
+              {service ? STATUS_LABELS[service.status]?.label || service.status : 'Onde voce precisa de ajuda?'}
+            </h1>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={`inline-flex rounded-md border px-3 py-1.5 text-xs font-semibold ${socket.connected ? 'border-emerald-800 bg-emerald-950/40 text-emerald-200' : 'border-amber-800 bg-amber-950/40 text-amber-200'}`}>
-              {socket.connected ? 'Tempo real conectado' : 'Reconectando tempo real'}
-            </span>
-            <Button variant="outline" className="border-slate-700 bg-slate-900 text-slate-100" onClick={() => { void socket.refreshSnapshot(); void history.fetchHistory() }}>
-              <RefreshCcw className="mr-2 size-4" />
-              Atualizar
-            </Button>
-          </div>
-        </header>
+          <p className="max-w-md text-sm text-muted-foreground">
+            {service
+              ? 'Acompanhe o prestador e as atualizacoes do atendimento.'
+              : 'Use sua localizacao real para iniciar uma solicitacao segura.'}
+          </p>
+        </div>
+        <OperationalMap
+          userPosition={geolocation.coords}
+          pickup={service?.pickup || geolocation.coords}
+          destination={service?.destination}
+          providerPosition={service?.provider?.position}
+          pickupLabel={service?.pickupLabel || pickupLabel}
+          providerLabel={service?.provider?.name}
+          distanceKm={service?.distanceKm}
+          etaMin={service?.etaMin}
+          className="min-h-[20rem] sm:min-h-[24rem]"
+        />
+      </section>
 
-        {socket.connectionError ? <Alert tone="amber" message={socket.connectionError} /> : null}
-        {socket.operationError ? <Alert tone="red" message={socket.operationError} /> : null}
-        <ConsentRequiredPanel initialConsents={initialConsents} />
+      {socket.connectionError ? <Alert tone="amber" message={socket.connectionError} /> : null}
+      {socket.operationError ? <Alert tone="red" message={socket.operationError} /> : null}
+      <ConsentRequiredPanel initialConsents={initialConsents} />
 
         {service ? (
-          <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <section id="atendimento" className="scroll-mt-24 grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
             <div className="rounded-lg border border-slate-800 bg-slate-900 p-5">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
@@ -336,7 +352,7 @@ export function AuthenticatedClientPanel({ userName, initialService, initialCons
             </aside>
           </section>
         ) : (
-          <form onSubmit={submit} className="rounded-lg border border-slate-800 bg-slate-900 p-5">
+          <form id="atendimento" onSubmit={submit} className="scroll-mt-24 rounded-lg border border-slate-800 bg-slate-900 p-5">
             <div className="mb-5 flex items-center gap-3">
               <div className="flex size-10 items-center justify-center rounded-md bg-sky-500 text-slate-950">
                 <Shield className="size-5" />
@@ -400,7 +416,7 @@ export function AuthenticatedClientPanel({ userName, initialService, initialCons
         )}
 
         <section className="grid gap-5 lg:grid-cols-[320px_minmax(0,1fr)]">
-          <form onSubmit={saveProfile} className="rounded-lg border border-slate-800 bg-slate-900 p-5">
+          <form id="perfil" onSubmit={saveProfile} className="scroll-mt-24 rounded-lg border border-slate-800 bg-slate-900 p-5">
             <div className="mb-4 flex items-center gap-2 text-sky-300">
               <UserRound className="size-4" />
               <h2 className="text-base font-semibold text-white">Perfil</h2>
@@ -421,7 +437,7 @@ export function AuthenticatedClientPanel({ userName, initialService, initialCons
             </Button>
           </form>
 
-          <section className="rounded-lg border border-slate-800 bg-slate-900 p-5">
+          <section id="historico" className="scroll-mt-24 rounded-lg border border-slate-800 bg-slate-900 p-5">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h2 className="text-lg font-semibold">Historico de servicos</h2>
@@ -529,8 +545,7 @@ export function AuthenticatedClientPanel({ userName, initialService, initialCons
             </div>
           </section>
         </section>
-      </main>
-    </div>
+    </RescueAppShell>
   )
 }
 

@@ -488,7 +488,7 @@ describe('F35-08 provider and client administrative actions', () => {
   })
 
   test('client suspension UI sends only the action and refreshes the admin snapshot', () => {
-    const source = readFileSync('src/app/admin/services/[id]/admin-service-actions-panel.tsx', 'utf8')
+    const source = readFileSync('src/app/admin/(protected)/services/[id]/admin-service-actions-panel.tsx', 'utf8')
     const suspendBlock = source.slice(
       source.indexOf('async function suspendClient()'),
       source.indexOf('const isTerminal'),

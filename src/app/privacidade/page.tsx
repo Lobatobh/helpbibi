@@ -7,7 +7,7 @@ export default function PrivacyPage() {
     <main className="min-h-screen bg-slate-950 px-4 py-10 text-slate-100">
       <article className="mx-auto max-w-3xl">
         <header className="border-b border-slate-800 pb-6">
-          <Link href="/" className="text-sm text-sky-300 hover:text-sky-200">Help Bibi</Link>
+          <Link href="/" className="inline-flex min-h-11 items-center text-sm text-sky-300 hover:text-sky-200">Help Bibi</Link>
           <div className="mt-4 flex items-start gap-3">
             <LockKeyhole className="mt-1 size-6 shrink-0 text-sky-300" />
             <div>
@@ -34,8 +34,8 @@ export default function PrivacyPage() {
         </section>
 
         <footer className="mt-8 flex flex-wrap gap-4 border-t border-slate-800 pt-6 text-sm">
-          <Link href="/termos" className="text-sky-300 hover:text-sky-200">Termos de Uso</Link>
-          <Link href="/login" className="text-slate-400 hover:text-white">Voltar ao acesso</Link>
+          <Link href="/termos" className="inline-flex min-h-11 items-center text-sky-300 hover:text-sky-200">Termos de Uso</Link>
+          <Link href="/login" className="inline-flex min-h-11 items-center text-slate-400 hover:text-white">Voltar ao acesso</Link>
         </footer>
       </article>
     </main>

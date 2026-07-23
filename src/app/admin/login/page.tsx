@@ -63,7 +63,7 @@ export default function AdminLoginPage() {
                 type="email"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
-                className="border-slate-700 bg-slate-950 pl-9 text-white"
+                className="h-11 border-slate-700 bg-slate-950 pl-9 text-white"
                 autoComplete="email"
                 required
               />
@@ -79,7 +79,7 @@ export default function AdminLoginPage() {
                 type="password"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
-                className="border-slate-700 bg-slate-950 pl-9 text-white"
+                className="h-11 border-slate-700 bg-slate-950 pl-9 text-white"
                 autoComplete="current-password"
                 required
               />
@@ -92,23 +92,23 @@ export default function AdminLoginPage() {
             </p>
           ) : null}
 
-          <Button type="submit" className="w-full gap-2" disabled={loading}>
+          <Button type="submit" className="min-h-11 w-full gap-2" disabled={loading}>
             {loading ? 'Entrando...' : 'Entrar como admin'}
             <ArrowRight className="size-4" />
           </Button>
         </form>
 
         <div className="mt-5 flex items-center justify-between text-sm text-slate-400">
-          <Link href="/login" className="hover:text-white">
+          <Link href="/login" className="inline-flex min-h-11 items-center hover:text-white">
             Login geral
           </Link>
-          <Link href="/" className="hover:text-white">
+          <Link href="/" className="inline-flex min-h-11 items-center hover:text-white">
             Demo publica
           </Link>
         </div>
         <div className="mt-4 flex justify-center gap-4 text-xs text-slate-500">
-          <Link href="/termos" className="hover:text-white">Termos</Link>
-          <Link href="/privacidade" className="hover:text-white">Privacidade</Link>
+          <Link href="/termos" className="inline-flex min-h-11 items-center hover:text-white">Termos</Link>
+          <Link href="/privacidade" className="inline-flex min-h-11 items-center hover:text-white">Privacidade</Link>
         </div>
       </section>
     </main>

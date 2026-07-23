@@ -1,68 +1,57 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
-import "./globals.css";
-import { Toaster } from "@/components/ui/toaster";
-import { Toaster as Sonner } from "@/components/ui/sonner";
-import { ThemeProvider } from "@/components/theme-provider";
+import type { Metadata } from 'next'
+import { Inter } from 'next/font/google'
+import './globals.css'
+import { Toaster } from '@/components/ui/toaster'
+import { Toaster as Sonner } from '@/components/ui/sonner'
+import { ThemeProvider } from '@/components/theme-provider'
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+const inter = Inter({
+  variable: '--font-inter',
+  subsets: ['latin'],
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
-  title: "Help Bibi — Auto socorro por aplicativo",
-  description: "Plataforma estilo Uber para socorro veicular. Cliente solicita, prestador mais próximo recebe a chamada e acompanha o serviço em tempo real até o destino final.",
-  keywords: ["auto socorro", "guincho", "reboque", "app de socorro", "socorro veicular", "help bibi", "ajuda carro"],
-  authors: [{ name: "Help Bibi" }],
+  title: 'Help Bibi — Socorro veicular quando você precisa',
+  description: 'Solicite socorro veicular, acompanhe o atendimento e fale com o prestador em uma experiência segura e conectada.',
+  keywords: ['auto socorro', 'guincho', 'reboque', 'socorro veicular', 'help bibi'],
+  authors: [{ name: 'Help Bibi' }],
   icons: {
-    icon: "/logo-help-bibi.png",
+    icon: '/logo-help-bibi.png',
   },
   openGraph: {
-    title: "Help Bibi — Auto socorro por aplicativo",
-    description: "Socorro automotivo na palma da mão, em tempo real.",
-    siteName: "Help Bibi",
-    type: "website",
+    title: 'Help Bibi — Socorro veicular quando você precisa',
+    description: 'Socorro automotivo conectado, com acompanhamento do atendimento.',
+    siteName: 'Help Bibi',
+    type: 'website',
   },
   twitter: {
-    card: "summary_large_image",
-    title: "Help Bibi",
-    description: "Socorro automotivo na palma da mão, em tempo real.",
+    card: 'summary_large_image',
+    title: 'Help Bibi',
+    description: 'Socorro automotivo conectado, com acompanhamento do atendimento.',
   },
-};
+}
 
 export default function RootLayout({
   children,
 }: Readonly<{
-  children: React.ReactNode;
+  children: React.ReactNode
 }>) {
   return (
     <html lang="pt-BR" suppressHydrationWarning>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
-      >
-        <ThemeProvider attribute="class" defaultTheme="dark" enableSystem={false}>
+      <body className={`${inter.variable} bg-background font-sans text-foreground antialiased`}>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+          storageKey="helpbibi-theme"
+        >
           {children}
           <Toaster />
-          <Sonner
-            position="top-center"
-            richColors
-            closeButton
-            toastOptions={{
-              style: {
-                background: '#0f172a',
-                border: '1px solid #1e293b',
-                color: '#f1f5f9',
-              },
-            }}
-          />
+          <Sonner position="top-center" richColors closeButton />
         </ThemeProvider>
       </body>
     </html>
-  );
+  )
 }

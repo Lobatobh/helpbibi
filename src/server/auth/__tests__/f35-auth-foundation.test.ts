@@ -32,8 +32,9 @@ describe('F35-01 auth foundation static contract', () => {
     expect(existsSync('src/app/cliente/page.tsx')).toBe(true)
     expect(existsSync('src/app/prestador/page.tsx')).toBe(true)
     expect(existsSync('src/app/admin/login/page.tsx')).toBe(true)
-    expect(existsSync('src/app/admin/page.tsx')).toBe(true)
+    expect(existsSync('src/app/admin/(protected)/page.tsx')).toBe(true)
     expect(existsSync('src/app/admin/layout.tsx')).toBe(true)
+    expect(existsSync('src/app/admin/(protected)/layout.tsx')).toBe(true)
   })
 
   test('public demo page remains public and imports the homologated demo panels', () => {
@@ -45,12 +46,24 @@ describe('F35-01 auth foundation static contract', () => {
   })
 
   test('protected role pages redirect unauthenticated users instead of rendering private content', () => {
-    for (const pagePath of ['src/app/cliente/page.tsx', 'src/app/prestador/page.tsx', 'src/app/admin/layout.tsx']) {
+    for (const pagePath of ['src/app/cliente/page.tsx', 'src/app/prestador/page.tsx', 'src/app/admin/(protected)/layout.tsx']) {
       const page = read(pagePath)
       expect(page).toContain("from 'next/navigation'")
       expect(page).toContain('redirect(')
       expect(page).toContain('getCurrentUserFromCookies')
     }
+  })
+
+  test('admin login stays public while the admin route group remains protected by ADMIN role', () => {
+    const publicAdminLayout = read('src/app/admin/layout.tsx')
+    const protectedAdminLayout = read('src/app/admin/(protected)/layout.tsx')
+    const adminLogin = read('src/app/admin/login/page.tsx')
+
+    expect(publicAdminLayout).not.toContain('redirect(')
+    expect(adminLogin).not.toContain("redirect('/admin/login')")
+    expect(protectedAdminLayout).toContain("redirect('/admin/login')")
+    expect(protectedAdminLayout).toContain("canAccessRole(user, 'ADMIN')")
+    expect(protectedAdminLayout).toContain('getDefaultPathForRole(user.role)')
   })
 
   test('auth API routes use email/password login, logout cookie clearing, and me session lookup', () => {

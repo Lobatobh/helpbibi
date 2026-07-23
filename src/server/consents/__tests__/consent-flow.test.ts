@@ -357,7 +357,7 @@ describe('F35-09A public legal and static security contract', () => {
     const chat = readFileSync('src/app/api/services/[id]/chat/route.ts', 'utf8')
     const ratings = readFileSync('src/app/api/services/[id]/ratings/route.ts', 'utf8')
     const payment = readFileSync('src/app/api/payments/simulate/route.ts', 'utf8')
-    const providerAdmin = readFileSync('src/app/admin/providers/[id]/page.tsx', 'utf8')
+    const providerAdmin = readFileSync('src/app/admin/(protected)/providers/[id]/page.tsx', 'utf8')
     for (const source of [availability, chat, ratings, payment]) {
       expect(source).toContain('requireCurrentConsents')
     }
